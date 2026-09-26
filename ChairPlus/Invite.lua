@@ -9,8 +9,8 @@
 -- cannot invite to, and nobody is invited twice in ten seconds, so a player
 -- repeating "inv" does not get a stack of invites.
 --
--- The keywords and switches live in their own small window, opened from the
--- Plus page or with /chair plus keywords.
+-- The keywords and switches live in a small window that flies out from the
+-- right edge of the menu, opened from the Plus page or /chair plus keywords.
 
 local suiteName, Chaircraft = ...
 local ns = Chaircraft.ChairPlus
@@ -224,7 +224,9 @@ ns.RegisterModule("keywordInvite", {
 -- The keyword window
 -------------------------------------------------------------------------------
 -- Built the first time it is opened, with the menu's own buttons and
--- checkboxes (Commands.lua lends them), so it looks like the rest.
+-- checkboxes (Commands.lua lends them), so it looks like the rest. It is a
+-- child of the menu, hanging off its right edge: it moves with it, and closes
+-- with it.
 
 local window
 local ROWS_SHOWN = 8
@@ -266,20 +268,25 @@ function ns.RefreshKeywordPanel()
             math.min(#words, listOffset + ROWS_SHOWN), #words) or "")
 end
 
-local function BuildWindow()
+local WINDOW_HEIGHT = 470
+
+-- Hang the window off the menu's right edge, as tall as the menu is.
+local function Attach(menu)
+    window:SetParent(menu)
+    window:ClearAllPoints()
+    window:SetPoint("TOPLEFT", menu, "TOPRIGHT", 2, 0)
+    window:SetHeight(math.max(WINDOW_HEIGHT, ns.Num(menu:GetHeight()) or 0))
+    pcall(window.SetFrameStrata, window, menu:GetFrameStrata())
+    pcall(window.SetFrameLevel, window, (ns.Num(menu:GetFrameLevel()) or 1) + 5)
+end
+
+local function BuildWindow(menu)
     if window then return window end
     local MakeButton, MakeCheckButton = ns.MakeButton, ns.MakeCheckButton
 
-    window = CreateFrame("Frame", "ChairPlusKeywordPanel", UIParent)
-    window:SetFrameStrata("DIALOG")
-    window:SetSize(300, 470)
-    window:SetPoint("CENTER")
-    window:SetClampedToScreen(true)
-    window:SetMovable(true)
+    window = CreateFrame("Frame", "ChairPlusKeywordPanel", menu or UIParent)
+    window:SetSize(300, WINDOW_HEIGHT)
     window:EnableMouse(true)
-    window:RegisterForDrag("LeftButton")
-    window:SetScript("OnDragStart", window.StartMoving)
-    window:SetScript("OnDragStop", window.StopMovingOrSizing)
     window:SetScript("OnShow", function() ns.RefreshKeywordPanel() end)
     -- Escape closes it, like the game's own windows.
     if type(_G.UISpecialFrames) == "table" then
@@ -385,7 +392,18 @@ local function BuildWindow()
 end
 
 function ns.ToggleKeywordPanel()
-    BuildWindow()
-    if window:IsShown() then window:Hide() else window:Show() end
+    -- The window belongs to the menu, so the menu comes up first.
+    local menu = _G.ChairPlusPanel
+    if not (menu and menu:IsShown()) and ns.OpenPanel then
+        pcall(ns.OpenPanel, "plus")
+        menu = _G.ChairPlusPanel
+    end
+    BuildWindow(menu)
+    if window:IsShown() then
+        window:Hide()
+        return
+    end
+    if menu then Attach(menu) end
+    window:Show()
     ns.RefreshKeywordPanel()
 end

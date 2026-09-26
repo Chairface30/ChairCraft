@@ -559,6 +559,44 @@ end
 -- The player's base run speed, which 100% is measured against.
 local BASE_SPEED = 7
 
+-------------------------------------------------------------------------------
+-- Chairface's Casino
+-------------------------------------------------------------------------------
+-- The casino publishes no data feed, so its lobby is asked directly: the same
+-- question its own lobby buttons ask, "is any game past idle and not yet
+-- settled". Its games only run inside a group, so a running table is one in
+-- yours.
+
+local CASINO_ICON = "Interface\\AddOns\\Chairfaces Casino\\Textures\\icon"
+local CASINO_HOSTS = {
+    blackjack = "Multiplayer", poker = "PokerMultiplayer", holdem = "HoldemMultiplayer",
+    hilo = "HiLoMultiplayer", deathroll = "DeathRollMultiplayer", bingo = "BingoMultiplayer",
+    roulette = "RouletteMultiplayer", liarsdice = "LiarsDiceMultiplayer", crash = "CrashMultiplayer",
+}
+
+local function CasinoLobby()
+    local casino = _G.ChairfacesCasino
+    local ui = type(casino) == "table" and casino.UI
+    local lobby = type(ui) == "table" and ui.Lobby
+    return type(lobby) == "table" and lobby or nil
+end
+
+-- The running game's name and its host, or nil when no table is up.
+local function CasinoTable()
+    local lobby = CasinoLobby()
+    if not lobby or type(lobby.IsAnyGameActive) ~= "function" then return nil end
+    local ok, active, key = pcall(lobby.IsAnyGameActive, lobby)
+    if not (ok and active) then return nil end
+    local name = key
+    if type(lobby.GetGameName) == "function" then
+        local okN, n = pcall(lobby.GetGameName, lobby, key)
+        name = okN and ns.Text(n) or key
+    end
+    local mp = CASINO_HOSTS[key] and _G.ChairfacesCasino[CASINO_HOSTS[key]]
+    local host = type(mp) == "table" and ns.Text(mp.currentHost) or nil
+    return name and (name:gsub("|", "||")) or "A table", host and (host:gsub("%-.*$", "")) or nil
+end
+
 -- Every item the line can hold. `setting` switches it on; `build` returns its
 -- text, or nil to leave it out this time (a count you do not carry, a
 -- position the client will not give). `ticks` marks the ones that change
@@ -936,6 +974,28 @@ local ITEMS = {
             return IconOnly("Interface\\ICONS\\INV_Misc_Head_Human_01", size, true) .. " " .. text
         end,
     },
+    {
+        -- Chairface's Casino, while a table is running in your group or raid:
+        -- the game, and who is hosting it. Click to open the casino's lobby.
+        key = "casino", setting = "osdCasino", label = "Casino table (while one is up)",
+        ticks = true,
+        click = function()
+            local lobby = CasinoLobby()
+            if lobby and type(lobby.Show) == "function" then pcall(lobby.Show, lobby) end
+        end,
+        tooltip = function(tip)
+            tip:AddLine("Chairface's Casino", 1, 0.82, 0)
+            local game, host = CasinoTable()
+            if game then tip:AddLine(game .. (host and (" hosted by " .. host) or ""), 1, 1, 1) end
+            tip:AddLine("Click to open the lobby.", 0.6, 0.6, 0.6)
+        end,
+        build = function(size)
+            local game, host = CasinoTable()
+            if not game then return nil end
+            return IconOnly(CASINO_ICON, size, false) .. " " .. game
+                .. (host and Coloured(" (" .. host .. ")", 0.6, 0.6, 0.6) or "")
+        end,
+    },
 }
 ns.OSD_ITEMS = ITEMS
 
@@ -1090,7 +1150,7 @@ HookBrokers()
 -- saved in osdOrder as "|" and moved like any item. Each is known by its
 -- place among the dividers -- "|1", "|2" -- which is all that tells two
 -- identical things apart.
-local MAX_DIVIDERS = 6
+local MAX_DIVIDERS = 30
 ns.OSD_MAX_DIVIDERS = MAX_DIVIDERS
 
 local function Divider(n)

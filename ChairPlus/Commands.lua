@@ -356,6 +356,7 @@ local function RefreshPanel()
                 name = (sounds and sounds.Label and sounds:Label(value)) or value
             end
             local parentOn = (not entry.sub) or ns.IsEnabled(entry.sub)
+            entry.fullName = tostring(name)
             entry.label:SetText(entry.row.label .. ": |cffffffff" .. tostring(name) .. "|r")
             entry.label:SetTextColor(parentOn and 1 or 0.5, parentOn and 0.82 or 0.5,
                                      parentOn and 0 or 0.5)
@@ -405,13 +406,11 @@ local function RefreshPanel()
         end
         local add = osdItemRows.addButton
         if add then
-            add:ClearAllPoints()
-            add:SetPoint("TOPLEFT", osdItemRows.x, osdItemRows.top - #order * 24 - 4)
             add:SetShown(on)
-            add:SetEnabled(dividers < (ns.OSD_MAX_DIVIDERS or 6))
+            add:SetEnabled(dividers < (ns.OSD_MAX_DIVIDERS or 30))
         end
         if osdItemRows.SetContentHeight then
-            osdItemRows.SetContentHeight(#order * 24 + 30, on)
+            osdItemRows.SetContentHeight(#order * 24 + 4, on)
         end
     end
 
@@ -604,8 +603,13 @@ local function BuildPanel()
             local key = row.sound
             local label = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
             label:SetPoint("TOPLEFT", COL_X[col] + indent + 4, y[col] - 4)
-            label:SetWidth(200 - indent)
+            label:SetWidth(220 - indent)
             label:SetJustifyH("LEFT")
+            -- One line, cut short with "..." -- a long file name wrapped onto a
+            -- second line, which sat behind the buttons under it. The whole
+            -- name is on the Choose button's tooltip.
+            pcall(label.SetWordWrap, label, false)
+            pcall(label.SetMaxLines, label, 1)
             local choose = MakeButton(panel, 80, "Choose...")
             choose:SetPoint("TOPLEFT", COL_X[col] + indent + 4, y[col] - 22)
             choose:SetScript("OnClick", function()
@@ -627,6 +631,20 @@ local function BuildPanel()
             stop:SetScript("OnClick", function() if row.stop then row.stop() end end)
             soundRows[key] = { label = label, choose = choose, play = play, stop = stop, row = row,
                                sub = row.sub, tab = tab }
+            local entry = soundRows[key]
+            choose:SetScript("OnEnter", function(self)
+                local tip = _G.GameTooltip
+                if not (tip and entry.fullName) then return end
+                pcall(function()
+                    tip:SetOwner(self, "ANCHOR_RIGHT")
+                    tip:AddLine(row.label, 1, 0.82, 0)
+                    tip:AddLine(entry.fullName, 1, 1, 1, true)
+                    tip:Show()
+                end)
+            end)
+            choose:SetScript("OnLeave", function()
+                if _G.GameTooltip then pcall(_G.GameTooltip.Hide, _G.GameTooltip) end
+            end)
             y[col] = y[col] - 48
         elseif row.choice then
             local indent = row.sub and 16 or 0
@@ -819,13 +837,22 @@ local function BuildPanel()
 
         -- The rows scroll. Every divider makes the list a row longer, and a
         -- window sized to hold all of them ran off the bottom of the screen.
-        -- Fifteen rows are in view; the rest scroll.
-        local VIEW_H = 15 * 24 + 8
+        -- The view runs down to just above the Add divider button, which
+        -- sits under it and never scrolls, so the list gets whatever height
+        -- the window has -- at least ten rows' worth.
+        local MIN_VIEW = 10 * 24 + 8
+        local BOTTOM = 72          -- the add button and the page's own buttons
         local scroll = CreateFrame("ScrollFrame", nil, panel)
         scroll:SetPoint("TOPLEFT", x, tabY.osd[2] - 24)
-        scroll:SetSize(234, VIEW_H)
+        scroll:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", x, BOTTOM)
+        scroll:SetWidth(234)
         local host = CreateFrame("Frame", nil, scroll)
-        host:SetSize(234, VIEW_H)
+        host:SetSize(234, MIN_VIEW)
+        local function ViewHeight()
+            local h = ns.Num(scroll:GetHeight())
+            if h and h > 24 then return h end
+            return MIN_VIEW
+        end
         scroll:SetScrollChild(host)
         osdItemRows.scroll, osdItemRows.host = scroll, host
 
@@ -866,8 +893,10 @@ local function BuildPanel()
         -- RefreshPanel reports how tall the rows are; the bar only shows when
         -- they do not fit.
         function osdItemRows.SetContentHeight(height, on)
-            host:SetHeight(math.max(height, VIEW_H))
-            osdItemRows.maxScroll = math.max(0, height - VIEW_H)
+            osdItemRows.lastHeight, osdItemRows.lastOn = height, on
+            local view = ViewHeight()
+            host:SetHeight(math.max(height, view))
+            osdItemRows.maxScroll = math.max(0, height - view)
             bar:SetMinMaxValues(0, osdItemRows.maxScroll)
             ScrollTo(osdItemRows.offset)
             scroll:SetShown(on)
@@ -904,7 +933,7 @@ local function BuildPanel()
 
         -- Divider rows: an x to remove it where the checkbox would be.
         osdItemRows.dividers = {}
-        for n = 1, ns.OSD_MAX_DIVIDERS or 6 do
+        for n = 1, ns.OSD_MAX_DIVIDERS or 30 do
             local row = {}
             row.check = MakeButton(host, 22, "x")
             row.check:SetScript("OnClick", function()
@@ -1003,7 +1032,15 @@ local function BuildPanel()
         end
         for _, row in ipairs(osdItemRows.dividers) do Draggable(row) end
 
-        osdItemRows.addButton = MakeButton(host, 120, "Add divider")
+        -- Resized with the window, the view has a new height to scroll in.
+        scroll:SetScript("OnSizeChanged", function()
+            if osdItemRows.lastHeight then
+                osdItemRows.SetContentHeight(osdItemRows.lastHeight, osdItemRows.lastOn)
+            end
+        end)
+
+        osdItemRows.addButton = MakeButton(panel, 120, "Add divider")
+        osdItemRows.addButton:SetPoint("TOPLEFT", scroll, "BOTTOMLEFT", 0, -6)
         osdItemRows.addButton:SetScript("OnClick", function()
             if ns.AddOSDDivider then ns.AddOSDDivider() end
             RefreshPanel()
@@ -1012,7 +1049,7 @@ local function BuildPanel()
         end)
         osdItemRows.addButton:Hide()
 
-        tabY.osd[2] = tabY.osd[2] - 24 - VIEW_H - 16
+        tabY.osd[2] = tabY.osd[2] - 24 - MIN_VIEW - 6 - 22 - 16
     end
 
     ---------------------------------------------------------------------------

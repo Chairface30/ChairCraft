@@ -43,11 +43,12 @@ ns.defaults = {
     osdPet              = false,     -- a hunter's pet: happiness and health
     osdMail             = false,     -- a mail icon while there is unread mail
     osdSocial           = false,     -- friends and guildmates online
+    osdCasino           = false,     -- a Chairface's Casino table in your group
     osdBrokers          = "",        -- other addons' feeds that are on, by key
     hideStatusBars      = false,     -- hide the game's XP bar and status bar 2
     -- Display order, left to right. Items missing from it (a new one, or a
     -- hand-edited list) are added at the end in their default place.
-    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,threat,clock,alarm,tracker,latency,session,sessiongold,speed,pet,mail,social",
+    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,threat,clock,alarm,tracker,latency,session,sessiongold,speed,pet,mail,social,casino",
     osdLocked           = true,     -- click-through until "/chair plus osd unlock"
     osdFontSize         = 14,
     osdScale            = 1.0,

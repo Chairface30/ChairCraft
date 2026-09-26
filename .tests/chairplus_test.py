@@ -2836,8 +2836,8 @@ order = [rt.eval("NS.OSDOrder()")[i].key for i in range(1, len(rt.eval("NS.OSDOr
 check("there can be more than one", order.count("|1") == 1 and order.count("|2") == 1, str(order))
 rt.execute('NS.RemoveOSDDivider("|2") NS.RemoveOSDDivider("|1") NS.RefreshOSD() DRIVER_TICK()')
 check("and they can be taken away", "|" not in g.NS.Get("osdOrder").split(","), g.NS.Get("osdOrder"))
-rt.execute("for i = 1, 10 do NS.AddOSDDivider() end")
-check("up to six", g.NS.Get("osdOrder").split(",").count("|") == 6)
+rt.execute("for i = 1, 40 do NS.AddOSDDivider() end")
+check("up to thirty", g.NS.Get("osdOrder").split(",").count("|") == 30)
 rt.execute('NS.OpenPanel("osd")')
 check("the OSD page has an Add divider button", rt.eval('SHOWN_BUTTON("Add divider")') is True)
 
@@ -2928,6 +2928,11 @@ rt.execute("for _ = 1, 6 do NS.AddOSDDivider() end NS.OpenPanel('osd')")
 check("dividers lengthen the scroll instead of growing the window",
       rt.eval("NS.osdItemRows.maxScroll") == before + 6 * 24,
       str(rt.eval("NS.osdItemRows.maxScroll")))
+rt.execute("for _ = 1, 24 do NS.AddOSDDivider() end NS.OpenPanel('osd')")
+check("thirty dividers are allowed", rt.eval("(NS.AddOSDDivider())") is False
+      and sum(1 for k in g.NS.Get("osdOrder").split(",") if k == "|") == 30, g.NS.Get("osdOrder"))
+check("and with thirty the add button grays out",
+      rt.eval("NS.osdItemRows.addButton:IsEnabled()") is not True)
 rt.execute("NS.osdItemRows.ScrollTo(10000)")
 check("and scrolling stops at the end",
       rt.eval("NS.osdItemRows.offset == NS.osdItemRows.maxScroll") is True)
@@ -3333,8 +3338,39 @@ rt.execute('NS.Set("keywordInvite", false) CHAT("CHAT_MSG_WHISPER", "inv", "Jo")
 check("switched off, nothing happens", "Jo" not in invited(rt), str(invited(rt)))
 rt.execute("NS.ToggleKeywordPanel()")
 check("the keyword window opens", rt.eval("ChairPlusKeywordPanel:IsShown()") is True)
+check("with the menu, if it was closed", rt.eval("ChairPlusPanel:IsShown()") is True)
+check("hanging off the menu's right edge",
+      rt.eval("(function() local p = rawget(ChairPlusKeywordPanel, '_point') return p and p.point == 'TOPLEFT' and p.rel == 'TOPRIGHT' end)()") is True)
+check("as the menu's child, so it closes with it",
+      rt.eval("rawget(ChairPlusKeywordPanel, '_parent') == ChairPlusPanel") is True)
+rt.execute("NS.ToggleKeywordPanel()")
+check("and the button closes it again", rt.eval("ChairPlusKeywordPanel:IsShown()") is False)
 rt.execute("NS.OpenPanel('plus')")
 check("the Plus page has a Keywords... button", rt.eval('SHOWN_BUTTON("Keywords...")') is True)
+
+print("\nCasino table on the OSD")
+rt, g = fresh()
+rt.execute("""
+ACTIVE, GAME = false, "holdem"
+ChairfacesCasino = {
+    UI = { Lobby = {
+        IsAnyGameActive = function(self) return ACTIVE, ACTIVE and GAME or nil end,
+        GetGameName = function(self, key) return key == "holdem" and "Texas Hold'em" or key end,
+        Show = function(self) LOBBY_SHOWN = true end,
+    } },
+    HoldemMultiplayer = { currentHost = "Chairface-Realm" },
+}
+BOOT()
+NS.SetMany({ osd = true, osdMoney = false, osdBags = false, osdCasino = true })
+""")
+check("no table up, nothing shows", "Hold'em" not in line(rt), line(rt))
+rt.execute("ACTIVE = true")
+text = line(rt)
+check("a table up in the group shows the game and its host",
+      "Texas Hold'em" in text and "(Chairface)" in text, text)
+check("with the casino's own icon", "Chairfaces Casino\\Textures\\icon" in text, text)
+rt.execute("ChairfacesCasino = nil")
+check("without the casino loaded it is simply absent", "Hold'em" not in line(rt), line(rt))
 
 
 print("")
