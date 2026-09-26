@@ -1320,6 +1320,76 @@ hoverPoll:SetScript("OnUpdate", function(self, dt)
 end)
 
 ----------------------------------------------------------------------
+-- Opening a profession from its bar
+----------------------------------------------------------------------
+-- A profession with a window of its own opens it when its bar is clicked.
+-- What opens one is casting the profession's spell -- "Smelting" for mining
+-- -- and casting is only allowed to a secure button, so each bar carries an
+-- invisible one that is set up for its profession out of combat. Gathering
+-- skills have no window (and clicking Fishing would cast a line), so their
+-- bars do nothing.
+--
+-- Where the client has the newer C_TradeSkillUI.OpenTradeSkill, which opens
+-- a profession by its skill line with no cast at all, that is used instead.
+
+local PROFESSION_PANELS = {
+    -- name on the bar     spell that opens it   skill line
+    ["Alchemy"]        = { "Alchemy",        171 },
+    ["Blacksmithing"]  = { "Blacksmithing",  164 },
+    ["Enchanting"]     = { "Enchanting",     333 },
+    ["Engineering"]    = { "Engineering",    202 },
+    ["Leatherworking"] = { "Leatherworking", 165 },
+    ["Tailoring"]      = { "Tailoring",      197 },
+    ["Jewelcrafting"]  = { "Jewelcrafting",  755 },
+    ["Inscription"]    = { "Inscription",    773 },
+    ["Cooking"]        = { "Cooking",        185 },
+    ["First Aid"]      = { "First Aid",      129 },
+    ["Mining"]         = { "Smelting",       186 },
+    ["Poisons"]        = { "Poisons",        40 },
+}
+WOWFTrackerNS.PROFESSION_PANELS = PROFESSION_PANELS
+
+local function DirectOpen()
+    local ui = _G.C_TradeSkillUI
+    return ui and type(ui.OpenTradeSkill) == "function" and ui.OpenTradeSkill or nil
+end
+
+-- Set a bar up to open `name`'s window, or to open nothing. Secure
+-- attributes cannot change in combat, so a change then waits for it to end.
+local pendingPanels = false
+local function SetBarProfession(bar, name)
+    local panel = name and PROFESSION_PANELS[name] or nil
+    bar.profession = panel and name or nil
+    local click = bar.professionClick
+    if not click then return end
+    local okL, locked = pcall(_G.InCombatLockdown)
+    if okL and locked then
+        pendingPanels = true
+        return
+    end
+    if panel and not DirectOpen() then
+        click:SetAttribute("type", "spell")
+        click:SetAttribute("spell", panel[1])
+        click:Show()
+    else
+        click:SetAttribute("type", nil)
+        click:SetAttribute("spell", nil)
+        click:Hide()
+    end
+end
+
+do
+    local regen = CreateFrame("Frame")
+    regen:RegisterEvent("PLAYER_REGEN_ENABLED")
+    regen:SetScript("OnEvent", function()
+        if pendingPanels then
+            pendingPanels = false
+            if WOWFTrackerNS.UpdateReputation then WOWFTrackerNS.UpdateReputation() end
+        end
+    end)
+end
+
+----------------------------------------------------------------------
 -- Bar pool
 ----------------------------------------------------------------------
 local bars = {}
@@ -1368,9 +1438,33 @@ local function CreateBar(index)
             end
         end
 
+        if self.profession then
+            GameTooltip:AddLine("Click to open " .. self.profession .. ".", 0.6, 0.6, 0.6)
+        end
+
         GameTooltip:Show()
     end)
     bar:SetScript("OnLeave", GameTooltip_Hide)
+
+    -- Opening a profession without a cast, where the client allows it.
+    bar:SetScript("OnMouseUp", function(self, button)
+        if button ~= "LeftButton" or not self.profession then return end
+        local open = DirectOpen()
+        local panel = PROFESSION_PANELS[self.profession]
+        if open and panel then pcall(open, panel[2]) end
+    end)
+
+    -- And with one, through a secure button laid over the bar. It shows the
+    -- bar's own tooltip, so covering the bar costs nothing.
+    local okC, click = pcall(CreateFrame, "Button", nil, bar, "SecureActionButtonTemplate")
+    if okC and click then
+        click:SetAllPoints(bar)
+        pcall(click.RegisterForClicks, click, "LeftButtonUp", "LeftButtonDown")
+        click:SetScript("OnEnter", function() local f = bar:GetScript("OnEnter") if f then f(bar) end end)
+        click:SetScript("OnLeave", GameTooltip_Hide)
+        click:Hide()
+        bar.professionClick = click
+    end
 
     -- Standing tick marks (shown in total-to-Exalted mode)
     -- 3 ticks: Neutral/Friendly, Friendly/Honored, Honored/Revered
@@ -1982,6 +2076,7 @@ function WOWFTrackerNS.UpdateReputation()
 
             bar.tipTitle = entry.name
             bar.tipDungeons = nil
+            SetBarProfession(bar, entry.name)
             UpdateBarTicks(bar, false, s.barWidth, s.barHeight)
         else
             -- Reputation bar
@@ -2028,6 +2123,7 @@ function WOWFTrackerNS.UpdateReputation()
             end
 
             bar.tipDungeons = BuildDungeonTooltip(entry.id, standing)
+            SetBarProfession(bar, nil)
         end
 
         bar:SetPoint("TOPLEFT", container, "TOPLEFT", 5,
@@ -2036,6 +2132,7 @@ function WOWFTrackerNS.UpdateReputation()
     end
 
     for i = #entries + 1, #bars do
+        SetBarProfession(bars[i], nil)
         bars[i]:Hide()
         UpdateBarTicks(bars[i], false, 0, 0)
     end

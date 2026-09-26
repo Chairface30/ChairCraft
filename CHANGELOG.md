@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+
+- **ChairTracker profession bars open their window** when clicked: Alchemy, Blacksmithing, Enchanting, Engineering, Leatherworking, Tailoring, Cooking, First Aid, Mining (through Smelting) and the rest that have one. Gathering and weapon skills have no window and stay unclickable.
+- **WoW Forever 1.60.1 only.** The TOC declares interface 16001 alone; other versions of WoW list Chaircraft as out of date.
+
 ## 1.0.1
 
 - **Grayed-out listings are hidden** in the group finder whenever the filters are on: delisted, or where your application was declined, timed out or failed, or you turned down the invite.

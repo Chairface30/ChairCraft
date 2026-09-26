@@ -1,9 +1,9 @@
-## Interface: 16001, 16000, 11509, 11508, 20506
+## Interface: 16001
 ## Title: Chaircraft
 ## Notes: ChairPlus, ChairAuras, ChairSnack and ChairTracker in one addon, under one menu. Type /chair.
 ## Author: Chairface
 ## IconTexture: Interface\AddOns\Chaircraft\ChairSnack\minimap
-## Version: 1.0.1
+## Version: 1.0.2
 ## SavedVariables: ChairPlusDB, ChairAurasDB, SnapSnackDB, WOWFTrackerAccountDB
 ## SavedVariablesPerCharacter: WOWFTrackerDB
 

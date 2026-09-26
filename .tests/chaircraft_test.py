@@ -85,6 +85,11 @@ for name in ("ChairPlusDB", "ChairAurasDB", "SnapSnackDB",
              "WOWFTrackerAccountDB", "WOWFTrackerDB"):
     check(f"{name} still declared", name in sv)
 
+# Built for WoW Forever 1.60.1 and nothing else.
+iface = [l for l in toc_lines if l.startswith("## Interface:")]
+check("the TOC is for WoW Forever 1.60.1 (16001) only",
+      iface == ["## Interface: 16001"], str(iface))
+
 # --------------------------------------------------------------------------
 # 2. Namespace isolation
 # --------------------------------------------------------------------------

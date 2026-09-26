@@ -34,6 +34,14 @@ local function Method(k)
             elseif k == "Show" then rawset(self, "_shown", true)
             elseif k == "Hide" then rawset(self, "_shown", false)
             elseif k == "IsShown" then return rawget(self, "_shown") == true
+            elseif k == "SetAttribute" then
+                local name, value = ...
+                local a = rawget(self, "_attrs") or {}
+                a[name] = value
+                rawset(self, "_attrs", a)
+            elseif k == "GetAttribute" then
+                local a = rawget(self, "_attrs")
+                return a and a[(...)]
             elseif k == "SetScript" then
                 local name, fn = ...
                 local s = rawget(self, "_scripts") or {}
@@ -1539,6 +1547,40 @@ check("hovering the OSD item drops it down", L.eval("WOWFTrackerFrame:IsShown()"
 L.execute("WOWFTrackerNS.Dock(nil)")
 check("undocked, the window comes back as it was left",
       L.eval("WOWFTrackerFrame:IsShown()") is True and L.eval("WOWFTrackerNS.docked") is None)
+
+# --- profession bars open their windows --------------------------------------
+print("-- profession bars open their windows")
+L = boot("""
+ResetPanel(false, false)
+ResetSkills(false)
+WOWFTrackerDB = { settings = { sortMode = "name_asc" }, factions = {},
+    skills = { ["skill:Mining"] = true, ["skill:Alchemy"] = true, ["skill:Swords"] = true } }
+""")
+L.execute("""
+function BAR(name)
+    for _, b in ipairs(STATUSBARS) do
+        if b._shown == true and b.nameText._text == name then return b end
+    end
+end
+""")
+check("Alchemy's bar opens Alchemy",
+      L.eval("BAR('Alchemy').professionClick:GetAttribute('spell')") == "Alchemy"
+      and L.eval("BAR('Alchemy').professionClick:IsShown()") is True)
+check("Mining's opens its window through Smelting",
+      L.eval("BAR('Mining').professionClick:GetAttribute('spell')") == "Smelting")
+check("a weapon skill has no window, so its bar opens nothing",
+      L.eval("BAR('Swords').professionClick:IsShown()") is False
+      and L.eval("BAR('Swords').profession") is None)
+L.execute("""
+OPENED = nil
+C_TradeSkillUI = { OpenTradeSkill = function(id) OPENED = id end }
+WOWFTrackerNS.UpdateReputation()
+local b = BAR('Alchemy')
+b._scripts.OnMouseUp(b, "LeftButton")
+""")
+check("where the client can open a profession directly, that is used, and no cast",
+      L.eval("OPENED") == 171 and L.eval("BAR('Alchemy').professionClick:IsShown()") is False,
+      str(L.eval("OPENED")))
 
 print("ALL OK" if not failures else "%d FAILED" % len(failures))
 sys.exit(1 if failures else 0)

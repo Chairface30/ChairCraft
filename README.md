@@ -1,6 +1,6 @@
 # Chaircraft
 
-**One addon, one menu, one command.** Chaircraft brings together four quality-of-life addons (ChairPlus, ChairAuras, ChairSnack and ChairTracker) under a single `/chair` menu. It is built for the classic-era clients, including the Forever client that runs classic content on the modern engine.
+**One addon, one menu, one command.** Chaircraft brings together four quality-of-life addons (ChairPlus, ChairAuras, ChairSnack and ChairTracker) under a single `/chair` menu. It is made for **WoW Forever 1.60.1** (interface 16001) only, the client that runs classic content on the modern engine. Other versions of WoW are not supported.
 
 Everything ships **switched off**. Nothing changes about your game until you turn it on, and each feature has its own switch.
 
@@ -123,7 +123,7 @@ Chaircraft also publishes its own launcher, so other bar addons can show a chair
 
 ## Installing
 
-1. Put the `Chaircraft` folder in `World of Warcraft/<client>/Interface/AddOns/`.
+1. Put the `Chaircraft` folder in your WoW Forever client's `Interface/AddOns/` folder.
 2. If you still have the standalone ChairPlus, ChairAuras, SnapSnack or WOW Forever Tracker, disable them. Chaircraft warns you if they are running alongside it.
 3. Log in and type `/chair`.
 
