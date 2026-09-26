@@ -597,6 +597,215 @@ local function CasinoTable()
     return name and (name:gsub("|", "||")) or "A table", host and (host:gsub("%-.*$", "")) or nil
 end
 
+-------------------------------------------------------------------------------
+-- Clicks and tooltips
+-------------------------------------------------------------------------------
+-- What the items do when clicked. Each game window is opened through
+-- whichever call this client has, and a missing one is a shrug, not an error.
+
+local function Try(name, ...)
+    local fn = _G[name]
+    if type(fn) ~= "function" then return false end
+    return (pcall(fn, ...))
+end
+
+local function OpenBags()
+    if not Try("ToggleAllBags") then Try("OpenAllBags") end
+end
+
+local function OpenMap()
+    if Try("ToggleWorldMap") then return end
+    local map = _G.WorldMapFrame
+    if map then
+        if map:IsShown() then map:Hide() else map:Show() end
+    end
+end
+
+local function OpenCharacter(tab)
+    Try("ToggleCharacter", tab or "PaperDollFrame")
+end
+
+-- A hidden tooltip to read item, buff and debuff text through, for the
+-- speed tooltip. Lines come back as plain strings; one the client will not
+-- let us read is skipped.
+local scanTip
+local function TipLines(method, ...)
+    if not scanTip then
+        local ok, tip = pcall(CreateFrame, "GameTooltip", "ChairPlusScanTip", nil, "GameTooltipTemplate")
+        if not ok or not tip then return {} end
+        scanTip = tip
+    end
+    local lines = {}
+    if type(scanTip[method]) ~= "function" then return lines end
+    pcall(scanTip.SetOwner, scanTip, UIParent, "ANCHOR_NONE")
+    pcall(scanTip.ClearLines, scanTip)
+    if not pcall(scanTip[method], scanTip, ...) then return lines end
+    local okN, count = pcall(scanTip.NumLines, scanTip)
+    for i = 1, (okN and ns.Num(count) or 0) do
+        local fs = _G["ChairPlusScanTipTextLeft" .. i]
+        local text = fs and ns.Text(fs:GetText())
+        if text then lines[#lines + 1] = text end
+    end
+    return lines
+end
+
+-- A line about how fast you move, not how fast you swing or cast.
+local function SpeedLine(text)
+    local lower = text:lower()
+    if not lower:find("speed") then return nil end
+    for _, other in ipairs({ "attack speed", "casting speed", "cast speed", "attack and casting" }) do
+        if lower:find(other, 1, true) then return nil end
+    end
+    return text
+end
+
+-- A buff or debuff's name, by index, from whichever aura API this client has.
+local function AuraName(index, filter)
+    local auras = _G.C_UnitAuras
+    if auras and type(auras.GetAuraDataByIndex) == "function" then
+        local ok, data = pcall(auras.GetAuraDataByIndex, "player", index, filter)
+        if ok then return type(data) == "table" and ns.Text(data.name) or nil end
+    end
+    if type(_G.UnitAura) == "function" then
+        local ok, name = pcall(_G.UnitAura, "player", index, filter)
+        return ok and ns.Text(name) or nil
+    end
+    return nil
+end
+
+-- Everything found to be changing your speed: { what, detail, r, g, b }.
+local function SpeedCauses()
+    local causes = {}
+    local function Add(what, detail, slower)
+        causes[#causes + 1] = { what, detail or "",
+            slower and 1 or 0.3, slower and 0.3 or 1, slower and 0.3 or 0.3 }
+    end
+    local function Slower(text)
+        local lower = text:lower()
+        return (lower:find("reduc") or lower:find("decreas") or lower:find("slow")) and true or false
+    end
+
+    for _, filter in ipairs({ "HELPFUL", "HARMFUL" }) do
+        for index = 1, 40 do
+            local name = AuraName(index, filter)
+            if not name then break end
+            for _, text in ipairs(TipLines("SetUnitAura", "player", index, filter)) do
+                local line = SpeedLine(text)
+                if line then
+                    Add(name, line:match("(%d+%%)") or "", filter == "HARMFUL" or Slower(line))
+                    break
+                end
+            end
+            -- A debuff that says nothing readable about speed may still be
+            -- the one: Dazed has no number on it.
+            if filter == "HARMFUL" and name == "Dazed" then Add(name, "", true) end
+        end
+    end
+
+    for slot = 1, 19 do
+        local okL, link = pcall(_G.GetInventoryItemLink, "player", slot)
+        if okL and link then
+            for _, text in ipairs(TipLines("SetInventoryItem", "player", slot)) do
+                local line = SpeedLine(text)
+                if line and not line:lower():find("^durability") then
+                    local okN, itemName = pcall(_G.GetItemInfo, link)
+                    Add(okN and ns.Text(itemName) or "Gear", line, Slower(line))
+                    break
+                end
+            end
+        end
+    end
+
+    local function Is(fn, ...)
+        if type(fn) ~= "function" then return false end
+        local ok, yes = pcall(fn, ...)
+        return ok and yes and true or false
+    end
+    if Is(_G.IsMounted) then Add("Mounted", "", false) end
+    if Is(_G.UnitOnTaxi, "player") then Add("On a flight path", "", false) end
+    if Is(_G.IsSwimming) then Add("Swimming", "swim speed applies", true) end
+    if Is(_G.IsStealthed) then Add("Stealthed", "", true) end
+    if Is(_G.UnitIsGhost, "player") then Add("Ghost", "", false) end
+    if Is(_G.IsFalling) then Add("Falling", "", false) end
+    return causes
+end
+
+local SLOT_NAMES = {
+    [1] = "Head", [3] = "Shoulders", [5] = "Chest", [6] = "Waist", [7] = "Legs",
+    [8] = "Feet", [9] = "Wrists", [10] = "Hands", [16] = "Main hand",
+    [17] = "Off hand", [18] = "Ranged",
+}
+
+local function DurabilityLines(tip)
+    local rows = {}
+    for slot, label in pairs(SLOT_NAMES) do
+        local ok, current, maximum = pcall(_G.GetInventoryItemDurability, slot)
+        current, maximum = ok and ns.Num(current), ok and ns.Num(maximum)
+        if current and maximum and maximum > 0 then
+            rows[#rows + 1] = { label, current / maximum * 100 }
+        end
+    end
+    table.sort(rows, function(a, b) return a[2] < b[2] end)
+    for _, row in ipairs(rows) do
+        local pct = row[2]
+        local r, g = 1, 1
+        if pct < 25 then r, g = 1, 0.2 elseif pct < 50 then r, g = 1, 0.82 end
+        tip:AddDoubleLine(row[1], string.format("%d%%", math.floor(pct + 0.5)), 1, 1, 1, r, g, pct < 50 and 0.2 or 1)
+    end
+    if #rows == 0 then tip:AddLine("Nothing worn wears out.", 0.6, 0.6, 0.6) end
+end
+
+local function BagLines(tip)
+    local getFree, getSlots = ns.GetContainerNumFreeSlots, ns.GetContainerNumSlots
+    if type(getFree) ~= "function" or type(getSlots) ~= "function" then return end
+    local last = ns.LAST_BAG or 4
+    if ns.REAGENT_BAG and ns.REAGENT_BAG > last then last = ns.REAGENT_BAG end
+    for bag = 0, last do
+        local okF, free = pcall(getFree, bag)
+        local okS, size = pcall(getSlots, bag)
+        free, size = okF and ns.Num(free), okS and ns.Num(size)
+        if size and size > 0 then
+            local label = bag == 0 and "Backpack" or ("Bag " .. bag)
+            if IsProfessionBag(bag) then label = label .. " (profession)" end
+            tip:AddDoubleLine(label, string.format("%d of %d free", free or 0, size), 1, 1, 1, 1, 1, 1)
+        end
+    end
+end
+
+-- The heaviest addons by memory, for the latency tooltip.
+local function MemoryLines(tip)
+    if type(_G.UpdateAddOnMemoryUsage) ~= "function" or type(_G.GetAddOnMemoryUsage) ~= "function" then return end
+    pcall(_G.UpdateAddOnMemoryUsage)
+    local addons = _G.C_AddOns
+    local count = (addons and addons.GetNumAddOns) or _G.GetNumAddOns
+    local info = (addons and addons.GetAddOnInfo) or _G.GetAddOnInfo
+    local ok, n = pcall(count)
+    local rows, total = {}, 0
+    for i = 1, (ok and ns.Num(n) or 0) do
+        local okM, kb = pcall(_G.GetAddOnMemoryUsage, i)
+        kb = okM and ns.Num(kb) or 0
+        if kb > 0 then
+            local okI, name, title = pcall(info, i)
+            rows[#rows + 1] = { okI and (ns.Text(title) or ns.Text(name)) or ("#" .. i), kb }
+            total = total + kb
+        end
+    end
+    table.sort(rows, function(a, b) return a[2] > b[2] end)
+    local function Size(kb)
+        return kb >= 1024 and string.format("%.1f MB", kb / 1024) or string.format("%d KB", kb)
+    end
+    tip:AddLine(" ")
+    tip:AddDoubleLine("Addon memory", Size(total), 1, 0.82, 0, 1, 1, 1)
+    for i = 1, math.min(10, #rows) do
+        tip:AddDoubleLine("  " .. rows[i][1]:gsub("|", "||"), Size(rows[i][2]), 1, 1, 1, 0.7, 0.7, 0.7)
+    end
+end
+
+-- Hint lines at the foot of a tooltip.
+local function Hint(tip, text)
+    tip:AddLine(text, 0.6, 0.6, 0.6)
+end
+
 -- Every item the line can hold. `setting` switches it on; `build` returns its
 -- text, or nil to leave it out this time (a count you do not carry, a
 -- position the client will not give). `ticks` marks the ones that change
@@ -604,6 +813,15 @@ end
 local ITEMS = {
     {
         key = "money", setting = "osdMoney", label = "Money",
+        click = OpenBags,
+        tooltip = function(tip)
+            tip:AddLine("Money", 1, 0.82, 0)
+            local delta = ns.SessionGold and ns.SessionGold()
+            if delta then
+                tip:AddDoubleLine("This session", (delta < 0 and "-" or "+") .. Coins(delta, 12), 1, 1, 1, 1, 1, 1)
+            end
+            Hint(tip, "Click to open your bags.")
+        end,
         build = function(size)
             local amounts = { GetMoneyParts() }
             local coins = {}
@@ -615,6 +833,12 @@ local ITEMS = {
     },
     {
         key = "bags", setting = "osdBags", label = "Free bag slots",
+        click = OpenBags,
+        tooltip = function(tip)
+            tip:AddLine("Bags", 1, 0.82, 0)
+            BagLines(tip)
+            Hint(tip, "Click to open your bags.")
+        end,
         build = function(size)
             local general, _, _, total = GetFreeSlots()
             return IconOnly(BAG_ICON, size, true) .. " " .. SlotsText(general, total)
@@ -625,6 +849,12 @@ local ITEMS = {
         -- zero for something you do not carry is noise, and this line is read
         -- at a glance or not at all.
         key = "profession", setting = "osdBagsProfession", label = "Profession bags, separately",
+        click = OpenBags,
+        tooltip = function(tip)
+            tip:AddLine("Bags", 1, 0.82, 0)
+            BagLines(tip)
+            Hint(tip, "Click to open your bags.")
+        end,
         build = function(size)
             local _, special, sawSpecial, _, total = GetFreeSlots()
             if not sawSpecial then return nil end
@@ -633,6 +863,12 @@ local ITEMS = {
     },
     {
         key = "durability", setting = "osdDurability", label = "Durability",
+        click = function() OpenCharacter() end,
+        tooltip = function(tip)
+            tip:AddLine("Durability", 1, 0.82, 0)
+            DurabilityLines(tip)
+            Hint(tip, "Click to open your character.")
+        end,
         build = function(size)
             local pct = LowestDurability()
             if not pct then return nil end
@@ -644,6 +880,16 @@ local ITEMS = {
     },
     {
         key = "ammo", setting = "osdAmmo", label = "Ammo",
+        click = function() OpenCharacter() end,
+        tooltip = function(tip)
+            local okL, link = pcall(_G.GetInventoryItemLink, "player", AMMO_SLOT)
+            local okN, name = pcall(_G.GetItemInfo, okL and link or 0)
+            tip:AddLine(okN and ns.Text(name) or "Ammo", 1, 0.82, 0)
+            local okC, count = pcall(_G.GetInventoryItemCount, "player", AMMO_SLOT)
+            count = okC and ns.Num(count)
+            if count then tip:AddLine(string.format("%d left", count), 1, 1, 1) end
+            Hint(tip, "Click to open your character.")
+        end,
         build = function(size)
             local okT, tex = pcall(_G.GetInventoryItemTexture, "player", AMMO_SLOT)
             tex = okT and tex or nil
@@ -659,6 +905,8 @@ local ITEMS = {
         -- Shown for a warlock, or for anyone carrying shards; a zero on a
         -- warrior is noise.
         key = "shards", setting = "osdShards", label = "Soul shards",
+        click = OpenBags,
+        tip = "Soul shards -- click to open your bags.",
         build = function(size)
             local count
             if type(ns.GetItemCount) == "function" then
@@ -674,6 +922,8 @@ local ITEMS = {
     },
     {
         key = "coords", setting = "osdCoords", label = "Coordinates", ticks = true,
+        click = OpenMap,
+        tip = "Your position on the zone map -- click to open the map.",
         sample = function(size)
             return IconOnly("Interface\\ICONS\\INV_Misc_Map_01", size, true) .. " 88.8, 88.8"
         end,
@@ -687,6 +937,24 @@ local ITEMS = {
     {
         -- Nothing at the level cap, where there is no bar to fill.
         key = "xp", setting = "osdXP", label = "XP and rested",
+        tooltip = function(tip)
+            local okL, level = pcall(_G.UnitLevel, "player")
+            tip:AddLine("Level " .. tostring(okL and ns.Num(level) or "?"), 1, 0.82, 0)
+            local okX, xp = pcall(_G.UnitXP, "player")
+            local okM, maxXP = pcall(_G.UnitXPMax, "player")
+            xp, maxXP = okX and ns.Num(xp), okM and ns.Num(maxXP)
+            if xp and maxXP and maxXP > 0 then
+                tip:AddDoubleLine("XP", string.format("%d / %d (%.1f%%)", xp, maxXP, xp / maxXP * 100),
+                    1, 1, 1, 1, 1, 1)
+                tip:AddDoubleLine("To level", string.format("%d", maxXP - xp), 1, 1, 1, 1, 1, 1)
+                local okR, rested = pcall(_G.GetXPExhaustion)
+                rested = okR and ns.Num(rested)
+                if rested and rested > 0 then
+                    tip:AddDoubleLine("Rested", string.format("%d (%.1f%%)", rested, rested / maxXP * 100),
+                        0.4, 0.6, 1, 0.4, 0.6, 1)
+                end
+            end
+        end,
         build = function(size)
             local okX, xp = pcall(_G.UnitXP, "player")
             local okM, maxXP = pcall(_G.UnitXPMax, "player")
@@ -717,6 +985,14 @@ local ITEMS = {
     {
         -- Realm or local time, 24- or 12-hour, by the two clock settings.
         key = "clock", setting = "osdClock", label = "Clock", ticks = true,
+        click = function() ns.OpenAlarm() end,
+        tooltip = function(tip)
+            tip:AddLine("Time", 1, 0.82, 0)
+            local here, realm = FormatTime(TimeNow(false)), FormatTime(TimeNow(true))
+            if here then tip:AddDoubleLine("Local", here, 1, 1, 1, 1, 1, 1) end
+            if realm then tip:AddDoubleLine("Realm", realm, 1, 1, 1, 1, 1, 1) end
+            Hint(tip, "Click to open the clock.")
+        end,
         sample = function(size)
             return IconOnly("Interface\\ICONS\\INV_Misc_PocketWatch_01", size, true)
                 .. " " .. (ns.Get("osdClock24") and "88:88" or "88:88 PM")
@@ -754,6 +1030,23 @@ local ITEMS = {
         -- The zone, and the subzone when you are in one: "Elwynn Forest:
         -- Goldshire".
         key = "zone", setting = "osdZone", label = "Zone name",
+        click = OpenMap,
+        tooltip = function(tip)
+            local okZ, zone = pcall(_G.GetZoneText)
+            tip:AddLine(okZ and ns.Text(zone) or "Zone", 1, 0.82, 0)
+            local okS, sub = pcall(_G.GetSubZoneText)
+            sub = okS and ns.Text(sub)
+            if sub and sub ~= "" then tip:AddLine(sub, 1, 1, 1) end
+            local okP, pvp = pcall(_G.GetZonePVPInfo)
+            pvp = okP and ns.Text(pvp)
+            local kinds = { sanctuary = "Sanctuary", friendly = "Friendly territory",
+                            hostile = "Hostile territory", contested = "Contested territory",
+                            combat = "Combat zone", arena = "Arena" }
+            if pvp and kinds[pvp] then tip:AddLine(kinds[pvp], 0.7, 0.7, 0.7) end
+            local x, y = PlayerCoords()
+            if x then tip:AddLine(string.format("%.1f, %.1f", x, y), 0.7, 0.7, 0.7) end
+            Hint(tip, "Click to open the map.")
+        end,
         build = function()
             local okZ, zone = pcall(_G.GetZoneText)
             local okS, sub = pcall(_G.GetSubZoneText)
@@ -768,6 +1061,16 @@ local ITEMS = {
         -- comfortable, yellow past half, orange past 80%, red once you are
         -- tanking it (or past 100% and about to).
         key = "threat", setting = "osdThreat", label = "My threat on target", ticks = true,
+        tooltip = function(tip)
+            local okN, name = pcall(_G.UnitName, "target")
+            tip:AddLine("Threat on " .. (okN and ns.Text(name) or "target"), 1, 0.82, 0)
+            local detailed = _G.UnitDetailedThreatSituation
+            if type(detailed) == "function" then
+                local ok, tanking, _, pct = pcall(detailed, "player", "target")
+                if ok and tanking then tip:AddLine("You are tanking it.", 1, 0.3, 0.3) end
+                if ok and ns.Num(pct) then tip:AddLine(string.format("%d%% of the aggro threshold", ns.Num(pct)), 1, 1, 1) end
+            end
+        end,
         sample = function() return "Threat 888%" end,
         build = function()
             local detailed = _G.UnitDetailedThreatSituation
@@ -807,6 +1110,24 @@ local ITEMS = {
         -- Right-aligned in its box: the numbers change several times a
         -- second, and a right edge that stays put is what stops them wiggling.
         key = "latency", setting = "osdLatency", label = "Frame rate and latency", ticks = true,
+        click = function()
+            local before = collectgarbage("count")
+            collectgarbage("collect")
+            ns.Print(string.format("Freed %.1f MB of unused addon memory.",
+                math.max(0, before - collectgarbage("count")) / 1024))
+        end,
+        tooltip = function(tip)
+            tip:AddLine("Performance", 1, 0.82, 0)
+            local okF, fps = pcall(_G.GetFramerate)
+            if okF and ns.Num(fps) then tip:AddDoubleLine("Frame rate", string.format("%.0f fps", ns.Num(fps)), 1, 1, 1, 1, 1, 1) end
+            local okN, _, _, home, world = pcall(_G.GetNetStats)
+            if okN then
+                if ns.Num(home) then tip:AddDoubleLine("Home latency", string.format("%d ms", ns.Num(home)), 1, 1, 1, 1, 1, 1) end
+                if ns.Num(world) then tip:AddDoubleLine("World latency", string.format("%d ms", ns.Num(world)), 1, 1, 1, 1, 1, 1) end
+            end
+            MemoryLines(tip)
+            Hint(tip, "Click to free unused addon memory.")
+        end,
         justify = "RIGHT",
         sample = function() return "888 fps  8888 ms" end,
         build = function()
@@ -873,6 +1194,29 @@ local ITEMS = {
         -- Moving, how fast you are going; standing still, how fast you would
         -- run, dimmed. 100% is a normal run.
         key = "speed", setting = "osdSpeed", label = "Movement speed", ticks = true,
+        tooltip = function(tip)
+            tip:AddLine("Movement speed", 1, 0.82, 0)
+            if type(_G.GetUnitSpeed) == "function" then
+                local ok, current, run, flight, swim = pcall(_G.GetUnitSpeed, "player")
+                local function Pct(v) return string.format("%d%%", math.floor((ns.Num(v) or 0) / BASE_SPEED * 100 + 0.5)) end
+                if ok then
+                    tip:AddDoubleLine("Now", Pct(current), 1, 1, 1, 1, 1, 1)
+                    tip:AddDoubleLine("Running", Pct(run), 1, 1, 1, 1, 1, 1)
+                    if ns.Num(swim) then tip:AddDoubleLine("Swimming", Pct(swim), 1, 1, 1, 1, 1, 1) end
+                end
+            end
+            local causes = SpeedCauses()
+            tip:AddLine(" ")
+            if #causes == 0 then
+                tip:AddLine("Nothing is changing your speed: 100% is a normal run.", 0.7, 0.7, 0.7, true)
+            else
+                tip:AddLine("Changing it:", 1, 0.82, 0)
+                for _, cause in ipairs(causes) do
+                    tip:AddDoubleLine("  " .. cause[1], cause[2], cause[3], cause[4], cause[5], 0.8, 0.8, 0.8)
+                end
+            end
+            Hint(tip, "Walking backward is always slower.")
+        end,
         justify = "RIGHT",
         sample = function(size)
             return IconOnly("Interface\\ICONS\\Ability_Rogue_Sprint", size, true) .. " 888%"
@@ -894,6 +1238,7 @@ local ITEMS = {
         -- A hunter's pet: its name, how happy it is, and its health. Nothing
         -- without a pet out, or on any other class.
         key = "pet", setting = "osdPet", label = "Hunter pet", ticks = true,
+        click = function() OpenCharacter("PetPaperDollFrame") end,
         tooltip = function(tip)
             local okN, name = pcall(_G.UnitName, "pet")
             tip:AddLine(okN and ns.Text(name) or "Pet", 1, 0.82, 0)
@@ -905,6 +1250,7 @@ local ITEMS = {
                 tip:AddLine(loyalty > 0 and "Gaining loyalty" or "Losing loyalty",
                     loyalty > 0 and 0.3 or 1, loyalty > 0 and 1 or 0.2, loyalty > 0 and 0.3 or 0.2)
             end
+            Hint(tip, "Click to open the pet window.")
         end,
         build = function(size)
             if not IsHunter() then return nil end
@@ -1277,12 +1623,23 @@ end
 -- takes the mouse even while the display is locked and the rest of it lets
 -- clicks through -- it is only as big as the one item.
 local hotspots = {}
+-- For the tests, which click and hover items as a player would.
+function ns.OSDHotspot(key) return hotspots[key] end
 
 local function Hotspot(item)
     local button = hotspots[item.key]
     if not button then
         button = CreateFrame("Button", nil, frame)
         pcall(button.RegisterForClicks, button, "AnyUp")
+        pcall(button.RegisterForDrag, button, "LeftButton")
+        button:SetScript("OnDragStart", function()
+            local start = frame:GetScript("OnDragStart")
+            if start then start(frame) end
+        end)
+        button:SetScript("OnDragStop", function()
+            local stop = frame:GetScript("OnDragStop")
+            if stop then stop(frame) end
+        end)
         button:SetScript("OnClick", function(self, mouse)
             if item.click then pcall(item.click, self, mouse) end
         end)

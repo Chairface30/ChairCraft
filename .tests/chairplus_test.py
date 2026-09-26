@@ -3373,6 +3373,64 @@ rt.execute("ChairfacesCasino = nil")
 check("without the casino loaded it is simply absent", "Hold'em" not in line(rt), line(rt))
 
 
+print("\nOSD items are clickable and explain themselves")
+rt, g = fresh()
+rt.execute("""
+function InCombatLockdown() return false end
+CALLS = {}
+function ToggleAllBags() CALLS[#CALLS + 1] = "bags" end
+function ToggleWorldMap() CALLS[#CALLS + 1] = "map" end
+function ToggleCharacter(tab) CALLS[#CALLS + 1] = tab end
+function GetZoneText() return "Elwynn Forest" end
+function GetSubZoneText() return "Goldshire" end
+function GetZonePVPInfo() return "friendly" end
+function GetUnitSpeed() return 0, 7, 7, 4.72 end
+function GetFramerate() return 60 end
+function GetNetStats() return 0, 0, 40, 55 end
+MOUNTED = false
+function IsMounted() return MOUNTED end
+function GetInventoryItemDurability(slot) if slot == 1 then return 10, 100 end if slot == 5 then return 80, 100 end end
+TIP = {}
+GameTooltip = {
+    SetOwner = function() end, Show = function() end, Hide = function() end,
+    AddLine = function(self, text) TIP[#TIP + 1] = tostring(text) end,
+    AddDoubleLine = function(self, a, b) TIP[#TIP + 1] = tostring(a) .. " = " .. tostring(b) end,
+}
+BOOT()
+NS.SetMany({ osd = true, osdMoney = true, osdBags = true, osdZone = true, osdSpeed = true,
+             osdDurability = true, osdLatency = true })
+NS.RefreshOSD() DRIVER_TICK()
+function CLICK(key) local b = NS.OSDHotspot(key) b._scripts.OnClick(b, "LeftButton") end
+function HOVER(key) TIP = {} local b = NS.OSDHotspot(key) b._scripts.OnEnter(b) return table.concat(TIP, " | ") end
+""")
+def calls(rt):
+    return list((rt.eval("CALLS") or {}).values())
+rt.execute('CLICK("bags")')
+check("clicking the bags opens the bags", calls(rt)[-1:] == ["bags"], str(calls(rt)))
+rt.execute('CLICK("money")')
+check("so does clicking the money", calls(rt)[-1:] == ["bags"], str(calls(rt)))
+rt.execute('CLICK("zone")')
+check("clicking the zone opens the map", calls(rt)[-1:] == ["map"], str(calls(rt)))
+rt.execute('CLICK("durability")')
+check("clicking durability opens the character", calls(rt)[-1:] == ["PaperDollFrame"], str(calls(rt)))
+tip = rt.eval('HOVER("zone")')
+check("the zone's tooltip has the subzone and the territory",
+      "Goldshire" in tip and "Friendly territory" in tip, tip)
+tip = rt.eval('HOVER("durability")')
+check("durability lists each piece, worst first",
+      tip.index("Head = 10%") < tip.index("Chest = 80%"), tip)
+tip = rt.eval('HOVER("speed")')
+check("speed's tooltip gives run and swim speed", "Running = 100%" in tip and "Swimming = 67%" in tip, tip)
+check("and says when nothing is changing it", "Nothing is changing your speed" in tip, tip)
+rt.execute("MOUNTED = true")
+tip = rt.eval('HOVER("speed")')
+check("mounted, it says so", "Mounted" in tip, tip)
+tip = rt.eval('HOVER("latency")')
+check("latency's tooltip offers to free memory", "free unused addon memory" in tip, tip)
+check("an item can still drag an unlocked display",
+      rt.eval('NS.OSDHotspot("bags")._scripts.OnDragStart ~= nil') is True)
+
+
 print("")
 print("Hiding the XP bar and status bar 2")
 rt, g = fresh()
