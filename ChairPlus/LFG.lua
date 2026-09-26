@@ -63,7 +63,45 @@ local function Upper(text)
     return text and text:upper() or nil
 end
 
--- One listing's player: { members, class, level, roles = { TANK = true, ... } }.
+-- The filter's name for a role, from any of the spellings a listing uses --
+-- "tank", "TANK", "healer", "HEAL", "dps", "DAMAGER" -- or nil for "none".
+-- The Classic Era finder reports a player's roles as lfgRoles = { tank = true,
+-- healer = false, dps = true }, and "DPS" is not "DAMAGER": reading the key
+-- as written matched nothing, so the role filter let everyone through.
+local ROLE_NAMES = {
+    TANK = "TANK", HEALER = "HEALER", HEAL = "HEALER", HEALS = "HEALER",
+    DAMAGER = "DAMAGER", DAMAGE = "DAMAGER", DPS = "DAMAGER", DD = "DAMAGER",
+}
+local function RoleName(text)
+    text = Upper(text)
+    return text and ROLE_NAMES[text] or nil
+end
+
+-- Roles out of a table shaped either way: { tank = true, dps = false } or
+-- { "TANK", "DAMAGER" }.
+local function AddRoles(into, t)
+    if type(t) ~= "table" then return end
+    for key, value in pairs(t) do
+        if value == true then
+            local role = RoleName(key)
+            if role then into[role] = true end
+        elseif type(value) == "string" then
+            local role = RoleName(value)
+            if role then into[role] = true end
+        end
+    end
+end
+
+-- What your application to a listing has come to, for the ones the finder
+-- grays out: declined (for any reason), timed out, failed, or an invite you
+-- turned down. A listing still open to you is none of these.
+local GRAYED_STATUS = {
+    declined = true, declined_full = true, declined_delisted = true,
+    timedout = true, failed = true, invitedeclined = true, invitedeclined_full = true,
+}
+
+-- One listing's player: { members, class, level, roles = { TANK = true, ... },
+-- grayed = why the finder grays it out, or nil }.
 function ns.LFGPlayer(resultID)
     local list = List()
     if not list or not resultID then return nil end
@@ -71,6 +109,7 @@ function ns.LFGPlayer(resultID)
     local out = { roles = {} }
     if type(info) == "table" then
         out.members = ns.Num(info.numMembers)
+        if info.isDelisted then out.grayed = "delisted" end
         out.class = Upper(info.leaderClassFilename or info.classFilename)
         out.level = ns.Num(info.leaderLevel or info.level)
     end
@@ -82,23 +121,33 @@ function ns.LFGPlayer(resultID)
         out.level = ns.Num(player.level) or out.level
         if player.isTank then out.roles.TANK = true end
         if player.isHealer then out.roles.HEALER = true end
-        if player.isDamage or player.isDPS then out.roles.DAMAGER = true end
-        local assigned = Upper(player.assignedRole or player.role)
+        if player.isDamage or player.isDPS or player.isDamager then out.roles.DAMAGER = true end
+        -- "NONE" and the like are not roles, and counting one would leave a
+        -- player matching nothing ticked.
+        local assigned = RoleName(player.assignedRole or player.role)
         if assigned then out.roles[assigned] = true end
-        if type(player.roles) == "table" then
-            for key, value in pairs(player.roles) do
-                if value == true then out.roles[Upper(key) or key] = true end
-                if type(value) == "string" then out.roles[Upper(value)] = true end
-            end
+        AddRoles(out.roles, player.lfgRoles)
+        AddRoles(out.roles, player.roles)
+        -- Any other table on the listing that reads as roles.
+        if not next(out.roles) then
+            for _, value in pairs(player) do AddRoles(out.roles, value) end
         end
+    end
+
+    -- The other reason a listing is grayed: you applied and it went nowhere.
+    if not out.grayed then
+        local _, status = Call(list.GetApplicationInfo, resultID)
+        status = ns.Text(status)
+        if status and GRAYED_STATUS[status] then out.grayed = status end
     end
 
     -- A solo listing's member counts are its own roles.
     if not next(out.roles) then
         local counts = Call(list.GetSearchResultMemberCounts, resultID)
         if type(counts) == "table" then
-            for _, role in ipairs({ "TANK", "HEALER", "DAMAGER" }) do
-                if (ns.Num(counts[role]) or 0) > 0 then out.roles[role] = true end
+            for key, count in pairs(counts) do
+                local role = RoleName(key)
+                if role and (ns.Num(count) or 0) > 0 then out.roles[role] = true end
             end
         end
     end
@@ -148,6 +197,9 @@ function ns.LFGKeep(resultID)
     local f = Filters()
     local p = ns.LFGPlayer(resultID)
     if not p then return true end
+    -- Grayed out is always hidden, groups and players alike: there is
+    -- nothing to be done with one but look at it.
+    if p.grayed then return false end
     local solo = (p.members or 1) <= 1
     if not solo then
         -- Groups are not what these filters read; they stay unless hidden.
@@ -535,7 +587,16 @@ function ns.LFGProbeListing()
                 end
                 local parts = {}
                 for k, v in pairs(t) do
-                    if type(v) ~= "table" and type(v) ~= "function" then
+                    if type(v) == "table" then
+                        local inner = {}
+                        for ik, iv in pairs(v) do
+                            if type(iv) ~= "table" and type(iv) ~= "function" then
+                                inner[#inner + 1] = tostring(ik) .. "=" .. (ns.Text(iv) or "?")
+                            end
+                        end
+                        table.sort(inner)
+                        parts[#parts + 1] = tostring(k) .. "={" .. table.concat(inner, ",") .. "}"
+                    elseif type(v) ~= "function" then
                         parts[#parts + 1] = tostring(k) .. "=" .. (ns.Text(v) or "?")
                     end
                 end
@@ -546,8 +607,8 @@ function ns.LFGProbeListing()
             dump("its player info", Call(list.GetSearchResultPlayerInfo, id, 1))
             dump("its member counts", Call(list.GetSearchResultMemberCounts, id))
             local p = ns.LFGPlayer(id)
-            print(string.format("  read as: class=%s level=%s roles=%s",
-                tostring(p.class), tostring(p.level),
+            print(string.format("  read as: class=%s level=%s grayed=%s roles=%s",
+                tostring(p.class), tostring(p.level), tostring(p.grayed),
                 (function() local r = {} for k in pairs(p.roles) do r[#r + 1] = k end return table.concat(r, "/") end)()))
             return
         end

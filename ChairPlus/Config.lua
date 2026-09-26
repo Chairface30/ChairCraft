@@ -39,16 +39,19 @@ ns.defaults = {
     osdBagsTotal        = false,     -- bag space as free/total rather than free
     osdSession          = false,     -- time since logging in
     osdSessionGold      = false,     -- gold made or lost since logging in
+    osdGPH              = false,     -- gold per hour, on its own counter
     osdSpeed            = false,     -- movement speed, 100% a normal run
     osdPet              = false,     -- a hunter's pet: happiness and health
     osdMail             = false,     -- a mail icon while there is unread mail
-    osdSocial           = false,     -- friends and guildmates online
+    osdSocial           = false,     -- friends online
+    osdGuild            = false,     -- guildmates online
     osdCasino           = false,     -- a Chairface's Casino table in your group
     osdBrokers          = "",        -- other addons' feeds that are on, by key
     hideStatusBars      = false,     -- hide the game's XP bar and status bar 2
+    osdHideMinimap      = false,     -- hide minimap buttons of addons on the display
     -- Display order, left to right. Items missing from it (a new one, or a
     -- hand-edited list) are added at the end in their default place.
-    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,threat,clock,alarm,tracker,latency,session,sessiongold,speed,pet,mail,social,casino",
+    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,threat,clock,alarm,tracker,latency,session,gph,sessiongold,speed,pet,mail,social,guild,casino",
     osdLocked           = true,     -- click-through until "/chair plus osd unlock"
     osdFontSize         = 14,
     osdScale            = 1.0,

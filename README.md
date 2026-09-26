@@ -12,7 +12,9 @@ Everything ships **switched off**. Nothing changes about your game until you tur
 
 ## The on-screen display (OSD)
 
-One slim, draggable line of information. Each item has its own switch. Drag items into any order, add up to 30 dividers between them, and set the text size, scale and background.
+One slim, draggable line of information. Each item has its own switch. Add up to 30 dividers between items, and set the text size, scale and background.
+
+To change the order, drag items in the list on the menu's OSD page, or drag them left and right on the display itself while that page is open. A gold line shows where an item will land.
 
 Nearly every item is interactive. **Hover** for detail and **click** to act:
 
@@ -33,16 +35,20 @@ Nearly every item is interactive. **Hover** for detail and **click** to act:
 | ChairTracker | Your reputation window, dropped down on hover | | |
 | Frame rate and latency | fps and ms, colored when high | Home and world latency, the ten heaviest addons by memory | Frees unused addon memory |
 | Session time | Time since you logged in (survives /reload) | When you logged in | |
+| Gold per hour | Your rate, green up and red down, on its own counter | Time counted and gold made | Restarts the count |
 | Gold this session | Green when up, red when down | Gold per hour | Starts the count again |
-| Movement speed | Your speed now, 100% being a normal run | Run and swim speed, and **everything changing it**: buffs, debuffs, gear, mounted, swimming, stealth | |
+| Movement speed | Your speed now, 100% being a normal run | Run and swim speed | |
 | Hunter pet | Happiness face, name, health | Damage and loyalty | Opens the pet window |
 | New mail | A mail icon while mail is waiting | Who sent it | |
-| Friends and guild online | Online counts, Battle.net included | Who is online, and where | Opens the friends list |
+| Friends online | How many friends are online, Battle.net included | Who is online, and where | Opens the friends list |
+| Guild online | How many guildmates are online (only in a guild) | Your guild, who is online, and where | Opens the guild window |
 | Casino table | The running Chairface's Casino game and its host | | Opens the casino lobby |
 
 ### Other addons on the OSD
 
 Chaircraft includes **LibDataBroker**, the standard that Titan Panel-style bars use. Any addon that publishes a data feed or a launcher appears at the end of the OSD item list, ready to tick on. Examples are BugSack's error count, Nova Instance Tracker's lockouts, and the Questie and AtlasLoot buttons. Their text updates live, and clicks and tooltips go straight to the addon.
+
+Tick **Hide addons' minimap buttons** and an addon you put on the display loses its minimap button, so there is one way in, not two. Take the addon off the display, or untick the setting, and the button comes back. This works with any addon that uses LibDBIcon for its minimap button. Chairface's Casino always keeps its minimap button, since its OSD item only shows while a table is up.
 
 Chaircraft also publishes its own launcher, so other bar addons can show a chair button that opens the menu.
 

@@ -2706,6 +2706,18 @@ check("race is a load condition", keys["race"] is True)
 check("and class is still there", keys["class"] is True)
 check("the race list is populated", (L.eval("#ns.Load:RaceList()") or 0) > 0,
       str(L.eval("#ns.Load:RaceList()")))
+L.execute("""
+RACE_INFO = {}
+for id = 1, 100 do RACE_INFO[id] = { clientFileString = "Race" .. id, raceName = "Race " .. id } end
+RACE_INFO[5] = { clientFileString = "Scourge", raceName = "Undead" }
+RACE_INFO[95] = { clientFileString = "HighOrderSkyborne", raceName = "High Order Skyborne" }
+RACE_INFO[96] = { clientFileString = "WindshaperSkyborne", raceName = "Windshaper Skyborne" }
+C_CreatureInfo = { GetRaceInfo = function(id) return RACE_INFO[id] end }
+""")
+races = [L.eval("ns.Load:RaceList()[%d].text" % i) for i in range(1, (L.eval("#ns.Load:RaceList()") or 0) + 1)]
+check("only the playable races are offered, Skyborne included, from a client that knows a hundred",
+      len(races) == 10 and "Undead" in races and "High Order Skyborne" in races
+      and "Windshaper Skyborne" in races and "Race 50" not in races, str(races))
 
 
 # The stack number was drawn correctly and invisibly: a font string on the

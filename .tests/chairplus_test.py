@@ -3146,9 +3146,51 @@ check("there is no auto refresh: a search is protected on this client",
 
 rt.execute('PRINTED = {} SlashCmdList["CHAIRPLUS"]("lfg")')
 check("/chair plus lfg shows what a player's listing holds",
-      "read as: class=PRIEST level=30 roles=HEALER" in printed_text(rt), printed_text(rt)[-300:])
+      "read as: class=PRIEST level=30 grayed=nil roles=HEALER" in printed_text(rt), printed_text(rt)[-300:])
 check("and how the last filter pass went",
       "hooked=true, results field=table, last pass read 4, kept 3" in printed_text(rt), printed_text(rt)[-600:])
+
+# The Classic Era finder's own shape: lfgRoles with lower-case keys, "dps"
+# rather than "DAMAGER", and assignedRole "NONE" for someone not in a group.
+rt, g = fresh()
+rt.execute(LFG_SETUP)
+rt.execute("""
+LISTINGS = {
+    [1] = { numMembers = 1, player = { classFilename = "PRIEST", level = 30, assignedRole = "NONE",
+            lfgRoles = { tank = false, healer = true, dps = false } } },
+    [2] = { numMembers = 1, player = { classFilename = "WARRIOR", level = 42, assignedRole = "NONE",
+            lfgRoles = { tank = true, healer = false, dps = true } } },
+    [3] = { numMembers = 1, player = { classFilename = "MAGE", level = 18, assignedRole = "NONE",
+            lfgRoles = { tank = false, healer = false, dps = true } } },
+}
+SEARCH = { 1, 2, 3 }
+BOOT() NS.Set('lfgFilters', true)
+""")
+rt.execute("NS.SetMany({ lfgRoles = 'TANK' }) LFGBrowseFrame:UpdateResultList()")
+check("lfgRoles is read: tank", rt.eval("SHOWN_IDS()") == "2", rt.eval("SHOWN_IDS()"))
+rt.execute("NS.SetMany({ lfgRoles = 'DAMAGER' }) NS.LFGRefilter()")
+check("and dps counts as damage", rt.eval("SHOWN_IDS()") == "2,3", rt.eval("SHOWN_IDS()"))
+rt.execute("NS.SetMany({ lfgRoles = 'HEALER' }) NS.LFGRefilter()")
+check("and an assigned role of NONE is not a role that hides everyone",
+      rt.eval("SHOWN_IDS()") == "1", rt.eval("SHOWN_IDS()"))
+
+# Grayed out: delisted, or an application that went nowhere.
+rt, g = fresh()
+rt.execute(LFG_SETUP)
+rt.execute("""
+LISTINGS[5] = { numMembers = 3, player = { classFilename = "MAGE", level = 50, isDamage = true } }
+LISTINGS[1].delisted = true
+APPS = { [3] = "declined", [2] = "applied" }
+SEARCH = { 1, 2, 3, 4, 5 }
+C_LFGList.GetSearchResultInfo = function(id)
+    local l = LISTINGS[id] return l and { numMembers = l.numMembers, isDelisted = l.delisted } end
+C_LFGList.GetApplicationInfo = function(id) return id, APPS[id] or "none", false end
+LISTINGS[5].delisted = true
+BOOT() NS.SetMany({ lfgFilters = true, lfgPlayersOnly = false })
+LFGBrowseFrame:UpdateResultList()
+""")
+check("delisted players and groups and declined applications are always hidden; a pending one stays",
+      rt.eval("SHOWN_IDS()") == "2,4", rt.eval("SHOWN_IDS()"))
 
 print()
 print("\nOSD session, speed, pet, mail and social")
@@ -3180,7 +3222,7 @@ BOOT()
 SessionEvents = function() for _, f in ipairs(FRAMES) do local s = rawget(f, "_scripts") if s and s.OnEvent then pcall(s.OnEvent, f, "PLAYER_ENTERING_WORLD", true, false) end end end
 SessionEvents()
 NS.SetMany({ osd = true, osdMoney = false, osdBags = false, osdSession = true, osdSessionGold = true,
-             osdSpeed = true, osdPet = true, osdMail = true, osdSocial = true })
+             osdSpeed = true, osdPet = true, osdMail = true, osdSocial = true, osdGuild = true })
 """)
 def line(rt):
     rt.execute("NS.RefreshOSD() DRIVER_TICK()")
@@ -3192,6 +3234,20 @@ check("gold this session shows what was made, in green",
       "|cff4cff4c+|r" in text and "UI-GoldIcon:14:14:0:0|t 1" in text and "UI-CopperIcon:14:14:0:0|t 45" in text, text)
 rt.execute("MONEY = 40000")
 check("and a loss in red", "|cffff3333-|r" in line(rt), line(rt))
+rt.execute("NS.Set('osdGPH', true)")
+text = line(rt)
+check("gold per hour: 7,000 copper lost over a bit more than an hour",
+      "|cffff3333-|r" in text and "/hr" in text, text)
+rt.execute("NS.ResetGoldPerHour()")
+check("clicking it restarts the count, and the first minute shows no rate",
+      "-- /hr" in line(rt), line(rt))
+rt.execute("CLOCK_NOW = CLOCK_NOW + 1800 MONEY = MONEY + 5000")
+check("half an hour and 50 silver later, it reads 1 gold an hour",
+      "|cff4cff4c+|r" in line(rt) and "UI-GoldIcon:14:14:0:0|t 1 " in line(rt), line(rt))
+check("and restarting it left the session's own total alone",
+      "|cffff3333-|r" in line(rt).split("/hr")[1]
+      and "UI-SilverIcon:14:14:0:0|t 50" in line(rt).split("/hr")[1], line(rt))
+rt.execute("NS.Set('osdGPH', false)")
 rt.execute("NS.ResetSessionGold()")
 check("clicking it starts the count again", "UI-CopperIcon:14:14:0:0|t 0" in line(rt), line(rt))
 check("standing still, the run speed shows dimmed", "|cff999999 100%|r" in line(rt), line(rt))
@@ -3204,8 +3260,26 @@ check("and low health in red", "|cffff3333 30%|r" in text, text)
 check("no mail, no mail icon", "INV_Letter_15" not in text, text)
 rt.execute("MAIL = true")
 check("new mail shows the icon", "INV_Letter_15" in line(rt), line(rt))
-check("friends online count Battle.net ones too, and the guild's",
-      "Friends 3  Guild 2" in line(rt), line(rt))
+text = line(rt)
+check("friends online count Battle.net ones too", " Friends 3" in text, text)
+check("and the guild is an item of its own", " Guild 2" in text and "Friends 3  Guild" not in text, text)
+rt.execute("""
+OPENED = {}
+function ToggleFriendsFrame(tab) OPENED[#OPENED + 1] = "friends " .. tostring(tab) end
+function ToggleGuildFrame() OPENED[#OPENED + 1] = "guild" end
+local f = NS.OSDHotspot("social") f._scripts.OnClick(f, "LeftButton")
+local g = NS.OSDHotspot("guild") g._scripts.OnClick(g, "LeftButton")
+ToggleGuildFrame = nil
+g._scripts.OnClick(g, "LeftButton")
+""")
+opened = list(rt.eval("OPENED").values())
+check("friends opens the friends list, guild the guild window",
+      opened[:2] == ["friends 1", "guild"], str(opened))
+check("and on a client without a guild window, the friends window's guild tab",
+      opened[2:] == ["friends 3"], str(opened))
+rt.execute("function IsInGuild() return false end")
+check("outside a guild, no guild item", " Guild " not in line(rt), line(rt))
+rt.execute("function IsInGuild() return true end")
 rt.execute("function UnitClass() return 'Mage', 'MAGE' end")
 check("not a hunter, no pet item", "Fang" not in line(rt), line(rt))
 rt.execute("CLOCK_NOW = CLOCK_NOW + 60 SessionEvents()")
@@ -3265,8 +3339,37 @@ check("the OSD page has a row for each feed",
       and rt.eval('NS.osdItemRows["ldb:LateAddon"] ~= nil') is True)
 check("ticked on the page as they are on the line",
       rt.eval('NS.osdItemRows["ldb:Early%20Bird"].check:GetChecked()') is True)
+rt.execute("""
+DBI = LibStub:NewLibrary("LibDBIcon-1.0", 1)
+DBI.objects = {}
+BUTTON_EARLY = CreateFrame("Button", "LibDBIcon10_EarlyBird", UIParent) BUTTON_EARLY:Show()
+BUTTON_EARLY.dataObject = EARLY
+DBI.objects["EarlyBirdIcon"] = BUTTON_EARLY
+BUTTON_LATE = CreateFrame("Button", "LibDBIcon10_LateAddon", UIParent) BUTTON_LATE:Show()
+BUTTON_LATE.dataObject = LATE
+DBI.objects["LateAddon"] = BUTTON_LATE
+ChairfacesCasinoMinimapButton = CreateFrame("Button", "ChairfacesCasinoMinimapButton", UIParent)
+ChairfacesCasinoMinimapButton:Show()
+NS.ApplyMinimapHiding()
+""")
+check("off by default, minimap buttons are left alone",
+      rt.eval("BUTTON_EARLY:IsShown() and BUTTON_LATE:IsShown()") is True)
+rt.execute("NS.Set('osdHideMinimap', true)")
+check("on, an addon on the display loses its minimap button, matched by its data object",
+      rt.eval("BUTTON_EARLY:IsShown()") is False and rt.eval("BUTTON_LATE:IsShown()") is False)
+rt.execute("NS.Set('osdCasino', true)")
+check("the casino's is never hidden, even with its item on the display",
+      rt.eval("ChairfacesCasinoMinimapButton:IsShown()") is True)
+rt.execute("NS.SetOSDItemOn(NS.OSDBrokers()[2], false)")
+check("taking an addon off the display brings its button back",
+      rt.eval("BUTTON_LATE:IsShown()") is True and rt.eval("BUTTON_EARLY:IsShown()") is False)
+rt.execute("NS.Set('osdHideMinimap', false)")
+check("and unticking the setting brings them all back",
+      rt.eval("BUTTON_EARLY:IsShown()") is True)
+rt.execute("BUTTON_LATE:Hide() NS.Set('osdHideMinimap', true) NS.Set('osdHideMinimap', false)")
+check("a button its addon had hidden stays hidden", rt.eval("BUTTON_LATE:IsShown()") is False)
 rt.execute("NS.SetOSDItemOn(NS.OSDBrokers()[1], false)")
-check("and unticking one drops it", "errors" not in line(rt) and g.NS.Get("osdBrokers") == "ldb:LateAddon", line(rt))
+check("and unticking one drops it", "errors" not in line(rt) and g.NS.Get("osdBrokers") == "", line(rt))
 
 
 print("\nInvite on keyword")
@@ -3421,14 +3524,54 @@ check("durability lists each piece, worst first",
       tip.index("Head = 10%") < tip.index("Chest = 80%"), tip)
 tip = rt.eval('HOVER("speed")')
 check("speed's tooltip gives run and swim speed", "Running = 100%" in tip and "Swimming = 67%" in tip, tip)
-check("and says when nothing is changing it", "Nothing is changing your speed" in tip, tip)
-rt.execute("MOUNTED = true")
-tip = rt.eval('HOVER("speed")')
-check("mounted, it says so", "Mounted" in tip, tip)
+check("and no longer tries to name what is changing it, or the speed right now",
+      "Nothing is changing" not in tip and "Now =" not in tip, tip)
 tip = rt.eval('HOVER("latency")')
 check("latency's tooltip offers to free memory", "free unused addon memory" in tip, tip)
 check("an item can still drag an unlocked display",
       rt.eval('NS.OSDHotspot("bags")._scripts.OnDragStart ~= nil') is True)
+
+
+print("\nArranging items on the display itself")
+rt, g = fresh()
+rt.execute("""
+function InCombatLockdown() return false end
+function GetZoneText() return "Elwynn Forest" end
+function GetSubZoneText() return "" end
+BOOT()
+NS.SetMany({ osd = true, osdMoney = true, osdBags = true, osdZone = true,
+             osdOrder = "money,bags,zone" })
+NS.RefreshOSD() DRIVER_TICK()
+rawset(ChairPlusOSD, "GetLeft", function() return 100 end)
+rawset(ChairPlusOSD, "GetEffectiveScale", function() return 1 end)
+function ONLINE() local keys = {} for _, spot in ipairs(NS.OSDOrder()) do if spot.key == "money" or spot.key == "bags" or spot.key == "zone" or spot.divider then keys[#keys + 1] = spot.key end end return table.concat(keys, ",") end
+function DRAG_TO(key, cursorX)
+    GetCursorPosition = function() return 100 + cursorX, 0 end
+    local b = NS.OSDHotspot(key)
+    b._scripts.OnDragStart(b)
+    if b._scripts.OnUpdate then b._scripts.OnUpdate(b) end
+    b._scripts.OnDragStop(b)
+    NS.RefreshOSD() DRIVER_TICK()
+end
+""")
+check("with the menu shut, the display is not being arranged", rt.eval("NS.OSDArranging()") is False)
+rt.execute("NS.OpenPanel('osd') NS.RefreshOSD() DRIVER_TICK()")
+check("open on the OSD page, it is", rt.eval("NS.OSDArranging()") is True)
+rt.execute("DRAG_TO('zone', 0)")
+check("dragging the zone to the far left puts it first", rt.eval("ONLINE()").startswith("zone,"), rt.eval("ONLINE()"))
+rt.execute("DRAG_TO('zone', 5000)")
+check("and to the far right puts it last", rt.eval("ONLINE()").endswith(",zone"), rt.eval("ONLINE()"))
+rt.execute("NS.AddOSDDivider() NS.OpenPanel('osd') NS.RefreshOSD() DRIVER_TICK()")
+check("a divider takes the mouse while arranging", rt.eval('NS.OSDHotspot("|1") ~= nil') is True)
+rt.execute("DRAG_TO('|1', 0)")
+check("and can be dragged too; alone at the front it is not drawn",
+      rt.eval("NS.Get('osdOrder')").startswith("|,"), rt.eval("NS.Get('osdOrder')"))
+rt.execute("NS.OpenPanel('plus')")
+check("another page of the menu ends arranging", rt.eval("NS.OSDArranging()") is False)
+rt.execute("NS.OpenPanel('osd') ChairPlusPanel:Hide() ChairPlusPanel._scripts.OnHide(ChairPlusPanel)")
+check("and so does closing the menu", rt.eval("NS.OSDArranging()") is False)
+rt.execute("NS.RefreshOSD() DRIVER_TICK()")
+check("a divider's drag target goes away with it", rt.eval('NS.OSDHotspot("|1"):IsShown()') is False)
 
 
 print("")

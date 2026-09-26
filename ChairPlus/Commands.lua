@@ -34,6 +34,8 @@ local ROWS = {
                  { value = "both", text = "both" } } },
     -- Not under "osd": it works whether or not the display is on.
     { key = "hideStatusBars",   label = "Hide game XP bars", tab = "osd" },
+    { key = "osdHideMinimap",   label = "Hide addons' minimap buttons", tab = "osd", sub = "osd",
+      tip = "An addon put on the display loses its minimap button, so there is one way in, not two. Take it off the display, or untick this, and the button comes back." },
     { header = "Clock and alarm", tab = "osd" },
     { key = "osdClockServer",   label = "Server time",   tab = "osd", sub = "osd" },
     { key = "osdClock24",       label = "24-hour",       tab = "osd", sub = "osd" },
@@ -361,6 +363,11 @@ local function RefreshPanel()
             entry.label:SetTextColor(parentOn and 1 or 0.5, parentOn and 0.82 or 0.5,
                                      parentOn and 0 or 0.5)
         end
+    end
+
+    -- The display can be arranged by dragging its items while this page is up.
+    if ns.SetOSDArranging then
+        ns.SetOSDArranging(panel:IsShown() and currentTab == "osd")
     end
 
     -- The OSD items, laid out in their saved order.
@@ -711,6 +718,23 @@ local function BuildPanel()
                 ns.Set(key, self:GetChecked() and true or false)
                 RefreshPanel()
             end)
+
+            -- A row with more to say than fits in its label says it on hover.
+            if row.tip then
+                check:SetScript("OnEnter", function(self)
+                    local tip = _G.GameTooltip
+                    if not tip then return end
+                    pcall(function()
+                        tip:SetOwner(self, "ANCHOR_RIGHT")
+                        tip:AddLine(row.label, 1, 0.82, 0)
+                        tip:AddLine(row.tip, 1, 1, 1, true)
+                        tip:Show()
+                    end)
+                end)
+                check:SetScript("OnLeave", function()
+                    if _G.GameTooltip then pcall(_G.GameTooltip.Hide, _G.GameTooltip) end
+                end)
+            end
 
             -- A color swatch after the label, for a row that switches a color
             -- on: clicking it opens the game's color picker.
@@ -1145,6 +1169,7 @@ local function BuildPanel()
     panel:SetScript("OnHide", function()
         if hosted then ns.ClosePage() end
         if ns.threatPreview and ns.SetThreatPreview then ns.SetThreatPreview(false) end
+        if ns.SetOSDArranging then ns.SetOSDArranging(false) end
     end)
 
     -- Escape closes the window, the same as any other panel. While a page is
@@ -1175,12 +1200,19 @@ local PAGES = { plus = true, osd = true, threat = true, arrow = true }
 
 -- Open the menu, optionally on a named page. This is what "/chair" and every
 -- nav button go through.
+-- Redraw the menu if it is up: the display's own drag reorders the items the
+-- OSD page lists.
+function ns.RefreshMenu()
+    if panel and panel:IsShown() then RefreshPanel() end
+end
+
 function ns.OpenPanel(tab)
     BuildPanel()
     if hosted and PAGES[tab] then ns.ClosePage() end
     if PAGES[tab] then currentTab = tab end
     RefreshPanel()
     panel:Show()
+    if ns.SetOSDArranging then ns.SetOSDArranging(currentTab == "osd") end
     return true
 end
 

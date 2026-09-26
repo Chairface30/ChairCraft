@@ -307,8 +307,12 @@ local CLASS_TOKENS = {
     "ROGUE", "SHAMAN", "WARLOCK", "WARRIOR",
 }
 
--- The classic roster. Only a fallback: the client's own race table is asked
--- first, so a race this build has that the list below does not still appears.
+-- The races a player can be here: the classic eight and the two Skyborne,
+-- High Order (Alliance) and Windshaper (Horde). The client's race table holds
+-- every race the engine knows, playable or not, so it is asked about these
+-- IDs only; the names and tokens still come from it, so they read as the
+-- client writes them. The tokens are the fallback when it will not answer.
+local PLAYABLE_RACE_IDS = { 1, 2, 3, 4, 5, 6, 7, 8, 95, 96 }
 local RACE_TOKENS = {
     "Human", "Dwarf", "NightElf", "Gnome",
     "Orc", "Scourge", "Tauren", "Troll",
@@ -319,9 +323,7 @@ function Load:RaceList()
 
     local info = _G.C_CreatureInfo
     if info and type(info.GetRaceInfo) == "function" then
-        -- Walked by id because there is no "list them all" call. The range is
-        -- generous and the gaps simply do not answer.
-        for id = 1, 90 do
+        for _, id in ipairs(PLAYABLE_RACE_IDS) do
             local ok, data = pcall(info.GetRaceInfo, id)
             if ok and type(data) == "table" then
                 local token = ns.SafeText(data.clientFileString)
@@ -335,6 +337,8 @@ function Load:RaceList()
     end
 
     if #list == 0 then
+        -- Without the race table the Skyborne tokens are not known, so this
+        -- fallback is the classic eight.
         for _, token in ipairs(RACE_TOKENS) do
             list[#list + 1] = { value = token, text = token }
         end
