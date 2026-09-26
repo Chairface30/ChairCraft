@@ -45,12 +45,22 @@ ChairAuras\Core.lua
 ChairAuras\Presets.lua
 ChairAuras\Database.lua
 ChairAuras\Load.lua
+ChairAuras\AuraEnvironment.lua
 ChairAuras\Engine.lua
+ChairAuras\CustomTrigger.lua
+ChairAuras\Triggers.lua
+ChairAuras\Text.lua
+ChairAuras\Conditions.lua
+ChairAuras\Actions.lua
 ChairAuras\Display.lua
+ChairAuras\Regions.lua
+ChairAuras\SubRegions.lua
+ChairAuras\Animations.lua
 ChairAuras\Icons.lua
 ChairAuras\Share.lua
 ChairAuras\Sounds.lua
 ChairAuras\Config.lua
+ChairAuras\Probe.lua
 ChairAuras\Commands.lua
 
 # ChairSnack (was SnapSnack). Order unchanged from the standalone addon.

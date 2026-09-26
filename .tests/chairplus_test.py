@@ -1229,6 +1229,28 @@ check("and each destination's key and result",
       "Stormwind > Ironforge -> 150s" in probe, probe[-400:])
 check("with a total", "found," in probe, probe[-200:])
 
+# This client will not say which stops a flight passes through (2026-09-26:
+# every time flown was saved under its two ends). A multi-hop route in the
+# table is then found by its ends, over flight points you know.
+MULTI_ONLY = """
+NS.flightData = { Alliance = {
+    ["Stormwind > Menethil > Ironforge"] = 210,
+    ["Stormwind > Thelsamar > Ironforge"] = 260,
+} }
+function GetNumRoutes() error("no") end
+"""
+rt = flight(ROUTE_HARNESS + LISTED + MULTI_ONLY)
+check("with no path from the client, a multi-hop route is found by its ends",
+      "03:30" in tooltip(rt, 2), tooltip(rt, 2))
+rt.execute("HOOKS.TakeTaxiNode(2) ON_TAXI = true DRIVER_TICK()")
+check("and counted down from, rather than timed from zero",
+      (rt.eval("TIMER_TEXT()") or "").startswith("03:30"), str(rt.eval("TIMER_TEXT()")))
+rt = flight(ROUTE_HARNESS + LISTED + MULTI_ONLY + 'NODES[3].kind = "NONE"')
+check("a route through a flight point you have not found is not the one",
+      "04:20" in tooltip(rt, 2), tooltip(rt, 2))
+rt.execute('PRINTED = {} SlashCmdList["CHAIRPLUS"]("flight probe")')
+check("and the probe says the route was worked out", "worked out" in said(rt), said(rt)[-400:])
+
 print("")
 print("Flight countdown")
 rt = flight()
@@ -2221,6 +2243,21 @@ rt.execute('THREAT.party1 = 50 THREAT.player = 100 '
            'return u == "player", 3, p end '
            'NS.Set("threatWarn", true) NS.Set("threatWarnAt", 60) NS.RefreshThreat()')
 check("the tank is never warned", rt.eval("#ERRORS") == 0)
+# A tank who is not on top this moment -- the pull, a taunt swap -- is still
+# the tank, and is not told to ease off. The role chosen decides, not class.
+for setup, who, warned in (
+    ('function UnitGroupRolesAssigned() return "TANK" end', "given the tank role in the group", 0),
+    ('function UnitGroupRolesAssigned() return "NONE" end C_LFGList = { GetRoles = function() return { tank = true } end }',
+     "with tank chosen in the group finder", 0),
+    ('function UnitGroupRolesAssigned() return "DAMAGER" end C_LFGList = { GetRoles = function() return { tank = true } end }',
+     "assigned damage in the group, whatever the finder says", 1),
+    ('function UnitClass() return "Warrior", "WARRIOR" end function GetShapeshiftForm() return 2 end',
+     "a warrior in Defensive Stance with no tank role chosen", 1),
+):
+    rt, g = threat_rt(setup)
+    rt.execute('NS.Set("threatWarn", true) NS.Set("threatWarnAt", 60) NS.RefreshThreat() NS.RefreshThreat()')
+    check(("not warned" if warned == 0 else "warned") + " when " + who, rt.eval("#ERRORS") == warned,
+          str(rt.eval("#ERRORS")))
 
 # Resizing.
 rt, g = threat_rt()
@@ -2429,6 +2466,19 @@ rawset(FAKE, "GetHeight", function() return 520 end)
 FAKE_TITLE = CreateFrame("Frame", nil, FAKE)
 FAKE_CLOSE = CreateFrame("Button", nil, FAKE)
 FAKE.chairChrome = { FAKE_TITLE, FAKE_CLOSE }
+-- Every anchor it holds, not just the last one set.
+FAKE_POINTS = {}
+do
+    local setPoint, clear = FAKE.SetPoint, FAKE.ClearAllPoints
+    rawset(FAKE, "SetPoint", function(self, point, ...)
+        FAKE_POINTS[point] = { ... }
+        return setPoint(self, point, ...)
+    end)
+    rawset(FAKE, "ClearAllPoints", function(self)
+        FAKE_POINTS = {}
+        return clear(self)
+    end)
+end
 SHOWS = 0
 PART = {
     key = "fake", title = "ChairFake",
@@ -2463,9 +2513,13 @@ check("a part's page opens", opened is True)
 check("its window is parented inside the menu",
       rt.eval("rawget(FAKE, '_parent') == ChairPlusPanel") is True)
 check("below the menu's header",
-      rt.eval("rawget(FAKE, '_point').point") == "TOPLEFT"
-      and rt.eval("rawget(FAKE, '_point').y") == -44,
-      str(rt.eval("rawget(FAKE, '_point').point")))
+      rt.eval("FAKE_POINTS.TOPLEFT ~= nil and FAKE_POINTS.TOPLEFT[1] == ChairPlusPanel"
+              " and FAKE_POINTS.TOPLEFT[4] == -44") is True)
+# Pinned by its bottom corner too: when the ChairAuras grip resizes the menu,
+# the window goes with it rather than coming loose from the menu's background.
+check("and pinned to the menu's bottom corner, so it follows a resize",
+      rt.eval("FAKE_POINTS.BOTTOMRIGHT ~= nil and FAKE_POINTS.BOTTOMRIGHT[1] == ChairPlusPanel") is True)
+check("the part's own CENTER anchor is gone", rt.eval("FAKE_POINTS.CENTER") is None)
 check("the part filled and showed it the way it always has",
       rt.eval("SHOWS") == 1 and rt.eval("FAKE:IsShown()") is True)
 check("its own title and close button are hidden",
@@ -3036,6 +3090,28 @@ check("and docks the tracker to it, which shuts the standalone window",
       rt.eval("type(DOCKED) == 'table'") is True)
 rt.execute("DOCKED._scripts.OnEnter(DOCKED)")
 check("hovering the item drops the tracker down", rt.eval("SHOWN_DROP") == 1)
+
+# Putting the tracker on the display turns its auto-hide on, at two seconds,
+# unless it is on already -- once, so turning it off afterwards sticks.
+rt, g = fresh()
+rt.execute("""
+WOWFTrackerDB = { settings = { autoHide = false, showTime = 5 } }
+WOWFTrackerNS = { Dock = function() end, DockShow = function() end }
+BOOT() NS.Set("osd", true) NS.Set("osdTracker", true)
+""")
+check("on the display, the tracker's auto-hide comes on at two seconds",
+      rt.eval("WOWFTrackerDB.settings.autoHide") is True and rt.eval("WOWFTrackerDB.settings.showTime") == 2)
+rt.execute('WOWFTrackerDB.settings.autoHide = false NS.Set("osdFontSize", 15)')
+check("turning auto-hide off afterwards is left alone", rt.eval("WOWFTrackerDB.settings.autoHide") is False)
+rt.execute('NS.Set("osdTracker", false) NS.Set("osdTracker", true)')
+check("taking it off the display and back turns it on again", rt.eval("WOWFTrackerDB.settings.autoHide") is True)
+rt, g = fresh()
+rt.execute("""
+WOWFTrackerDB = { settings = { autoHide = true, showTime = 7 } }
+WOWFTrackerNS = { Dock = function() end, DockShow = function() end }
+BOOT() NS.Set("osd", true) NS.Set("osdTracker", true)
+""")
+check("already on, its own delay stands", rt.eval("WOWFTrackerDB.settings.showTime") == 7)
 rt.execute('NS.Set("osdTracker", false) NS.RefreshOSD() DRIVER_TICK()')
 check("switching the item off gives the tracker its window back", rt.eval("DOCKED") is None)
 rt.execute('DOCKED = "untouched" NS.RefreshOSD() DRIVER_TICK()')

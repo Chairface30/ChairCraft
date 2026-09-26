@@ -64,7 +64,12 @@ local function Method(k)
                 return 512 + (point.x or 0), 384 + (point.y or 0)
             elseif k == "SetAlpha" then rawset(self, "_alpha", (...))
             elseif k == "SetValue" then rawset(self, "_value", (...))
-            elseif k == "GetFont" then return "Fonts\\FRIZQT__.TTF", 12, ""
+            elseif k == "GetFont" then
+                local f = rawget(self, "_font")
+                if f then return f[1], f[2], f[3] end
+                return "Fonts\\FRIZQT__.TTF", 12, ""
+            elseif k == "SetFont" then rawset(self, "_font", { ... })
+            elseif k == "SetTextColor" then rawset(self, "_colour", { ... })
             elseif k == "SetStatusBarColor" then rawset(self, "_colour", (...))
             elseif k == "GetValue" then return rawget(self, "_value") or 0
             elseif k == "SetShown" then rawset(self, "_shown", (...) and true or false)
@@ -417,9 +422,9 @@ def check(name, cond, detail=""):
 # --- 1. syntax ------------------------------------------------------------
 L = lua51.LuaRuntime(unpack_returned_tuples=True)
 loadstring = L.eval("function(s,n) return loadstring(s,n) end")
-FILES = ["Core.lua", "Presets.lua", "Database.lua", "Load.lua", "Engine.lua",
-         "Display.lua", "Icons.lua", "Share.lua", "Sounds.lua", "Config.lua",
-         "Commands.lua"]
+FILES = ["Core.lua", "Presets.lua", "Database.lua", "Load.lua", "AuraEnvironment.lua", "Engine.lua", "CustomTrigger.lua", "Triggers.lua", "Text.lua", "Conditions.lua", "Actions.lua",
+         "Display.lua", "Regions.lua", "SubRegions.lua", "Animations.lua", "Icons.lua", "Share.lua", "Sounds.lua", "Config.lua",
+         "Probe.lua", "Commands.lua"]
 FILES = ["ChairAuras/" + _f for _f in FILES]
 for f in FILES:
     res = loadstring(io.open(f, encoding="utf-8").read(), "@" + f)
@@ -489,7 +494,7 @@ check("inversion survived", ev("ns.DisplayField(ns.GetAuras()[4], 'invert')") is
 check("icon size survived", ev("ns.DisplayField(ns.GetAuras()[2], 'size')") == 32)
 check("the old list is gone", ev("ns.GetProfile().watchers") is None)
 check("a second load does not migrate twice",
-      ev("ChairAurasDB.version") == 2)
+      ev("ChairAurasDB.version") == 3)
 
 # --- 3. matching by name --------------------------------------------------
 print("-- triggers that match the text on the aura")
@@ -944,8 +949,8 @@ check("a name this client knows no spell for is refused as a spell",
 check("but it can still be added by name",
       ev("ns.Config:AddNamed('Well Fed') ~= nil") is True)
 check("stored as a name match, not a spell",
-      ev("ns.GetAuras()[1].trigger.match") == "name"
-      and ev("ns.GetAuras()[1].trigger.text") == "Well Fed")
+      ev("ns.Trigger(ns.GetAuras()[1]).match") == "name"
+      and ev("ns.Trigger(ns.GetAuras()[1]).text") == "Well Fed")
 check("and named after the text so the list reads properly",
       ev("(ns.Engine:Describe(ns.GetAuras()[1]))") == "Well Fed")
 
@@ -1455,8 +1460,8 @@ check("triggers came across whole",
       ev("""
         (function()
             for _, aura in ipairs(ns.GetAuras()) do
-                if aura.id ~= "a2" and (aura.trigger or {}).text == "Well Fed" then
-                    return aura.trigger.partial == true and (aura.display or {}).icon == 456
+                if aura.id ~= "a2" and ns.Trigger(aura).text == "Well Fed" then
+                    return ns.Trigger(aura).partial == true and (aura.display or {}).icon == 456
                 end
             end
             return false
@@ -1963,7 +1968,7 @@ L2.execute("""
 end)()
 """)
 check("an icon can become a bar", L2.eval("ns.RegionKind(ns.FindAura('i1'))") == "bar")
-check("and keeps its trigger", L2.eval("ns.FindAura('i1').trigger.spellID") == 774)
+check("and keeps its trigger", L2.eval("ns.Trigger((ns.FindAura('i1'))).spellID") == 774)
 check("the region was rebuilt as the right shape",
       L2.eval("ns.Display.__regions.i1.kind") == "bar",
       L2.eval("ns.Display.__regions.i1.kind"))
@@ -2099,10 +2104,16 @@ L.execute("""
 EVERYTHING = {
     id = "src", type = "bar", name = "Everything",
     pos = { x = 11, y = -22, pivot = "TOPRIGHT" },
-    trigger = {
-        type = "aura", unit = "focus", harmful = true, match = "name",
-        text = "Well Fed", partial = true, mine = true,
-        stacks = 3, stacksOp = "<=", spellID = 774,
+    triggers = {
+        { trigger = {
+            type = "aura", unit = "focus", harmful = true, match = "name",
+            text = "Well Fed", partial = true, mine = true,
+            stacks = 3, stacksOp = "<=", spellID = 774,
+        } },
+        { trigger = { type = "cooldown", spellID = 8936 } },
+        disjunctive = "custom",
+        customTriggerLogic = "function(t) return t[1] and not t[2] end",
+        activeTriggerMode = 2,
     },
     display = {
         size = 33, invert = true, hide = true, desaturate = false,
@@ -2162,7 +2173,7 @@ L.execute("""
 local profile = ns.GetProfile()
 profile.auras = { EVERYTHING, GROUPY }
 GROUPY_CHILD = { id = "kid", parent = "grp", name = "Kid",
-                 trigger = { spellID = 774 }, load = { alive = true },
+                 triggers = { { trigger = { spellID = 774 } } }, load = { alive = true },
                  display = { size = 21 } }
 profile.auras[#profile.auras + 1] = GROUPY_CHILD
 """)
@@ -2180,10 +2191,12 @@ difference = ev("""
         local original = {}
         for key, value in pairs(EVERYTHING) do original[key] = value end
         original.id = copy.id
+        original.untrusted = true
         return DIFF(original, copy, "aura")
     end)()
 """)
 check("every field of it came back identical", difference is None, difference)
+check("and its custom code came in waiting for approval", ev("IMPORTED[1].untrusted") is True)
 
 # The same for a group and its child, where parent links are rewritten.
 L.execute("GROUP_EXPORT = ns.Share:Export((ns.FindAura('grp')))")
@@ -2349,13 +2362,15 @@ ev = L.eval
 L.execute("ns.Config:Open(); ns.Config:Select('a1')")
 
 FIND_WIDGET = """
-(function(key, kind)
-    for _, entry in pairs(ns.Config.__panes or {}) do
+(function(key, kind, paneKey)
+    for name, entry in pairs(ns.Config.__panes or {}) do
+        if not paneKey or name == paneKey then
         for _, widget in ipairs(entry.pane.widgets or {}) do
             if widget.field and widget.field.key == key
                and widget.field.kind == kind then
                 return widget
             end
+        end
         end
     end
 end)
@@ -2501,9 +2516,9 @@ ChairAurasDB = { version = 2, profiles = { ["guid:Player-1-00000001"] = { auras 
 ''')
 L.execute("ns.SaveOnLogout()")
 check("defaults are stripped on the way out",
-      L.eval("ns.GetAuras()[1].trigger.unit") is None
-      and L.eval("ns.GetAuras()[1].trigger.type") is None)
-check("the spell itself is kept", L.eval("ns.GetAuras()[1].trigger.spellID") == 774)
+      L.eval("ns.Trigger(ns.GetAuras()[1]).unit") is None
+      and L.eval("ns.Trigger(ns.GetAuras()[1]).type") is None)
+check("the spell itself is kept", L.eval("ns.Trigger(ns.GetAuras()[1]).spellID") == 774)
 check("an empty display table is dropped", L.eval("ns.GetAuras()[1].display") is None)
 check("an empty load table is dropped", L.eval("ns.GetAuras()[1].load") is None)
 
@@ -2528,7 +2543,7 @@ check("and it is called that now",
       ev("(ns.Engine:Describe(ns.FindAura('a1')))") == "Rejuv on me",
       ev("(ns.Engine:Describe(ns.FindAura('a1')))"))
 check("the trigger is untouched by a rename",
-      ev("ns.FindAura('a1').trigger.spellID") == 774)
+      ev("ns.Trigger((ns.FindAura('a1'))).spellID") == 774)
 
 check("a group can be renamed too", ev("ns.Config:Rename('g1', 'Procs')") is True)
 check("and keeps its children, which name it by id not by label",
@@ -2627,8 +2642,8 @@ check("the group is the dynamic one they sit in",
 check("its children name it as their parent",
       L.eval("#ns.Children('a1')") == 4, L.eval("#ns.Children('a1')"))
 check("they are matched by the words on the aura, having no spell id",
-      L.eval("ns.TriggerField(ns.FindAura('a4'), 'match')") == "name"
-      and L.eval("ns.Trigger(ns.FindAura('a4')).text") == "Well Fed")
+      L.eval("ns.TriggerField((ns.FindAura('a4')), 'match')") == "name"
+      and L.eval("ns.Trigger((ns.FindAura('a4'))).text") == "Well Fed")
 check("the load conditions came with them",
       L.eval("ns.FindAura('a5').load.class.DRUID") is True
       and L.eval("ns.FindAura('a5').load.combat") is False)
@@ -2736,29 +2751,107 @@ L.execute("THROWS = { GetFont = function() error('no') end,"
 check("a font string that throws is repaired rather than crashing",
       L.eval("ns.EnsureFont(THROWS)") is True)
 
-# Conditions were removed on 2026-09-25: no tab, no engine for them, and
-# any a profile still carries are dropped when it loads.
-print("-- conditions are gone")
+# Conditions came back in WeakAuras' shape (phase 5). Rules saved in the shape
+# removed on 2026-09-25 cannot be read as it, and are still dropped on load.
+print("-- conditions")
 LC = boot('''
 ChairAurasDB = { version = 2, profiles = { ["account"] = { auras = {
     { id = "a1", type = "icon",
       trigger = { match = "name", text = "Plainsrunning" },
       conditions = { { property = "stacks", op = "<=", value = 5, effect = "hide" } } },
+    { id = "c1", type = "icon",
+      trigger = { match = "name", text = "Plainsrunning" },
+      display = { iconText = "%s" },
+      conditions = {
+        { check = { trigger = 1, variable = "stacks", op = ">=", value = 3 },
+          changes = { { property = "color", value = { 1, 0, 0, 1 } },
+                      { property = "glow", value = true },
+                      { property = "sound", value = { sound = "12867" } } } },
+        { check = { trigger = 1, variable = "stacks", op = ">=", value = 5 },
+          changes = { { property = "color", value = { 0, 0, 1, 1 } },
+                      { property = "text", value = "MAX" } } },
+      } },
+    { id = "c2", type = "icon",
+      trigger = { match = "name", text = "Plainsrunning" },
+      conditions = {
+        { check = { trigger = 1, variable = "expirationTime", op = "<=", value = 5 },
+          changes = { { property = "alpha", value = 40 } } },
+        { check = { trigger = 1, variable = "show", op = "==", value = true },
+          changes = { { property = "scale", value = 2 } }, linked = true },
+        { check = { trigger = -2, variable = "AND", checks = {
+              { trigger = 1, variable = "name", op = "find", value = "plains" },
+              { trigger = -1, variable = "customcheck", value = "function(t) return t[1].count == 2 end" } } },
+          changes = { { property = "desaturate", value = true },
+                      { property = "chat", value = { message = "two of %n", channel = "PRINT" } } } },
+      } },
 } } } }
 AURAS.player = {
-    { name = "Plainsrunning", spellId = 1299038, applications = 2, duration = 0 },
+    { name = "Plainsrunning", spellId = 1299038, applications = 2, duration = 20, expirationTime = NOW + 10 },
 }
 ''')
-LC.execute("ns.Config:Open(); ns.Config:Select('a1')")
-check("the options window has no Conditions tab",
-      LC.eval("ns.Config.__panes.conditions") is None)
-check("the engine no longer offers them", LC.eval("ns.ConditionEffects") is None)
-check("rules saved before are dropped on load",
+ev = LC.eval
+check("rules in the old shape are dropped on load",
       LC.eval("ns.FindAura('a1').conditions") is None)
-LC.execute("ns.Engine:UpdateAll(); ns.Display:Refresh(ns.Engine.states)")
-check("and an old hide rule no longer hides the aura",
+check("and conditions in WeakAuras' shape are kept",
+      LC.eval("#ns.FindAura('c1').conditions") == 2)
+LC.execute("SOUNDS = {} ns.Engine:UpdateAll(); ns.Display:Refresh(ns.Engine.states)")
+check("an old hide rule no longer hides the aura",
       (LC.eval("ns.Display.__regions.a1._alpha") or 0) > 0,
       str(LC.eval("ns.Display.__regions.a1._alpha")))
+check("two stacks is not three: no change", LC.eval("ns.Engine.states.c1.props") is None)
+LC.execute("AURAS.player[1].applications = 3 ns.Engine:UpdateAll(); ns.Display:Refresh(ns.Engine.states)")
+check("three stacks: the first condition holds, and colors the icon",
+      LC.eval("ns.Engine.states.c1.props.color[1]") == 1 and LC.eval("ns.Engine.states.c1.props.glow") is True)
+check("its sound plays once, as it starts", len(LC.eval("SOUNDS") or {}) == 1, str(LC.eval("DUMP(SOUNDS)")))
+LC.execute("ns.Engine:UpdateAll(); ns.Display:Refresh(ns.Engine.states)")
+check("and not again while it holds", len(LC.eval("SOUNDS") or {}) == 1)
+check("the glow is drawn", LC.eval("ns.Display.__regions.c1.glow and ns.Display.__regions.c1.glow:IsShown()") is True)
+LC.execute("AURAS.player[1].applications = 6 ns.Engine:UpdateAll(); ns.Display:Refresh(ns.Engine.states)")
+check("six: the later condition overrides the color", LC.eval("ns.Engine.states.c1.props.color[3]") == 1)
+check("and the text", LC.eval("ns.Display.__regions.c1.overlay._text") == "MAX",
+      str(LC.eval("ns.Display.__regions.c1.overlay._text")))
+check("while the earlier one's glow still holds", LC.eval("ns.Engine.states.c1.props.glow") is True)
+LC.execute("AURAS.player[1].applications = 1 ns.Engine:UpdateAll(); ns.Display:Refresh(ns.Engine.states)")
+check("and all of it goes when they stop holding",
+      LC.eval("ns.Engine.states.c1.props") is None
+      and LC.eval("ns.Display.__regions.c1.glow:IsShown()") is False)
+
+LC.execute("AURAS.player[1].applications = 2 PRINTED = {} ns.Engine:UpdateAll(); ns.Display:Refresh(ns.Engine.states)")
+check("time left over 5: no fade; else-if: the one below it holds instead",
+      LC.eval("ns.Engine.states.c2.props.alpha") is None and LC.eval("ns.Engine.states.c2.props.scale") == 2)
+LC.execute("NOW = NOW + 6 ns.Engine:UpdateAll()")
+check("under 5 seconds: the fade holds, and the else-if below it does not",
+      LC.eval("ns.Engine.states.c2.props.alpha") == 40 and LC.eval("ns.Engine.states.c2.props.scale") is None)
+check("all-of checks, a name and a custom check together",
+      LC.eval("ns.Engine.states.c2.props.desaturate") is True)
+check("and a chat message said once", "two of Plainsrunning" in " ".join(str(v) for v in (LC.eval("PRINTED") or {}).values()),
+      str(LC.eval("DUMP(PRINTED)")))
+
+print("-- conditions in the window")
+LC.execute("ns.Config:Open(); ns.Config:Select('c1'); ns.Config:SetTab('conditions')")
+LC.execute("FIND_WIDGET = " + FIND_WIDGET)
+check("the window has a Conditions tab", LC.eval("ns.Config.__panes.conditions ~= nil") is True)
+check("with the aura's conditions on its strip",
+      LC.eval("FIND_WIDGET('conditionStrip', 'strip').numbers[2]:IsShown()") is True)
+LC.execute("local w = FIND_WIDGET('conditionStrip', 'strip') w.add._scripts.OnClick(w.add)")
+check("+ adds a condition, and opens it", LC.eval("#ns.FindAura('c1').conditions") == 3
+      and LC.eval("(ns.Config.__conditionCursor())") == 3)
+LC.execute("FIND_WIDGET('checkVariable', 'choice').dropdown:Pick('name')")
+check("its check can look at another value", LC.eval("ns.FindAura('c1').conditions[3].check.variable") == "name")
+check("and the operators follow what it is: a name has is / contains",
+      LC.eval("FIND_WIDGET('checkOpString', 'choice').host:IsShown()") is True
+      and LC.eval("FIND_WIDGET('checkOpNumber', 'choice').host:IsShown()") is False)
+LC.execute("local w = FIND_WIDGET('checkStrip', 'strip') w.add._scripts.OnClick(w.add)")
+check("a second check makes it all-of", LC.eval("ns.FindAura('c1').conditions[3].check.variable") == "AND"
+      and LC.eval("#ns.FindAura('c1').conditions[3].check.checks") == 2)
+LC.execute("FIND_WIDGET('changeProperty', 'choice').dropdown:Pick('alpha')")
+check("a change can be made a fade", LC.eval("ns.FindAura('c1').conditions[3].changes[1].property") == "alpha"
+      and LC.eval("FIND_WIDGET('changeAlpha', 'slider').host:IsShown()") is True)
+LC.execute("local w = FIND_WIDGET('conditionStrip', 'strip') w.up._scripts.OnClick(w.up)")
+check("and a condition can be moved up", LC.eval("ns.FindAura('c1').conditions[2].check.variable") == "AND")
+LC.execute("local w = FIND_WIDGET('conditionStrip', 'strip') w.remove._scripts.OnClick(w.remove)")
+check("or removed", LC.eval("#ns.FindAura('c1').conditions") == 2)
+
 
 # The field name was never the problem -- a dump off the live client showed
 # applications sitting right there. These pin the names down so a later
@@ -2902,6 +2995,992 @@ check("+ and - nudge it a pixel at a time",
 check("an aura inside a group has no position of its own to set",
       LP.eval("POSFIELD('posX').field.enabled(ns.FindAura('a2'))") is False
       and LP.eval("POSFIELD('posX').field.enabled(ns.FindAura('g1'))") is True)
+
+
+# --- several triggers on one aura --------------------------------------------
+print("-- several triggers, one aura")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "m1", triggers = {
+        { trigger = { spellID = 774 } },
+        { trigger = { spellID = 8936 } },
+    } },
+} } } }
+SPELLS[774] = { name = "Rejuvenation", icon = 100 }
+SPELLS[8936] = { name = "Regrowth", icon = 200 }
+""")
+ev = L.eval
+L.execute("AURAS.player = { { name = 'Rejuvenation', spellId = 774, icon = 100 } } ns.Engine:UpdateAll()")
+check("all (the default): one of two met is not enough",
+      ev("ns.Engine.states.m1.shown") is False)
+check("each trigger keeps its own answer",
+      ev("ns.Engine.states.m1.triggers[1].met") is True
+      and ev("ns.Engine.states.m1.triggers[2].met") is False)
+L.execute("""AURAS.player = { { name = 'Rejuvenation', spellId = 774, icon = 100, duration = 12, expirationTime = NOW + 10 },
+                              { name = 'Regrowth', spellId = 8936, icon = 200, duration = 21, expirationTime = NOW + 20 } }
+ns.Engine:UpdateAll()""")
+check("both met, it shows", ev("ns.Engine.states.m1.shown") is True)
+check("and the first active trigger supplies the timer",
+      ev("ns.Engine.states.m1.duration") == 12)
+L.execute("ns.FindAura('m1').triggers.activeTriggerMode = 2 ns.Engine:UpdateAll()")
+check("or a chosen one does", ev("ns.Engine.states.m1.duration") == 21)
+check("and its icon", ev("ns.Engine.states.m1.icon") == 200)
+
+L.execute("AURAS.player = { { name = 'Regrowth', spellId = 8936, icon = 200 } } ns.FindAura('m1').triggers.activeTriggerMode = nil")
+L.execute("ns.FindAura('m1').triggers.disjunctive = 'any' ns.Engine:UpdateAll()")
+check("any: one met is enough", ev("ns.Engine.states.m1.shown") is True)
+check("and the one that is met speaks for it", ev("ns.Engine.states.m1.icon") == 200)
+
+L.execute("""
+local t = ns.FindAura('m1').triggers
+t.disjunctive = 'custom'
+t.customTriggerLogic = 'function(trigger) return trigger[2] and not trigger[1] end'
+ns.Engine:UpdateAll()""")
+check("custom: a Lua function decides from the triggers' answers",
+      ev("ns.Engine.states.m1.shown") is True)
+L.execute("AURAS.player = { { name = 'Rejuvenation', spellId = 774 }, { name = 'Regrowth', spellId = 8936 } } ns.Engine:UpdateAll()")
+check("and changes its mind with them", ev("ns.Engine.states.m1.shown") is False)
+
+L.execute("ns.FindAura('m1').triggers.customTriggerLogic = 'function(t) return RunScript(\"x\") end' ns.Engine:UpdateAll()")
+check("custom code cannot reach RunScript", ev("ns.Engine.states.m1.shown") is False
+      and "not available" in str(ev("ns.Engine.states.m1.error")), str(ev("ns.Engine.states.m1.error")))
+L.execute("ns.FindAura('m1').triggers.customTriggerLogic = 'function(t) return getfenv ~= nil and getfenv(1) end' ns.Engine:UpdateAll()")
+check("nor getfenv", "not available" in str(ev("ns.Engine.states.m1.error")), str(ev("ns.Engine.states.m1.error")))
+L.execute("ns.FindAura('m1').triggers.customTriggerLogic = 'function(t) return ChairAurasDB end' ns.Engine:UpdateAll()")
+check("nor the saved variables", "not available" in str(ev("ns.Engine.states.m1.error")), str(ev("ns.Engine.states.m1.error")))
+L.execute("ns.FindAura('m1').triggers.customTriggerLogic = 'function(t) aura_env.seen = (aura_env.seen or 0) + 1 return true end' ns.Engine:UpdateAll()")
+check("aura_env is the aura's own table", ev("ns.Env:For(ns.FindAura('m1')).seen") == 1
+      and ev("ns.Engine.states.m1.shown") is True)
+L.execute("ns.FindAura('m1').triggers.customTriggerLogic = 'function(t) return ( end' ns.Engine:UpdateAll()")
+check("code that does not compile shows nothing and says why",
+      ev("ns.Engine.states.m1.shown") is False and ev("ns.Engine.states.m1.error") is not None)
+
+check("a trigger can be added", ev("ns.AddTrigger(ns.FindAura('m1'), { spellID = 1 })") == 3)
+check("and removed", ev("ns.RemoveTrigger(ns.FindAura('m1'), 3)") is True
+      and ev("ns.TriggerCount(ns.FindAura('m1'))") == 2)
+L.execute("ns.RemoveTrigger(ns.FindAura('m1'), 2)")
+check("but never the last one", ev("ns.RemoveTrigger(ns.FindAura('m1'), 1)") is False)
+
+# --- a v2 aura becomes a v3 aura, unchanged in behaviour ---------------------
+print("-- migration to several triggers")
+L = boot("""
+ChairAurasDB = { version = 2, profiles = { account = { auras = {
+    { id = "old", trigger = { spellID = 774, unit = "target", harmful = true } },
+} } } }
+""")
+ev = L.eval
+check("the one trigger became the first of a list",
+      ev("ns.FindAura('old').trigger") is None
+      and ev("ns.FindAura('old').triggers[1].trigger.spellID") == 774
+      and ev("ns.TriggerField((ns.FindAura('old')), 'unit')") == "target")
+L.execute("AURAS.target = { { name = 'x', spellId = 774, isHarmful = true } } ns.Engine:UpdateAll()")
+check("and it still fires", ev("ns.Engine.states.old.shown") is True)
+L.execute("ns.SaveOnLogout()")
+check("saved compactly: one plain trigger keeps only what it says",
+      ev("DUMP(ns.FindAura('old').triggers)") is not None
+      and ev("ns.FindAura('old').triggers.disjunctive") is None)
+
+# --- what combat hides -------------------------------------------------------
+print("-- in combat, with the reads refused")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "buff", triggers = { { trigger = { spellID = 774 } } } },
+    { id = "cd", triggers = { { trigger = { type = "cooldown", spellID = 5487 } } } },
+} } } }
+""")
+ev = L.eval
+L.execute("""AURAS.player = { { name = 'Rejuvenation', spellId = 774, duration = 12, expirationTime = NOW + 12 } }
+ns.Engine:UpdateAll()""")
+check("out of combat the buff is read", ev("ns.Engine.states.buff.shown") is True
+      and ev("ns.Engine.states.buff.assumed") is False)
+L.execute("AURAS_REFUSED = true NOW = NOW + 5 ns.Engine:UpdateAll()")
+check("in combat it is carried on its known expiry, marked assumed",
+      ev("ns.Engine.states.buff.shown") is True and ev("ns.Engine.states.buff.assumed") is True)
+L.execute("NOW = NOW + 8 ns.Engine:UpdateAll()")
+check("and goes when that expiry passes", ev("ns.Engine.states.buff.shown") is False)
+L.execute("ns.Engine.lastCast[774] = NOW ns.Engine:UpdateAll()")
+check("recasting the spell brings it back, for the duration learned out of combat",
+      ev("ns.Engine.states.buff.shown") is True and ev("ns.Engine.states.buff.duration") == 12)
+
+L.execute("AURAS_REFUSED = false COOLDOWNS[5487] = { duration = 60, start = NOW } ns.Engine:UpdateAll()")
+check("a cooldown read out of combat teaches its length",
+      ev("ns.Engine.learnedCooldown[5487]") == 60)
+L.execute("""
+DURATION_OBJECT = { kind = "duration" }
+C_Spell.GetSpellCooldownDuration = function(id) return DURATION_OBJECT end
+COOLDOWNS[5487] = { duration = SECRET_VALUE(), start = SECRET_VALUE() }
+NOW = NOW + 70
+ns.Engine:UpdateAll()""")
+check("in combat a secret cooldown is not read as ready by mistake",
+      ev("ns.Engine.states.cd.assumed") is True)
+check("its duration object is handed on for the swipe to draw",
+      ev("ns.Engine.states.cd.durationObject == DURATION_OBJECT") is True)
+L.execute("ns.Engine.lastCast[5487] = NOW ns.Engine:UpdateAll()")
+check("casting it puts it on its learned cooldown",
+      ev("ns.Engine.states.cd.met") is False and ev("ns.Engine.states.cd.duration") == 60)
+L.execute("NOW = NOW + 61 ns.Engine:UpdateAll()")
+check("and it is ready again once that has run out", ev("ns.Engine.states.cd.met") is True)
+
+
+# --- the trigger strip in the window -----------------------------------------
+print("-- the trigger strip")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "s1", triggers = { { trigger = { spellID = 774 } } } },
+} } } }
+SPELLS[774] = { name = "Rejuvenation", icon = 100 }
+SPELLS[8936] = { name = "Regrowth", icon = 200 }
+""")
+ev = L.eval
+L.execute("ns.Config:Open(); ns.Config:Select('s1'); ns.Config:SetTab('trigger')")
+L.execute("FIND_WIDGET = " + FIND_WIDGET)
+check("the Trigger tab has a strip of triggers", ev("FIND_WIDGET('triggers', 'triggers') ~= nil") is True)
+L.execute("local w = FIND_WIDGET('triggers', 'triggers') w.add._scripts.OnClick(w.add)")
+check("+ adds a trigger, a copy of the open one",
+      ev("ns.TriggerCount(ns.FindAura('s1'))") == 2
+      and ev("ns.Trigger((ns.FindAura('s1')), 2).spellID") == 774)
+check("and opens it", ev("ns.Config.__currentTrigger()") == 2)
+L.execute("""
+for _, field in ipairs(ns.Config.__triggerFields) do
+    if field.kind == "spell" then field.set(ns.FindAura('s1'), "8936") end
+end""")
+check("an edit goes to the open trigger, not the first",
+      ev("ns.Trigger((ns.FindAura('s1')), 2).spellID") == 8936
+      and ev("ns.Trigger((ns.FindAura('s1')), 1).spellID") == 774)
+L.execute("local w = FIND_WIDGET('triggers', 'triggers') w.numbers[1]._scripts.OnClick(w.numbers[1])")
+check("clicking 1 goes back to the first", ev("ns.Config.__currentTrigger()") == 1)
+L.execute("local w = FIND_WIDGET('triggers', 'triggers') w.mode.buttons[3]._scripts.OnClick(w.mode.buttons[3])")
+check("Show when: Custom", ev("ns.TriggerMode(ns.FindAura('s1'))") == "custom")
+check("opens the code box for editing",
+      ev("FIND_WIDGET('customTriggerLogic', 'code').box._enabled ~= false") is True)
+L.execute("""local w = FIND_WIDGET('customTriggerLogic', 'code')
+w.field.set(ns.FindAura('s1'), 'function(trigger) return trigger[2] end')""")
+check("the code is saved on the aura",
+      ev("ns.FindAura('s1').triggers.customTriggerLogic") == "function(trigger) return trigger[2] end")
+L.execute("""local w = FIND_WIDGET('customTriggerLogic', 'code')
+w.field.set(ns.FindAura('s1'), 'function(trigger) return ( end') ns.Config:Refresh()""")
+check("and a compile error is shown under it",
+      "|cffff5555" in str(ev("FIND_WIDGET('customTriggerLogic', 'code').status._text")),
+      str(ev("FIND_WIDGET('customTriggerLogic', 'code').status._text")))
+L.execute("local w = FIND_WIDGET('triggers', 'triggers') w.info._scripts.OnClick(w.info)")
+check("Info cycles from first active to trigger 1", ev("ns.ActiveTriggerMode(ns.FindAura('s1'))") == 1)
+L.execute("local w = FIND_WIDGET('triggers', 'triggers') w.numbers[2]._scripts.OnClick(w.numbers[2]) w.remove._scripts.OnClick(w.remove)")
+check("Remove takes the open trigger away",
+      ev("ns.TriggerCount(ns.FindAura('s1'))") == 1
+      and ev("ns.Trigger((ns.FindAura('s1')), 1).spellID") == 774)
+L.execute("ns.Config:Select('s1')")
+
+
+# --- text on an icon --------------------------------------------------------
+print("-- text drawn on an icon")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "ov", triggers = { { trigger = { spellID = 774 } } },
+      display = { iconText = "%t", iconTextPoint = "BOTTOM", iconTextSize = 16 } },
+    { id = "plain", triggers = { { trigger = { spellID = 774 } } } },
+} } } }
+""")
+ev = L.eval
+L.execute("AURAS.player = { { name = 'Rejuvenation', spellId = 774, duration = 12, expirationTime = NOW + 9 } } ns.Engine:UpdateAll()")
+check("an icon can carry text on top of it",
+      ev("ns.Display.__regions.ov.overlay._text") == "9.0", str(ev("ns.Display.__regions.ov.overlay._text")))
+check("where it was put", ev("ns.Display.__regions.ov.overlay._point.point") == "BOTTOM")
+check("and an icon without any draws none", ev("ns.Display.__regions.plain.overlay._text") in ("", None))
+
+
+# --- custom Lua triggers -----------------------------------------------------
+print("-- custom triggers")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "st", triggers = { { trigger = { type = "custom", custom_type = "status",
+        events = "PLAYER_TARGET_CHANGED UNIT_POWER_UPDATE:player",
+        custom = "function(event, unit) aura_env.calls = (aura_env.calls or 0) + 1 return WANT_ON end",
+        customName = "function() return 'Named by code' end",
+        customStacks = "function() return 3 end",
+        customDuration = "function() return 10, GetTime() + 4 end" } } } },
+    { id = "up", triggers = { { trigger = { type = "custom", check = "update",
+        custom = "function() return TICK_ON end" } } } },
+    { id = "ev", triggers = { { trigger = { type = "custom", custom_type = "event",
+        events = "MY_EVENT", duration = 5,
+        custom = "function(event, what) return what == 'go' end" } } } },
+    { id = "evc", triggers = { { trigger = { type = "custom", custom_type = "event",
+        events = "MY_EVENT", customHide = "custom",
+        custom = "function(event, what) return what == 'go' end",
+        customUntrigger = "function(event, what) return what == 'stop' end" } } } },
+    { id = "tsu", triggers = { { trigger = { type = "custom", custom_type = "stateupdate",
+        events = "MY_EVENT",
+        custom = "function(allstates, event, what) if what == 'add' then allstates.a = { show = true, changed = true, name = 'Clone A', stacks = 2, duration = 3, expirationTime = GetTime() + 3, autoHide = true } end return true end" } } } },
+    { id = "watch", triggers = {
+        { trigger = { spellID = 774 } },
+        { trigger = { type = "custom", events = "TRIGGER:1",
+          custom = "function(event, n, other) HEARD = event .. ' ' .. tostring(n) .. ' ' .. tostring(other.met) return other.met end" } },
+        disjunctive = "any", activeTriggerMode = 2 } },
+    { id = "cleu", triggers = { { trigger = { type = "custom", events = "CLEU:SPELL_DAMAGE",
+        custom = "function() return true end" } } } },
+} } } }
+WANT_ON, TICK_ON = false, false
+""")
+ev = L.eval
+L.execute("ns.Engine:UpdateAll()")
+check("a status trigger gets an answer straight away", ev("ns.Engine.states.st.shown") is False)
+L.execute("WANT_ON = true FireEvent('PLAYER_TARGET_CHANGED') ns.Engine:UpdateAll()")
+check("and runs again on its events", ev("ns.Engine.states.st.shown") is True)
+check("its name, stacks and timer come from its own functions",
+      ev("ns.Engine.states.st.name") == "Named by code" and ev("ns.Engine.states.st.count") == 3
+      and ev("ns.Engine.states.st.duration") == 10)
+L.execute("WANT_ON = false FireEvent('UNIT_POWER_UPDATE', 'target') ns.Engine:UpdateAll()")
+check("a unit filter lets another unit's event pass it by", ev("ns.Engine.states.st.shown") is True)
+L.execute("FireEvent('UNIT_POWER_UPDATE', 'player') ns.Engine:UpdateAll()")
+check("and its own unit's through", ev("ns.Engine.states.st.shown") is False)
+check("aura_env carries between calls", (ev("ns.Env:For(ns.FindAura('st')).calls") or 0) >= 3)
+
+L.execute("TICK_ON = true ns.Engine:UpdateAll()")
+check("every update: runs each sweep, no event needed", ev("ns.Engine.states.up.shown") is True)
+
+L.execute("WeakAuras.ScanEvents('MY_EVENT', 'go') ns.Engine:UpdateAll()")
+check("an event trigger fires on a custom event from WeakAuras.ScanEvents",
+      ev("ns.Engine.states.ev.shown") is True and ev("ns.Engine.states.ev.duration") == 5)
+L.execute("NOW = NOW + 6 ns.Engine:UpdateAll()")
+check("and hides when its duration runs out", ev("ns.Engine.states.ev.shown") is False)
+check("one with a custom hide stays until its untrigger says so",
+      ev("ns.Engine.states.evc.shown") is True)
+L.execute("WeakAuras.ScanEvents('MY_EVENT', 'stop') ns.Engine:UpdateAll()")
+check("and goes when it does", ev("ns.Engine.states.evc.shown") is False)
+
+L.execute("WeakAuras.ScanEvents('MY_EVENT', 'add') ns.Engine:UpdateAll()")
+check("a state updater shows the states it fills in",
+      ev("ns.Engine.states.tsu.shown") is True and ev("ns.Engine.states.tsu.name") == "Clone A"
+      and ev("ns.Engine.states.tsu.count") == 2)
+L.execute("NOW = NOW + 4 ns.Engine:UpdateAll()")
+check("and one set to autoHide goes when it expires", ev("ns.Engine.states.tsu.shown") is False)
+
+L.execute("AURAS.player = { { name = 'Rejuvenation', spellId = 774 } } ns.Engine:UpdateAll() ns.Engine:UpdateAll()")
+check("TRIGGER:1 hears when trigger 1 changes", ev("HEARD") == "TRIGGER 1 true", str(ev("HEARD")))
+check("and can decide from it", ev("ns.Engine.states.watch.shown") is True)
+
+check("a combat log trigger says the combat log does not exist here",
+      "combat log" in str(ev("ns.Engine.states.cleu.triggers[1].error")))
+check("the WeakAuras global is there for code that expects it",
+      ev("WeakAuras.IsChairAuras") is True and ev("WeakAuras.GetData('st').id") == "st")
+
+# --- imported code waits for approval ----------------------------------------
+print("-- imported custom code")
+L.execute("""
+local source = { id = "x", name = "Imported",
+    triggers = { { trigger = { type = "custom", check = "update", custom = "function() RAN = true return true end" } } } }
+table.insert(ns.GetProfile().auras, source)
+EXPORTED = ns.Share:Export(source)
+table.remove(ns.GetProfile().auras)
+IMPORTED = ns.Share:Import(EXPORTED)
+RAN = false
+ns.Engine:UpdateAll()
+""")
+check("an imported aura with custom Lua comes in unapproved", ev("IMPORTED[1].untrusted") is True)
+check("and its code does not run", ev("RAN") is False)
+L.execute("PRINTED = {} SlashCmdList['CHAIRAURAS']('trust ' .. #ns.GetAuras())")
+check("trust <n> shows the code first", ev("IMPORTED[1].untrusted") is True)
+L.execute("SlashCmdList['CHAIRAURAS']('trust ' .. #ns.GetAuras() .. ' yes') ns.Engine:UpdateAll()")
+check("trust <n> yes lets it run", ev("IMPORTED[1].untrusted") is None and ev("RAN") is True)
+
+# --- the custom trigger in the window ----------------------------------------
+print("-- custom triggers in the window")
+L.execute("ns.Config:Open(); ns.Config:Select('st'); ns.Config:SetTab('trigger')")
+L.execute("FIND_WIDGET = " + FIND_WIDGET)
+check("the kind, events and code boxes are there for a custom trigger",
+      ev("FIND_WIDGET('custom_type', 'choice') ~= nil and FIND_WIDGET('events', 'text') ~= nil"
+         " and FIND_WIDGET('custom', 'code') ~= nil") is True)
+L.execute("FIND_WIDGET('custom', 'code').field.set(ns.FindAura('st'), 'function() return ( end') ns.Config:Refresh()")
+check("a compile error shows under the trigger box",
+      "|cffff5555" in str(ev("FIND_WIDGET('custom', 'code').status._text")))
+
+
+# --- the built-in trigger types ----------------------------------------------
+print("-- built-in trigger types")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "use", triggers = { { trigger = { type = "usable", spellID = 1 } } } },
+    { id = "kno", triggers = { { trigger = { type = "known", spellID = 2 } } } },
+    { id = "rng", triggers = { { trigger = { type = "range", spellID = 1 } } } },
+    { id = "chg", triggers = { { trigger = { type = "charges", spellID = 1, charges = 2 } } } },
+    { id = "cst", triggers = { { trigger = { type = "cast", spellID = 5, duration = 4 } } } },
+    { id = "icd", triggers = { { trigger = { type = "itemcooldown", itemID = 6948 } } } },
+    { id = "scd", triggers = { { trigger = { type = "slotcooldown", slot = 13 } } } },
+    { id = "cnt", triggers = { { trigger = { type = "itemcount", itemID = 6265, count = 3 } } } },
+    { id = "eqp", triggers = { { trigger = { type = "equipped", itemID = 777 } } } },
+    { id = "enc", triggers = { { trigger = { type = "enchant" } } } },
+    { id = "frm", triggers = { { trigger = { type = "form", spellID = 5487 } } } },
+    { id = "nof", triggers = { { trigger = { type = "form" } } } },
+    { id = "thr", triggers = { { trigger = { type = "threat", threat = 80 } } } },
+    { id = "xpt", triggers = { { trigger = { type = "xp", xp = 50 } } } },
+    { id = "gld", triggers = { { trigger = { type = "money", gold = 10 } } } },
+    { id = "sts", triggers = { { trigger = { type = "status", status = "mounted" } } } },
+    { id = "zon", triggers = { { trigger = { type = "zone", zoneName = "goldshire" } } } },
+    { id = "cht", triggers = { { trigger = { type = "chat", chatChannel = "party", message = "pull" } } } },
+    { id = "rdy", triggers = { { trigger = { type = "readycheck" } } } },
+    { id = "hp", type = "bar", triggers = { { trigger = { type = "health", unit = "player" } } } },
+} } } }
+USABLE, INRANGE, KNOWN, CHARGES = true, true, false, 1
+C_Spell.IsSpellUsable = function(id) return USABLE, false end
+C_Spell.IsSpellInRange = function(id, unit) return INRANGE end
+C_Spell.GetSpellCharges = function(id) return { currentCharges = CHARGES, maxCharges = 2, cooldownStartTime = NOW, cooldownDuration = 10 } end
+function IsPlayerSpell(id) return KNOWN end
+ITEMCD = { 0, 0 }
+C_Item = {
+    GetItemCooldown = function(id) return ITEMCD[1], ITEMCD[2], true end,
+    GetItemCount = function(id) return ITEMS_HELD or 0 end,
+    IsEquippedItem = function(id) return EQUIPPED end,
+    GetItemNameByID = function(id) return "Item " .. id end,
+    GetItemIconByID = function(id) return 1000 + id end,
+}
+function GetInventoryItemID(unit, slot) if slot == 13 then return 999 end if slot == 16 then return 555 end end
+function GetInventoryItemCooldown(unit, slot) return TRINKET[1], TRINKET[2], 1 end
+TRINKET = { 0, 0 }
+function GetWeaponEnchantInfo() return ENCHANTED, 1800000, 0, 25, false end
+FORM = 0
+function GetShapeshiftForm() return FORM end
+function GetShapeshiftFormInfo(i) return 132276, true, true, 5487 end
+function UnitDetailedThreatSituation() return false, 2, THREAT end
+THREAT = 50
+function UnitXP() return 600 end function UnitXPMax() return 1000 end function UnitLevel() return 20 end
+function GetMoney() return MONEY end MONEY = 50000
+function IsMounted() return MOUNTED end
+function GetRealZoneText() return "Elwynn Forest" end function GetSubZoneText() return "Goldshire" end
+function UnitHealth() return SECRET_VALUE() end function UnitHealthMax() return 1000 end
+""")
+ev = L.eval
+L.execute("ns.Engine:UpdateAll()")
+def shown(i): return ev("ns.Engine.states.%s.shown" % i)
+check("usable: usable and off cooldown", shown("use") is True)
+L.execute("USABLE = false ns.Engine:UpdateAll()")
+check("and not when it is not", shown("use") is False)
+check("spell known: not known", shown("kno") is False)
+L.execute("KNOWN = true ns.Engine:UpdateAll()")
+check("and known", shown("kno") is True)
+check("in range", shown("rng") is True)
+L.execute("INRANGE = false ns.Engine:UpdateAll()")
+check("and out of it", shown("rng") is False)
+check("charges: one is not the two asked for", shown("chg") is False and ev("ns.Engine.states.chg.count") == 1)
+L.execute("CHARGES = 2 ns.Engine:UpdateAll()")
+check("two is", shown("chg") is True)
+check("your cast: nothing cast yet", shown("cst") is False)
+L.execute("ns.Engine.lastCast[5] = NOW ns.Engine:UpdateAll()")
+check("shows for a while after you cast it", shown("cst") is True and ev("ns.Engine.states.cst.duration") == 4)
+L.execute("NOW = NOW + 5 ns.Engine:UpdateAll()")
+check("then goes", shown("cst") is False)
+check("item cooldown: ready", shown("icd") is True)
+L.execute("ITEMCD = { NOW - 10, 3600 } ns.Engine:UpdateAll()")
+check("and not while cooling down, with its timer",
+      shown("icd") is False and ev("ns.Engine.states.icd.duration") == 3600)
+check("and wears the item's name", ev("ns.Engine.states.icd.name") == "Item 6948")
+check("slot cooldown: the trinket is ready", shown("scd") is True)
+L.execute("TRINKET = { NOW, 120 } ns.Engine:UpdateAll()")
+check("and on cooldown", shown("scd") is False)
+check("item count: none carried", shown("cnt") is False)
+L.execute("ITEMS_HELD = 5 ns.Engine:UpdateAll()")
+check("five of three wanted", shown("cnt") is True and ev("ns.Engine.states.cnt.count") == 5)
+L.execute("EQUIPPED = true ns.Engine:UpdateAll()")
+check("item equipped", shown("eqp") is True)
+L.execute("ENCHANTED = true ns.Engine:UpdateAll()")
+check("weapon enchant: on, with its time left", shown("enc") is True
+      and ev("ns.Engine.states.enc.duration") == 1800)
+check("form: not in bear form", shown("frm") is False and shown("nof") is True)
+L.execute("FORM = 1 ns.Engine:UpdateAll()")
+check("in bear form", shown("frm") is True and shown("nof") is False)
+check("threat: 50 is under 80", shown("thr") is False)
+L.execute("THREAT = 95 ns.Engine:UpdateAll()")
+check("95 is over", shown("thr") is True)
+check("experience: 60% is over 50", shown("xpt") is True)
+check("money: 5 gold is under 10", shown("gld") is False)
+L.execute("MONEY = 200000 ns.Engine:UpdateAll()")
+check("20 is over", shown("gld") is True)
+L.execute("MOUNTED = true ns.Engine:UpdateAll()")
+check("status: mounted", shown("sts") is True)
+check("zone: the subzone matches", shown("zon") is True)
+L.execute("for _, f in ipairs(EVENT_FRAMES) do if f._events.CHAT_MSG_PARTY then f._scripts.OnEvent(f, 'CHAT_MSG_PARTY', 'ok PULL now', 'Tank') end end ns.Engine:UpdateAll()")
+check("chat: a party message containing the words", shown("cht") is True and ev("ns.Engine.states.cht.name") == "Tank")
+L.execute("FireEvent('READY_CHECK') ns.Engine:UpdateAll()")
+check("ready check", shown("rdy") is True)
+check("health: met while the unit exists, carrying a live value for the bar",
+      shown("hp") is True and ev("ns.Engine.states.hp.live.kind") == "health")
+check("and the bar is handed the secret value to draw",
+      ev("ns.DrawLive(ns.Display.__regions.hp.bar, ns.Engine.states.hp.live)") is True)
+
+print("-- built-in trigger types in the window")
+L.execute("ns.Config:Open(); ns.Config:Select('icd'); ns.Config:SetTab('trigger')")
+L.execute("FIND_WIDGET = " + FIND_WIDGET)
+check("the picker lists the built-in types",
+      ev("""(function() for _, f in ipairs(ns.Config.__triggerFields) do
+          if f.key == 'type' then return #f.values end end end)()""") >= 20)
+check("an item trigger shows its item box",
+      ev("FIND_WIDGET('itemID', 'item').host:IsShown()") is True)
+check("and not the aura trigger's settings",
+      ev("FIND_WIDGET('match', 'choice').host:IsShown()") is False)
+L.execute("FIND_WIDGET('itemID', 'item').field.set(ns.FindAura('icd'), '6265')")
+check("an item is set by ID", ev("ns.Trigger((ns.FindAura('icd'))).itemID") == 6265)
+L.execute("ns.Config:Select('thr')")
+check("switching to a threat trigger shows its settings instead",
+      ev("FIND_WIDGET('threat', 'slider').host:IsShown()") is True
+      and ev("FIND_WIDGET('itemID', 'item').host:IsShown()") is False)
+
+
+print("-- the trigger type dropdown")
+L.execute("ns.Config:Select('icd')")
+check("the type picker is a dropdown", ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown ~= nil") is True)
+check("naming the type in use", ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.button:GetText()") == "Item cooldown",
+      str(ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.button:GetText()")))
+L.execute("local d = FIND_WIDGET('type', 'choice', 'trigger').dropdown d.button._scripts.OnClick(d.button)")
+check("clicking it opens the list", ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.menu:IsShown()") is True)
+check("grouped under headings",
+      "Auras" in str(ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.rows[1].text._text")),
+      str(ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.rows[1].text._text")))
+L.execute("local d = FIND_WIDGET('type', 'choice', 'trigger').dropdown d.rows[1]._scripts.OnClick(d.rows[1])")
+check("a heading cannot be picked", ev("ns.TriggerField((ns.FindAura('icd')), 'type')") == "itemcooldown")
+L.execute("""local d = FIND_WIDGET('type', 'choice', 'trigger').dropdown
+d.menu._scripts.OnMouseWheel(d.menu, -1)
+for _, row in ipairs(d.rows) do if row.value == 'threat' then row._scripts.OnClick(row) break end end""")
+check("picking a type from the list sets it, and closes the list",
+      ev("ns.TriggerField((ns.FindAura('icd')), 'type')") == "threat"
+      and ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.menu:IsShown()") is False)
+check("the button then names it", ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.button:GetText()") == "Threat")
+L.execute("local d = FIND_WIDGET('type', 'choice', 'trigger').dropdown for i = 1, 5 do d.menu._scripts.OnMouseWheel(d.menu, -1) end")
+check("a long list scrolls", ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.offset") > 0)
+
+
+# --- text codes ----------------------------------------------------------------
+print("-- text codes")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "tx", type = "text", triggers = {
+        { trigger = { spellID = 774 } },
+        { trigger = { spellID = 8936 } },
+        disjunctive = "any" },
+      display = { customText = "function() return 'first', 'second' end" } },
+} } } }
+SPELLS[774] = { name = "Rejuvenation", icon = 100 }
+SPELLS[8936] = { name = "Regrowth", icon = 200 }
+""")
+ev = L.eval
+L.execute("""AURAS.player = {
+    { name = 'Rejuvenation', spellId = 774, icon = 100, applications = 3, duration = 12, expirationTime = NOW + 9 },
+    { name = 'Regrowth', spellId = 8936, icon = 200, duration = 20, expirationTime = NOW + 5 } }
+ns.Engine:UpdateAll()""")
+def say(fmt):
+    return ev("ns.Engine:FormatText(%r, ns.FindAura('tx'), ns.Engine.states.tx)" % fmt)
+check("ChairAuras codes as before: %n %s %t %d %p",
+      say("%n %s %t %d %p%%") == "Rejuvenation 3 9.0 12 75%", say("%n %s %t %d %p%%"))
+check("%i draws the icon", say("%i") == "|T100:0|t", say("%i"))
+check("%c is the custom text, %c2 its second value", say("%c/%c2") == "first/second", say("%c/%c2"))
+check("%stacks and %{name} read the trigger's state", say("%stacks %{name}") == "3 Rejuvenation",
+      say("%stacks %{name}"))
+check("%2.n and %2.t read trigger 2", say("%2.n %2.t") == "Regrowth 5.0", say("%2.n %2.t"))
+check("%{2.p} with braces", say("%{2.p}") == "25", say("%{2.p}"))
+check("an unknown letter is left as typed", say("100%x") == "100%x", say("100%x"))
+L.execute("ns.FindAura('tx').display.textStyle = 'weakauras'")
+check("WeakAuras codes: %p is time left, %t the full duration", say("%p / %t") == "9.0 / 12", say("%p / %t"))
+L.execute("ns.FindAura('tx').display.textStyle = nil ns.FindAura('tx').display.timeFormat = 'clock'")
+check("time as a clock", say("%t") == "0:09", say("%t"))
+L.execute("ns.FindAura('tx').display.timeFormat = 'seconds' ns.FindAura('tx').display.timePrecision = 2")
+check("or seconds, to two places", say("%t") == "9.00", say("%t"))
+
+# --- each text styled on its own ---------------------------------------------
+print("-- text styling")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "ic", triggers = { { trigger = { spellID = 774 } } },
+      display = { iconText = "%t", iconTextFont = "Fonts\\\\MORPHEUS.TTF", iconTextSize = 20,
+                  iconTextOutline = "THICKOUTLINE", iconTextColour = "ff0000" } },
+    { id = "tt", type = "text", triggers = { { trigger = { spellID = 774 } } },
+      display = { textFont = "Fonts\\\\ARIALN.TTF", fontSize = 18, textColour = "00ff00", textOutline = "NONE" } },
+    { id = "bb", type = "bar", triggers = { { trigger = { spellID = 774 } } },
+      display = { barFont = "Fonts\\\\SKURRI.TTF", barFontSize = 14, barTextColour = "0000ff" } },
+} } } }
+""")
+ev = L.eval
+L.execute("""
+FONTS_SET = {}
+local originalCreate = CreateFrame
+AURAS.player = { { name = 'Rejuvenation', spellId = 774, duration = 12, expirationTime = NOW + 9 } }
+ns.Engine:UpdateAll()""")
+def font(fs):
+    return ev("DUMP({ %s:GetFont() })" % fs)
+check("icon text: its own font, size and outline",
+      "MORPHEUS" in str(font("ns.Display.__regions.ic.overlay")) and "20" in str(font("ns.Display.__regions.ic.overlay"))
+      and "THICKOUTLINE" in str(font("ns.Display.__regions.ic.overlay")), str(font("ns.Display.__regions.ic.overlay")))
+check("and its own color", ev("ns.Display.__regions.ic.overlay._colour and ns.Display.__regions.ic.overlay._colour[1]") == 1)
+check("text aura: its own font and size", "ARIALN" in str(font("ns.Display.__regions.tt.text"))
+      and "18" in str(font("ns.Display.__regions.tt.text")), str(font("ns.Display.__regions.tt.text")))
+check("bar text: its own font and size", "SKURRI" in str(font("ns.Display.__regions.bb.text"))
+      and "14" in str(font("ns.Display.__regions.bb.text")), str(font("ns.Display.__regions.bb.text")))
+
+
+# --- reordering and regrouping by dragging --------------------------------------
+print("-- dragging auras in the list")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "g1", type = "dynamic", name = "Group" },
+    { id = "a1", parent = "g1", name = "One" },
+    { id = "a2", parent = "g1", name = "Two" },
+    { id = "a3", name = "Three" },
+    { id = "a4", name = "Four" },
+} } } }
+""")
+ev = L.eval
+def order():
+    return ev("""(function() local out = {} for _, a in ipairs(ns.GetAuras()) do
+        out[#out + 1] = a.id .. ':' .. tostring(a.parent) end return table.concat(out, ' ') end)()""")
+L.execute("ns.MoveAura((ns.FindAura('a3')), (ns.FindAura('a4')), 'after')")
+check("after: it lands just below the target", order().index("a4:nil") < order().index("a3:nil"), order())
+L.execute("ns.MoveAura((ns.FindAura('a1')), (ns.FindAura('a4')), 'before')")
+check("before a row outside the group takes it out of the group",
+      "a1:nil" in order() and order().index("a1:nil") < order().index("a4:nil"), order())
+L.execute("ns.MoveAura((ns.FindAura('a3')), (ns.FindAura('a2')), 'after')")
+check("after a row inside a group puts it in that group", "a3:g1" in order(), order())
+L.execute("ns.MoveAura((ns.FindAura('a4')), (ns.FindAura('g1')), 'inside')")
+check("inside a group, at its end", "a4:g1" in order(), order())
+L.execute("ns.MoveAuraToEnd((ns.FindAura('a2')))")
+check("dropped below the list: the end, outside every group", order().endswith("a2:nil"), order())
+
+L.execute("ns.Config:Open()")
+L.execute("""
+local rows = {}
+for _, row in pairs(ns.Config.__rows or {}) do rows[#rows + 1] = row end
+""")
+check("the list has a drop marker and a corner grip",
+      ev("ns.Config.dropLine ~= nil and ChairAurasConfig.grip ~= nil") is True)
+L.execute("""
+function AT(y) GetCursorPosition = function() return 10, y end end
+UIParent.GetEffectiveScale = function() return 1 end
+for i, row in ipairs(ns.Config.__rowList()) do
+    local top = 500 - (i - 1) * 24
+    rawset(row, "GetTop", function() return top end)
+    rawset(row, "GetBottom", function() return top - 24 end)
+end
+""")
+def under(y):
+    L.execute("AT(%d)" % y)
+    return ev("(function() local id, where = ns.Config:RowUnderCursor() return tostring(id) .. ' ' .. tostring(where) end)()")
+first = ev("ns.Config.__rowList()[1].auraID")
+check("the top of a row drops above it", under(498) == first + " before", under(498))
+check("the bottom of a row drops below it", under(478) == first + " after", under(478))
+check("the middle of a group drops inside it", under(488) == first + " inside", under(488))
+check("below the last row drops at the end", under(100) == "END end", under(100))
+
+L.execute("""local grip = ChairAurasConfig.grip
+rawset(ChairAurasConfig, "GetWidth", function() return 900 end)
+rawset(ChairAurasConfig, "GetHeight", function() return 820 end)
+grip._scripts.OnMouseDown(grip) grip._scripts.OnMouseUp(grip)""")
+check("resizing from the corner is remembered",
+      ev("ChairAurasDB.window.w") == 900 and ev("ChairAurasDB.window.h") == 820)
+
+# Inside the Chaircraft menu the grip sizes the menu, not the window, which
+# would otherwise pull loose from the menu's background (2026-09-26).
+L.execute("""
+SIZED = {}
+HOST = CreateFrame("Frame", "FakeMenu", UIParent)
+rawset(HOST, "StartSizing", function(self) SIZED[#SIZED + 1] = "host" end)
+rawset(ChairAurasConfig, "StartSizing", function(self) SIZED[#SIZED + 1] = "window" end)
+ChairAurasConfig:SetParent(HOST)
+ChairAurasConfig.chairEmbedded = true
+rawset(ChairAurasConfig, "GetWidth", function() return 1000 end)
+rawset(ChairAurasConfig, "GetHeight", function() return 760 end)
+local grip = ChairAurasConfig.grip
+grip._scripts.OnMouseDown(grip) grip._scripts.OnMouseUp(grip)
+""")
+check("inside the menu, the grip sizes the menu", ev("SIZED[1]") == "host" and ev("#SIZED") == 1)
+check("and the window's new size is still remembered",
+      ev("ChairAurasDB.window.w") == 1000 and ev("ChairAurasDB.window.h") == 760)
+L.execute("SIZED = {} ChairAurasConfig.chairEmbedded = nil ChairAurasConfig:SetParent(UIParent)"
+          " local grip = ChairAurasConfig.grip grip._scripts.OnMouseDown(grip) grip._scripts.OnMouseUp(grip)")
+check("on its own, it sizes the window", ev("SIZED[1]") == "window")
+
+
+# --- the spell you cast, the buff it gives ------------------------------------
+print("-- a spell and the buff it gives")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "pr", triggers = { { trigger = { spellID = 1259918, stacks = 2 } } },
+      display = { iconText = "%s" } },
+    { id = "inv", triggers = { { trigger = { spellID = 1259918 } } },
+      display = { iconText = "%s", invert = true } },
+} } } }
+SPELLS[1259918] = { name = "Plainsrunning", icon = 1 }
+""")
+ev = L.eval
+L.execute("AURAS.player = { { name = 'Plainsrunning', spellId = 1299038, applications = 2 } } ns.Engine:UpdateAll()")
+check("a buff with a different ID but the chosen spell's name is found",
+      ev("ns.Engine.states.pr.shown") is True)
+check("its stacks read into %s", ev("ns.Display.__regions.pr.overlay._text") == "2",
+      str(ev("ns.Display.__regions.pr.overlay._text")))
+L.execute("AURAS.player = { { name = 'Plainsrunning', spellId = 1299038, applications = 1 } } ns.Engine:UpdateAll()")
+check("and the stack setting is used: one is not the two asked for", ev("ns.Engine.states.pr.shown") is False)
+L.execute("AURAS.player = { { name = 'Something Else', spellId = 1299038, applications = 5 } } ns.Engine:UpdateAll()")
+check("a different buff is still a different buff", ev("ns.Engine.states.pr.shown") is False)
+
+L.execute("ns.Config:Open(); ns.Config:Select('inv'); ns.Config:SetTab('display')")
+L.execute("FIND_WIDGET = " + FIND_WIDGET)
+check("an aura set to show when missing warns that %s will be empty",
+      ev("FIND_WIDGET('iconTextInvertNote', 'note').host:IsShown()") is True)
+L.execute("ns.Config:Select('pr')")
+check("and one that is not, does not",
+      ev("FIND_WIDGET('iconTextInvertNote', 'note').host:IsShown()") is False)
+
+
+# --- one reader for every aura value -------------------------------------------
+print("-- every aura value read the same way")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "alt", triggers = { { trigger = { spellID = 42 } } }, display = { iconText = "%s %n" } },
+} } } }
+""")
+ev = L.eval
+L.execute("""AURAS.player = { { spellName = 'Renamed Field', spellID = 42, stackCount = 4,
+    iconFileID = 777, duration = 10, expires = NOW + 6 } }
+ns.Engine:UpdateAll()""")
+check("a client that names its fields differently is still read, every field alike",
+      ev("ns.Engine.states.alt.shown") is True and ev("ns.Engine.states.alt.count") == 4
+      and ev("ns.Engine.states.alt.icon") == 777 and ev("ns.Engine.states.alt.duration") == 10,
+      str(ev("DUMP(ns.Engine.states.alt.triggers[1])")))
+check("and says which field answered", ev("select(2, ns.AuraField(AURAS.player[1], 'stacks'))") == "stackCount")
+L.execute("AURAS.player = { { name = 'X', spellId = 42, applications = SECRET_VALUE() } } ns.Engine:UpdateAll()")
+check("a hidden value is unknown, not zero", ev("ns.Engine.states.alt.count") is None)
+
+
+# --- actions ---------------------------------------------------------------------
+print("-- actions")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "ac", triggers = { { trigger = { spellID = 774 } } },
+      actions = {
+        onShowMessage = "%n is up", onShowCode = "function() SHOWN = (SHOWN or 0) + 1 end",
+        onHideMessage = "%n is gone", onHideCode = "function() HIDDEN = (HIDDEN or 0) + 1 end",
+        initCode = "function() INITS = (INITS or 0) + 1 end",
+        loadCode = "function() LOADS = (LOADS or 0) + 1 end",
+        unloadCode = "function() UNLOADS = (UNLOADS or 0) + 1 end",
+        glowFrame = "target" } },
+    { id = "btn", triggers = { { trigger = { spellID = 774 } } },
+      actions = { glowFrame = "button" } },
+} } } }
+SPELLS[774] = { name = "Rejuvenation", icon = 100 }
+TargetFrame = CreateFrame("Frame", "TargetFrame", UIParent)
+ActionButton3 = CreateFrame("Button", "ActionButton3", UIParent)
+ActionButton3.action = 3
+ActionButton4 = CreateFrame("Button", "ActionButton4", UIParent)
+ActionButton4.action = 4
+function GetActionInfo(slot) if slot == 3 then return "spell", 774 end if slot == 4 then return "spell", 1 end end
+""")
+ev = L.eval
+L.execute("PRINTED = {} ns.Engine:UpdateAll() ns.Display:Refresh(ns.Engine.states)")
+check("on init and on load run as it first loads", ev("INITS") == 1 and ev("LOADS") == 1)
+L.execute("AURAS.player = { { name = 'Rejuvenation', spellId = 774 } } ns.Engine:UpdateAll() ns.Display:Refresh(ns.Engine.states)")
+said = " ".join(str(v) for v in (ev("PRINTED") or {}).values())
+check("on show: its chat message, with text codes", "Rejuvenation is up" in said, said)
+check("and its custom code", ev("SHOWN") == 1)
+check("a frame glows while it shows", ev("#ns.Actions:GlowingFor(ns.FindAura('ac'))") == 1
+      and ev("ns.Actions:GlowingFor(ns.FindAura('ac'))[1] == TargetFrame") is True)
+check("the action button carrying the spell glows, and only that one",
+      ev("#ns.Actions:GlowingFor(ns.FindAura('btn'))") == 1
+      and ev("ns.Actions:GlowingFor(ns.FindAura('btn'))[1] == ActionButton3") is True)
+L.execute("AURAS.player = {} ns.Engine:UpdateAll() ns.Display:Refresh(ns.Engine.states)")
+said = " ".join(str(v) for v in (ev("PRINTED") or {}).values())
+check("on hide: its message and code", "Rejuvenation is gone" in said and ev("HIDDEN") == 1, said)
+check("and the glow goes", ev("#ns.Actions:GlowingFor(ns.FindAura('ac'))") == 0)
+L.execute("ns.FindAura('ac').load = { never = true } ns.Engine:UpdateAll() ns.Display:Refresh(ns.Engine.states)")
+check("on unload runs as its load conditions stop holding", ev("UNLOADS") == 1)
+L.execute("ns.FindAura('ac').load = nil ns.Engine:UpdateAll() ns.Display:Refresh(ns.Engine.states)")
+check("on load again as they hold again, but init only the once", ev("LOADS") == 2 and ev("INITS") == 1)
+
+print("-- actions in the window")
+L.execute("ns.Config:Open(); ns.Config:Select('ac'); ns.Config:SetTab('actions')")
+L.execute("FIND_WIDGET = " + FIND_WIDGET)
+check("the Actions tab has a message, code and a glow for each moment",
+      ev("FIND_WIDGET('onShowMessage', 'text', 'actions') ~= nil and FIND_WIDGET('onHideCode', 'code', 'actions') ~= nil"
+         " and FIND_WIDGET('glowFrame', 'choice', 'actions') ~= nil and FIND_WIDGET('initCode', 'code', 'actions') ~= nil") is True)
+L.execute("FIND_WIDGET('glowFrame', 'choice', 'actions').dropdown:Pick('name')")
+check("a frame can be glowed by name", ev("FIND_WIDGET('glowFrameName', 'text', 'actions').host:IsShown()") is True)
+
+# --- the client probe --------------------------------------------------------
+print("-- /chair auras probe")
+L = boot("ChairAurasDB = { version = 2, profiles = {} }")
+ev = L.eval
+L.execute('SlashCmdList["CHAIRAURAS"]("probe")')
+L.execute('FireEvent("UNIT_AURA", "player")')
+L.execute('SlashCmdList["CHAIRAURAS"]("probe")')
+check("the probe keeps its answers in the saved file",
+      ev("type(ChairAurasDB.probe) == 'table' and type(ChairAurasDB.probe.runs.calm.results) == 'table'") is True)
+check("it can tell custom Lua would work where loadstring and setfenv do",
+      ev("ChairAurasDB.probe.runs.calm.results['lua: loadstring']") == "yes"
+      and ev("ChairAurasDB.probe.runs.calm.results['lua: setfenv']") == "yes",
+      str(ev("ChairAurasDB.probe.runs.calm.results['lua: setfenv']")))
+check("a missing call is reported as missing, not as an error",
+      ev("ChairAurasDB.probe.runs.calm.results['world: CombatLogGetCurrentEventInfo']") == "missing",
+      str(ev("ChairAurasDB.probe.runs.calm.results['world: CombatLogGetCurrentEventInfo']")))
+check("and a secret value is named as secret",
+      (lambda r: r is not None and "secret" in r)(
+          L.execute("UnitHealth = function() return SECRET_VALUE() end") or
+          ev("ns.Probe:Run().results['units: UnitHealth / UnitHealthMax (player)']")),
+      str(ev("ChairAurasDB.probe.runs.calm.results['units: UnitHealth / UnitHealthMax (player)']")))
+check("events seen since the first probe are counted",
+      (ev("ChairAurasDB.probe.runs.calm.events.UNIT_AURA") or "").startswith("1"),
+      str(ev("ChairAurasDB.probe.runs.calm.events.UNIT_AURA")))
+
+
+# --- phase 7: displays ------------------------------------------------------------
+print("-- phase 7: texture, progress texture, model, sub-regions")
+# Methods the harness frames would otherwise swallow, recorded on the frame.
+RECORDER = """
+function RECORD(obj, ...)
+    for i = 1, select('#', ...) do
+        local name = select(i, ...)
+        rawset(obj, name, function(self, ...) rawset(self, '_' .. name, { ... }) return true end)
+    end
+end
+"""
+L = boot(RECORDER + """
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "tx", type = "texture", triggers = { { trigger = { spellID = 774 } } },
+      display = { texture = "icon", textureColour = "ff0000", textureRotation = 90,
+                  textureMirror = true, width = 80, height = 30 } },
+    { id = "pg", type = "progress", triggers = { { trigger = { spellID = 774 } } },
+      display = { progressDirection = "UP", ticks = "3, 5", width = 20, height = 100 } },
+    { id = "pc", type = "progress", triggers = { { trigger = { spellID = 774 } } },
+      display = { progressStyle = "circular" } },
+    { id = "md", type = "model", triggers = { { trigger = { spellID = 774 } } },
+      display = { modelSource = "display", modelID = 1234 } },
+    { id = "ic", triggers = { { trigger = { spellID = 774 } } },
+      display = { iconZoom = 20, border = true, borderColour = "00ff00", borderSize = 2,
+                  backdrop = true, glow = true, glowType = "pixel",
+                  texts = { { text = "%n!", point = "TOP", y = 5 }, { text = "%s", point = "BOTTOM" } } } },
+    { id = "br", type = "bar", triggers = { { trigger = { spellID = 774 } } },
+      display = { barDirection = "LEFT", barSpark = true, barInverse = true, ticks = "5" } },
+} } } }
+""")
+ev = L.eval
+L.execute("""
+local R = ns.Display.__regions
+RECORD(R.tx.texture, 'SetTexture', 'SetVertexColor', 'SetRotation', 'SetTexCoord')
+RECORD(R.pg.bar, 'SetOrientation', 'SetReverseFill')
+RECORD(R.pc.circle, 'SetCooldown', 'SetSwipeTexture')
+RECORD(R.md.model, 'SetDisplayInfo')
+RECORD(R.ic.texture, 'SetTexCoord')
+RECORD(R.br.bar, 'SetReverseFill')
+ns.Engine:UpdateAll()
+""")
+check("a texture aura is drawn as a texture",
+      ev("ns.Display.__regions.tx.kind") == "texture")
+check("its picture can be the aura's own icon", ev("ns.Display.__regions.tx.texture._SetTexture[1]") == 100)
+check("colored, mirrored and turned",
+      ev("ns.Display.__regions.tx.texture._SetVertexColor[1]") == 1
+      and ev("ns.Display.__regions.tx.texture._SetVertexColor[2]") == 0
+      and ev("ns.Display.__regions.tx.texture._SetTexCoord[1]") == 1
+      and abs(ev("ns.Display.__regions.tx.texture._SetRotation[1]") - 1.5708) < 0.001)
+check("with a free width and height",
+      ev("(ns.Display.__regions.tx:GetSize())") == 80 and ev("select(2, ns.Display.__regions.tx:GetSize())") == 30)
+check("a model loads the display ID it is given",
+      ev("ns.Display.__regions.md.model._SetDisplayInfo[1]") == 1234)
+check("a round progress texture with no timer is drawn whole",
+      ev("ns.Display.__regions.pc.full:IsShown()") is True)
+
+L.execute("AURAS.player = { { name = 'Rejuvenation', spellId = 774, applications = 3, duration = 10,"
+          " expirationTime = NOW + 8 } } ns.Engine:UpdateAll()")
+check("a progress texture fills with the time left, the way it is set to",
+      abs(ev("ns.Display.__regions.pg.bar:GetValue()") - 0.8) < 0.001
+      and ev("ns.Display.__regions.pg.bar._SetOrientation[1]") == "VERTICAL"
+      and ev("ns.Display.__regions.pg.bar._SetReverseFill[1]") is False)
+check("with a tick at each mark",
+      ev("ns.Display.__regions.pg.ticksShown") == 2
+      and ev("rawget(ns.Display.__regions.pg.subTicks[1], '_point').y") == 30,
+      str(ev("rawget(ns.Display.__regions.pg.subTicks[1], '_point').y")))
+check("round, it sweeps like a cooldown",
+      ev("ns.Display.__regions.pc.circle._SetCooldown[2]") == 10
+      and ev("ns.Display.__regions.pc.full:IsShown()") is False)
+check("an icon can be zoomed in",
+      abs(ev("ns.Display.__regions.ic.texture._SetTexCoord[1]") - 0.17) < 0.001)
+check("and carries a border and a background",
+      ev("ns.Display.__regions.ic.subBorder:IsShown()") is True
+      and ev("ns.Display.__regions.ic.subBorder.size") == 2
+      and ev("ns.Display.__regions.ic.subBackdrop:IsShown()") is True)
+check("any number of texts, each with the text codes",
+      ev("ns.Display.__regions.ic.subTexts[1]:GetText()") == "Rejuvenation!"
+      and ev("ns.Display.__regions.ic.subTexts[2]:GetText()") == "3",
+      str(ev("ns.Display.__regions.ic.subTexts[1]:GetText()")))
+check("and glows while it shows, in the style picked",
+      ev("ns.Display.__regions.ic.glow:IsShown()") is True
+      and ev("ns.Display.__regions.ic.glow.style") == "pixel"
+      and ev("#ns.Display.__regions.ic.glow.runners") == 8)
+check("a bar fills either way, inverse, with a spark",
+      ev("ns.Display.__regions.br.bar._SetReverseFill[1]") is True
+      and abs(ev("ns.Display.__regions.br.bar:GetValue()") - 0.2) < 0.001
+      and ev("ns.Display.__regions.br.spark:IsShown()") is True)
+check("and its ticks follow the inverse", ev("ns.Display.__regions.br.ticksShown") == 1)
+L.execute("AURAS.player = {} ns.Engine:UpdateAll()")
+check("the glow goes when it stops showing", ev("ns.Display.__regions.ic.glow:IsShown()") is False)
+L.execute("ns.FindAura('ic').display.texts = nil ns.Engine:UpdateAll()")
+check("and removed texts go", ev("ns.Display.__regions.ic.subTexts[1]:IsShown()") is False)
+
+print("-- phase 7: clones, rings and custom layout")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "dg", type = "dynamic", growth = "RIGHT", spacing = 0 },
+    { id = "cl", parent = "dg", display = { iconText = "%s" },
+      triggers = { { trigger = { type = "custom", custom_type = "stateupdate", events = "MY_EVENT",
+        custom = "function(allstates, event, n) for _, st in pairs(allstates) do st.show = false end"
+              .. " for i = 1, n or 0 do allstates['k' .. i] = { show = true, changed = true,"
+              .. " name = 'C' .. i, stacks = i } end return true end" } } } },
+    { id = "ring", type = "dynamic", growth = "CIRCLE", radius = 50 },
+    { id = "r1", parent = "ring", triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+    { id = "r2", parent = "ring", triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+    { id = "r3", parent = "ring", triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+    { id = "r4", parent = "ring", triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+    { id = "cg", type = "dynamic", growth = "CUSTOM",
+      growCustom = "function(p, a) for i, r in ipairs(a) do p[i] = { 0, i * 10 } end end" },
+    { id = "c1", parent = "cg", triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+    { id = "c2", parent = "cg", triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+    { id = "sg", type = "dynamic", growth = "RIGHT", spacing = 0, sort = "custom",
+      sortCustom = "function(a, b) return a.id > b.id end" },
+    { id = "s1", parent = "sg", triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+    { id = "s2", parent = "sg", triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+} } } }
+""")
+ev = L.eval
+L.execute("ns.Engine:UpdateAll() WeakAuras.ScanEvents('MY_EVENT', 3) ns.Engine:UpdateAll()")
+check("a state updater with three states has three clones", ev("#ns.Engine.states.cl.clones") == 3)
+check("each drawn in a region of its own, laid out in the group",
+      ev("ns.Display.__regions['cl::k2']:IsShown()") is True
+      and ev("rawget(ns.Display.__regions['cl::k2'], '_point').x") == 40
+      and ev("rawget(ns.Display.__regions['cl::k3'], '_point').x") == 80,
+      str(ev("rawget(ns.Display.__regions['cl::k3'], '_point') and rawget(ns.Display.__regions['cl::k3'], '_point').x")))
+check("each with its own values", ev("ns.Display.__regions['cl::k3'].overlay:GetText()") == "3")
+L.execute("ns.Engine:Rebuild() ns.Engine:UpdateAll() WeakAuras.ScanEvents('MY_EVENT', 3) ns.Engine:UpdateAll()")
+check("they come back placed after the list is rebuilt",
+      ev("ns.Display.__regions['cl::k3'] ~= nil and ns.Display.__regions['cl::k3']:IsShown()") is True
+      and ev("rawget(ns.Display.__regions['cl::k3'], '_point').x") == 80)
+L.execute("ns.Animations:Play(ns.Display.__regions['cl::k3'], ns.FindAura('cl'), 'main')")
+L.execute("WeakAuras.ScanEvents('MY_EVENT', 1) ns.Engine:UpdateAll()")
+check("and the clones go when their states do",
+      ev("ns.Engine.states.cl.clones") is None
+      and ev("ns.Display.ClonesOf('cl').k2:IsShown()") is False)
+L.execute("ns.FindAura('cl').animation = { main = { type = 'preset', preset = 'pulse' } }"
+          " WeakAuras.ScanEvents('MY_EVENT', 3) ns.Engine:UpdateAll() ns.Engine:UpdateAll()")
+check("a clone animates like its aura", ev("ns.Display.__regions['cl::k3'].anim.which") == "main")
+L.execute("WeakAuras.ScanEvents('MY_EVENT', 1) ns.Engine:UpdateAll()")
+check("and a clone that goes stops animating", ev("ns.Animations.__running[ns.Display.ClonesOf('cl').k3]") is None)
+
+pts = [(ev("rawget(ns.Display.__regions.r%d, '_point').x" % i),
+        ev("rawget(ns.Display.__regions.r%d, '_point').y" % i)) for i in range(1, 5)]
+expect = [(0, 50), (50, 0), (0, -50), (-50, 0)]
+check("a ring puts them round a circle, clockwise from the top",
+      all(abs(a[0] - b[0]) < 0.01 and abs(a[1] - b[1]) < 0.01 for a, b in zip(pts, expect)), str(pts))
+check("custom growth places them where its function says",
+      ev("rawget(ns.Display.__regions.c1, '_point').y") == 10
+      and ev("rawget(ns.Display.__regions.c2, '_point').y") == 20)
+check("custom sort orders them by its function",
+      ev("rawget(ns.Display.__regions.s2, '_point').x") == 0
+      and ev("rawget(ns.Display.__regions.s1, '_point').x") == 40)
+
+# --- phase 8: animations ------------------------------------------------------------
+print("-- phase 8: animations")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "an", triggers = { { trigger = { spellID = 8936 } } },
+      animation = { start = { type = "preset", preset = "slideleft" },
+                    main = { type = "custom", duration = 1, use_alpha = true, alpha = 0.5,
+                             alphaType = "custom", alphaFunc = "function(p, s, d) return 0.42 end" },
+                    finish = { type = "preset", preset = "fade" } } },
+    { id = "dz", type = "dynamic", growth = "RIGHT", spacing = 0 },
+    { id = "z1", parent = "dz", display = { hide = true },
+      animation = { finish = { type = "preset", preset = "fade" } },
+      triggers = { { trigger = { type = "custom", check = "update", custom = "function() return Z1_ON end" } } } },
+    { id = "z2", parent = "dz", display = { hide = true },
+      triggers = { { trigger = { type = "custom", check = "update", custom = "function() return true end" } } } },
+} } } }
+Z1_ON = true
+""")
+ev = L.eval
+L.execute("ns.Engine:UpdateAll()")
+check("nothing animates at login", ev("ns.Display.__regions.an.anim") is None)
+L.execute("AURAS.player = { { name = 'Regrowth', spellId = 8936 } } ns.Engine:UpdateAll()")
+check("coming up plays the start animation from its settings",
+      ev("ns.Display.__regions.an.anim.which") == "start"
+      and ev("ns.Display.__regions.an.animX") == -50
+      and ev("rawget(ns.Display.__regions.an, '_point').x") == -50
+      and ev("ns.Display.__regions.an:GetAlpha()") == 0)
+L.execute("DRIVER_TICK(0.125)")
+check("and runs back to where it belongs", abs(ev("ns.Display.__regions.an.animX") + 25) < 0.001,
+      str(ev("ns.Display.__regions.an.animX")))
+L.execute("DRIVER_TICK(0.2)")
+check("then the main animation loops", ev("ns.Display.__regions.an.anim.which") == "main"
+      and ev("rawget(ns.Display.__regions.an, '_point').x") == 0)
+check("a custom path runs its own function", abs(ev("ns.Display.__regions.an:GetAlpha()") - 0.42) < 0.001,
+      str(ev("ns.Display.__regions.an:GetAlpha()")))
+L.execute("DRIVER_TICK(3)")
+check("and keeps looping", ev("ns.Display.__regions.an.anim.which") == "main")
+L.execute("AURAS.player = {} ns.Engine:UpdateAll()")
+check("going plays the finish animation from how it looked",
+      ev("ns.Display.__regions.an.anim.which") == "finish"
+      and abs(ev("ns.Display.__regions.an:GetAlpha()") - 1) < 0.001)
+L.execute("DRIVER_TICK(0.125)")
+check("fading as it goes", abs(ev("ns.Display.__regions.an:GetAlpha()") - 0.5) < 0.001)
+L.execute("DRIVER_TICK(0.2)")
+check("and ends where the aura is drawn when it is not up",
+      ev("ns.Display.__regions.an.anim") is None
+      and abs(ev("ns.Display.__regions.an:GetAlpha()") - 0.3) < 0.001,
+      str(ev("ns.Display.__regions.an:GetAlpha()")))
+
+L.execute("Z1_ON = false ns.Engine:UpdateAll()")
+check("a dynamic group keeps a place for one playing its finish",
+      ev("ns.Display.__regions.z1.anim.which") == "finish"
+      and ev("rawget(ns.Display.__regions.z2, '_point').x") == 40)
+L.execute("DRIVER_TICK(0.5)")
+check("and closes up when it ends",
+      ev("rawget(ns.Display.__regions.z2, '_point').x") == 0
+      and ev("ns.Display.__regions.z1:IsShown()") is False)
+
+L.execute("ns.FindAura('an').animation.main = { type = 'none' } ns.SaveOnLogout()")
+check("an animation set to none is not saved",
+      ev("(function() for _, a in ipairs(ChairAurasDB.profiles.account.auras) do"
+         " if a.id == 'an' then return a.animation.main == nil and a.animation.start ~= nil end end end)()") is True)
+
+print("-- phases 7 and 8 in the window")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "w1", triggers = { { trigger = { spellID = 774 } } } },
+    { id = "wg", type = "dynamic" },
+} } } }
+""")
+ev = L.eval
+L.execute("ns.Config:Open(); ns.Config:Select('w1'); ns.Config:SetTab('display')")
+L.execute("FIND_WIDGET = " + FIND_WIDGET)
+check("the size of a texture is hidden on an icon",
+      ev("FIND_WIDGET('width', 'slider', 'display').host:IsShown()") is False)
+L.execute("FIND_WIDGET('type', 'choice', 'display').dropdown:Pick('texture')")
+check("any aura can be drawn as a texture", ev("ns.FindAura('w1').type") == "texture"
+      and ev("ns.Display.__regions.w1.kind") == "texture")
+check("and then its size and picture are offered",
+      ev("FIND_WIDGET('width', 'slider', 'display').host:IsShown()") is True
+      and ev("FIND_WIDGET('texture', 'choice', 'display').host:IsShown()") is True)
+L.execute("FIND_WIDGET('texts', 'strip', 'display').field.add(ns.FindAura('w1')) ns.Config:Refresh()")
+check("texts are added from a strip", ev("#ns.FindAura('w1').display.texts") == 1
+      and ev("FIND_WIDGET('subText', 'text', 'display').host:IsShown()") is True)
+L.execute("ns.Config:SetTab('animations')")
+L.execute("FIND_WIDGET('animType', 'choice', 'animations').field.set(ns.FindAura('w1'), 'preset')")
+check("an Animations tab: a slot is set to a preset, the first offered",
+      ev("ns.FindAura('w1').animation.start.type") == "preset"
+      and ev("ns.FindAura('w1').animation.start.preset") == "slidetop")
+L.execute("ns.Config.__animCursor('main')"
+          " FIND_WIDGET('animType', 'choice', 'animations').field.set(ns.FindAura('w1'), 'preset')")
+check("each slot has its own presets",
+      ev("FIND_WIDGET('preset_main', 'choice', 'animations').host:IsShown()") is True
+      and ev("FIND_WIDGET('preset_start', 'choice', 'animations').host:IsShown()") is False)
+L.execute("FIND_WIDGET('animType', 'choice', 'animations').field.set(ns.FindAura('w1'), 'custom')"
+          " FIND_WIDGET('use_translate', 'check', 'animations').field.set(ns.FindAura('w1'), true) ns.Config:Refresh()")
+check("custom shows WeakAuras' parts",
+      ev("FIND_WIDGET('x', 'slider', 'animations').host:IsShown()") is True
+      and ev("FIND_WIDGET('alpha', 'slider', 'animations').host:IsShown()") is False)
+L.execute("ns.Config:Select('wg') ns.Config:SetTab('display')")
+L.execute("FIND_WIDGET('growth', 'choice', 'display').field.set(ns.FindAura('wg'), 'CIRCLE') ns.Config:Refresh()")
+check("a ring's radius is offered once a group grows in a circle",
+      ev("FIND_WIDGET('radius', 'slider', 'display').host:IsShown()") is True
+      and ev("FIND_WIDGET('growCustom', 'code', 'display').host:IsShown()") is False)
 
 print("ALL OK" if not failures else "%d FAILED" % len(failures))
 sys.exit(1 if failures else 0)

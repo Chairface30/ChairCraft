@@ -1563,13 +1563,27 @@ function BAR(name)
     end
 end
 """)
-check("Alchemy's bar opens Alchemy",
-      L.eval("BAR('Alchemy').professionClick:GetAttribute('spell')") == "Alchemy"
-      and L.eval("BAR('Alchemy').professionClick:IsShown()") is True)
+L.execute("""
+function HOVER(name)
+    local b = BAR(name)
+    rawset(b, "GetRect", function() return 100, 200, 180, 16 end)
+    b._scripts.OnEnter(b)
+end
+""")
+L.execute("HOVER('Alchemy')")
+check("hovering Alchemy's bar sets the secure button to open Alchemy",
+      L.eval("WOWFTrackerNS.professionButton:GetAttribute('spell')") == "Alchemy"
+      and L.eval("WOWFTrackerNS.professionButton:IsShown()") is True)
+check("and the button is not attached to the bar, so the bar stays unprotected",
+      L.eval("rawget(BAR('Alchemy'), 'professionClick')") is None)
+L.execute("WOWFTrackerNS.professionButton._scripts.OnLeave(WOWFTrackerNS.professionButton)")
+check("it goes when the mouse leaves", L.eval("WOWFTrackerNS.professionButton:IsShown()") is False)
+L.execute("HOVER('Mining')")
 check("Mining's opens its window through Smelting",
-      L.eval("BAR('Mining').professionClick:GetAttribute('spell')") == "Smelting")
-check("a weapon skill has no window, so its bar opens nothing",
-      L.eval("BAR('Swords').professionClick:IsShown()") is False
+      L.eval("WOWFTrackerNS.professionButton:GetAttribute('spell')") == "Smelting")
+L.execute("WOWFTrackerNS.professionButton._scripts.OnLeave(WOWFTrackerNS.professionButton) HOVER('Swords')")
+check("a weapon skill has no window, so its bar offers nothing",
+      L.eval("WOWFTrackerNS.professionButton:IsShown()") is False
       and L.eval("BAR('Swords').profession") is None)
 L.execute("""
 OPENED = nil
@@ -1579,8 +1593,9 @@ local b = BAR('Alchemy')
 b._scripts.OnMouseUp(b, "LeftButton")
 """)
 check("where the client can open a profession directly, that is used, and no cast",
-      L.eval("OPENED") == 171 and L.eval("BAR('Alchemy').professionClick:IsShown()") is False,
-      str(L.eval("OPENED")))
+      L.eval("OPENED") == 171, str(L.eval("OPENED")))
+L.execute("HOVER('Alchemy')")
+check("and no secure button is offered then", L.eval("WOWFTrackerNS.professionButton:IsShown()") is False)
 
 print("ALL OK" if not failures else "%d FAILED" % len(failures))
 sys.exit(1 if failures else 0)

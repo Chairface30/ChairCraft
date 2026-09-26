@@ -415,6 +415,9 @@ local function TaxiNodes()
                         name = ns.Text(name),
                         slot = index,
                         current = (kind == "CURRENT"),
+                        -- NONE and DISTANT are points you have not found or
+                        -- cannot reach from here.
+                        known = (kind == "CURRENT" or kind == "REACHABLE"),
                         x = x, y = y,
                     }
                 end
@@ -441,10 +444,13 @@ local function TaxiNodes()
                         end
                         if x == nil then x, y = pos.x, pos.y end
                     end
+                    local states = _G.Enum and _G.Enum.FlightPathState
                     out[#out + 1] = {
                         name = name,
                         slot = ns.Num(node.slotIndex),
                         current = (currentState ~= nil and node.state == currentState),
+                        known = not (states and states.Unreachable ~= nil
+                                     and node.state == states.Unreachable),
                         x = ns.Num(x), y = ns.Num(y),
                     }
                 end
@@ -584,10 +590,73 @@ local function LookupNames(slot, path)
     return { here, there }
 end
 
+-- When the client will not say which stops a flight passes through -- this
+-- one does not (2026-09-26: every time flown was saved under its two ends
+-- only) -- the table can: every route in it from here to there whose stops
+-- in between are all flight points you know, the fastest of them being the
+-- one the game flies. Indexed by ends the first time it is needed.
+local endsIndex = setmetatable({}, { __mode = "k" })
+
+local function Ends(routes)
+    local index = endsIndex[routes]
+    if index then return index end
+    index = {}
+    for key, seconds in pairs(routes) do
+        if type(key) == "string" then
+            local stops = {}
+            for stop in (key .. " > "):gmatch("(.-) > ") do stops[#stops + 1] = stop:lower() end
+            if #stops >= 2 then
+                local ends = stops[1] .. "|" .. stops[#stops]
+                index[ends] = index[ends] or {}
+                table.insert(index[ends], { stops = stops, seconds = ns.Num(seconds), key = key })
+            end
+        end
+    end
+    endsIndex[routes] = index
+    return index
+end
+
+-- The best route in the table from `here` to `there` over known points:
+-- seconds, and the route's key.
+local function ByEnds(here, there)
+    local data = ns.flightData
+    here, there = ShortName(here), ShortName(there)
+    if type(data) ~= "table" or not here or not there then return nil end
+    local known = {}
+    for _, node in ipairs(TaxiNodes() or {}) do
+        if node.known ~= false then
+            local short = ShortName(node.name)
+            if short then known[short:lower()] = true end
+        end
+    end
+    local faction = Faction()
+    local order = { faction or "Alliance", faction == "Horde" and "Alliance" or "Horde" }
+    for _, side in ipairs(order) do
+        local routes = data[side]
+        if type(routes) == "table" then
+            local best
+            for _, route in ipairs(Ends(routes)[here:lower() .. "|" .. there:lower()] or {}) do
+                local usable = route.seconds ~= nil
+                for i = 2, #route.stops - 1 do
+                    if not known[route.stops[i]] then usable = false break end
+                end
+                if usable and (not best or route.seconds < best.seconds) then best = route end
+            end
+            if best then return best.seconds, best.key end
+        end
+    end
+    return nil
+end
+ns.FlightByEnds = ByEnds
+
 -- The hardcoded time for flying to node `slot` along `path` (from RoutePath),
--- in seconds at normal speed, or nil.
+-- in seconds at normal speed, or nil. With no path from the client, the
+-- route is worked out from the table (see ByEnds).
 local function Hardcoded(slot, path)
-    return (HardcodedTime(TableKey(LookupNames(slot, path))))
+    local seconds = HardcodedTime(TableKey(LookupNames(slot, path)))
+    if seconds or path then return seconds end
+    local here, there = CurrentNodeName(), NodeNameBySlot(slot)
+    return (ByEnds(here, there))
 end
 
 -- What "/chair plus flight probe" prints, with a flight map open: every link
@@ -622,6 +691,10 @@ function ns.FlightProbe()
             local path = RoutePath(node.slot)
             local key = TableKey(LookupNames(node.slot, path))
             local seconds = HardcodedTime(key)
+            if not seconds and not path then
+                local byEnds, routeKey = ByEnds(here.name, node.name)
+                if byEnds then seconds, key = byEnds, (routeKey or key) .. " |cff9d9d9d(worked out)|r" end
+            end
             if seconds then found = found + 1 else missing = missing + 1 end
             if shown < 12 then
                 shown = shown + 1

@@ -42,6 +42,8 @@ local window, listChild, editor
 local rows = {}
 local selectedID = nil
 local currentTab = "trigger"
+-- Which of the selected aura's triggers the Trigger tab is editing.
+local currentTrigger = 1
 
 -------------------------------------------------------------------------------
 -- Small widget helpers
@@ -85,7 +87,7 @@ end
 
 -- A choice of two or more. Each button locks its highlight while it is the
 -- answer, which is what a dropdown would have shown as its selected line.
-local function ButtonGroup(parent, labels, width, onPick)
+local function ButtonGroup(parent, labels, width, onPick, perRow)
     local group = { buttons = {} }
 
     for index, entry in ipairs(labels) do
@@ -95,11 +97,15 @@ local function ButtonGroup(parent, labels, width, onPick)
         button.value = entry.value
         if index == 1 then
             button:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+        elseif perRow and (index - 1) % perRow == 0 then
+            -- A new row, under the first button of the last one.
+            button:SetPoint("TOPLEFT", group.buttons[index - perRow], "BOTTOMLEFT", 0, -4)
         else
             button:SetPoint("LEFT", group.buttons[index - 1], "RIGHT", 4, 0)
         end
         group.buttons[index] = button
     end
+    group.rows = perRow and math.ceil(#labels / perRow) or 1
 
     function group:SetValue(value)
         for _, button in ipairs(self.buttons) do
@@ -119,6 +125,190 @@ local function ButtonGroup(parent, labels, width, onPick)
 
     return group
 end
+
+-- A dropdown: a button naming the current choice, and a list that opens
+-- under it. Built here rather than on Blizzard's UIDropDownMenu, which taints
+-- whatever it touches -- the kind of thing that ends in a blocked action in
+-- combat. `values` may carry { header = "Spells" } entries, drawn as titles.
+-- A long list scrolls with the mouse wheel.
+local openDropdown
+local MENU_ROW, MENU_ROWS = 18, 16
+
+local function Dropdown(parent, width, values, onPick)
+    local dropdown = {}
+    local button = Button(parent, "", width, function()
+        if openDropdown and openDropdown ~= dropdown then openDropdown.menu:Hide() end
+        if dropdown.menu:IsShown() then dropdown.menu:Hide() return end
+        dropdown:Open()
+    end)
+    button:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    dropdown.button = button
+    local arrow = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    arrow:SetPoint("RIGHT", button, "RIGHT", -6, 0)
+    arrow:SetText("v")
+
+    local menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetClampedToScreen(true)
+    menu:SetWidth(math.max(width, 160))
+    pcall(menu.SetBackdrop, menu, {
+        bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+    pcall(menu.SetBackdropColor, menu, 0.06, 0.06, 0.08, 0.97)
+    menu:EnableMouse(true)
+    menu:EnableMouseWheel(true)
+    menu:Hide()
+    dropdown.menu = menu
+    -- Closing the window closes the list with it.
+    parent:HookScript("OnHide", function() menu:Hide() end)
+
+    dropdown.rows = {}
+    dropdown.offset = 0
+    local function Row(i)
+        local row = dropdown.rows[i]
+        if row then return row end
+        row = CreateFrame("Button", nil, menu)
+        row:SetHeight(MENU_ROW)
+        row:SetPoint("TOPLEFT", menu, "TOPLEFT", 6, -6 - (i - 1) * MENU_ROW)
+        row:SetPoint("RIGHT", menu, "RIGHT", -6, 0)
+        local glow = row:CreateTexture(nil, "HIGHLIGHT")
+        glow:SetAllPoints()
+        glow:SetColorTexture(1, 1, 1, 0.12)
+        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.text:SetPoint("LEFT", row, "LEFT", 4, 0)
+        row.text:SetJustifyH("LEFT")
+        row:SetScript("OnClick", function(self)
+            if self.value == nil then return end
+            menu:Hide()
+            onPick(self.value)
+        end)
+        dropdown.rows[i] = row
+        return row
+    end
+
+    function dropdown:Draw()
+        local shown = math.min(#values, MENU_ROWS)
+        self.offset = math.max(0, math.min(self.offset, #values - shown))
+        for i = 1, shown do
+            local entry = values[i + self.offset]
+            local row = Row(i)
+            if entry.header then
+                row.value = nil
+                row.text:SetText("|cff9d7cff" .. entry.header .. "|r")
+                row.text:SetPoint("LEFT", row, "LEFT", 0, 0)
+            else
+                row.value = entry.value
+                local mark = (entry.value == self.value) and "|cffffd100> |r" or "   "
+                row.text:SetText(mark .. entry.text)
+                row.text:SetPoint("LEFT", row, "LEFT", 4, 0)
+            end
+            row:Show()
+        end
+        for i = shown + 1, #self.rows do self.rows[i]:Hide() end
+        menu:SetHeight(shown * MENU_ROW + 12)
+    end
+
+    menu:SetScript("OnMouseWheel", function(_, delta)
+        dropdown.offset = dropdown.offset - (delta or 0) * 3
+        dropdown:Draw()
+    end)
+
+    function dropdown:Open()
+        -- Scrolled so the current choice is in view.
+        for i, entry in ipairs(values) do
+            if entry.value == self.value and i > MENU_ROWS then self.offset = i - MENU_ROWS end
+        end
+        menu:ClearAllPoints()
+        menu:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -2)
+        self:Draw()
+        menu:Show()
+        openDropdown = self
+    end
+
+    function dropdown:SetValue(value)
+        self.value = value
+        local label = tostring(value or "")
+        for _, entry in ipairs(values) do
+            if not entry.header and entry.value == value then label = entry.text end
+        end
+        self.button:SetText(label)
+        if menu:IsShown() then self:Draw() end
+    end
+
+    function dropdown:SetEnabled(enabled)
+        self.button:SetEnabled(enabled)
+        if not enabled then menu:Hide() end
+    end
+
+    -- For the tests, which pick as a player would.
+    function dropdown:Pick(value)
+        onPick(value)
+    end
+
+    return dropdown
+end
+
+-- Fonts to pick from: the game's own, and any LibSharedMedia carries when
+-- another addon has loaded it. Filled in place, so a dropdown built from
+-- this table sees fonts registered after it was made.
+local FONT_VALUES = {}
+local function RefreshFonts()
+    wipe(FONT_VALUES)
+    FONT_VALUES[1] = { text = "Game default", value = "" }
+    local builtin = {
+        { "Friz Quadrata", "Fonts\\FRIZQT__.TTF" }, { "Arial Narrow", "Fonts\\ARIALN.TTF" },
+        { "Morpheus", "Fonts\\MORPHEUS.TTF" }, { "Skurri", "Fonts\\SKURRI.TTF" },
+    }
+    local seen = {}
+    for _, font in ipairs(builtin) do
+        FONT_VALUES[#FONT_VALUES + 1] = { text = font[1], value = font[2] }
+        seen[font[2]] = true
+    end
+    local stub = _G.LibStub
+    local ok, media = pcall(function() return stub and stub("LibSharedMedia-3.0", true) end)
+    if ok and media and type(media.List) == "function" then
+        local okL, names = pcall(media.List, media, "font")
+        for _, name in ipairs(okL and names or {}) do
+            local okF, path = pcall(media.Fetch, media, "font", name)
+            if okF and path and not seen[path] then
+                FONT_VALUES[#FONT_VALUES + 1] = { text = name, value = path }
+                seen[path] = true
+            end
+        end
+    end
+end
+RefreshFonts()
+ns.RefreshFonts = RefreshFonts
+
+-- The game's color picker, opened on a hex color; `done` hears each change.
+local function PickColour(hex, done)
+    local picker = _G.ColorPickerFrame
+    if not picker then ns.Print("this client has no color picker.") return end
+    hex = (hex and hex ~= "") and hex or "ffffff"
+    local r = (tonumber(hex:sub(1, 2), 16) or 255) / 255
+    local g = (tonumber(hex:sub(3, 4), 16) or 255) / 255
+    local b = (tonumber(hex:sub(5, 6), 16) or 255) / 255
+    local function ToHex(cr, cg, cb)
+        return string.format("%02x%02x%02x", math.floor(cr * 255 + 0.5),
+            math.floor(cg * 255 + 0.5), math.floor(cb * 255 + 0.5))
+    end
+    local function Current()
+        local ok, cr, cg, cb = pcall(picker.GetColorRGB, picker)
+        if ok and cr then done(ToHex(cr, cg, cb)) end
+    end
+    local function Cancel() done(hex) end
+    if type(picker.SetupColorPickerAndShow) == "function" then
+        pcall(picker.SetupColorPickerAndShow, picker,
+            { r = r, g = g, b = b, hasOpacity = false, swatchFunc = Current, cancelFunc = Cancel })
+        return
+    end
+    picker.hasOpacity = false
+    picker.func, picker.swatchFunc, picker.cancelFunc = Current, Current, Cancel
+    picker.previousValues = { r, g, b }
+    pcall(picker.SetColorRGB, picker, r, g, b)
+    if type(_G.ShowUIPanel) == "function" then pcall(_G.ShowUIPanel, picker) else picker:Show() end
+end
+ns.PickColour = PickColour
 
 local sliderSerial = 0
 local function Slider(parent, label, low, high, step, onChange)
@@ -253,6 +443,9 @@ local function TreeOrder()
     return order
 end
 
+-- Defined further down, with the drop logic they belong to.
+local ShowDropMark, AutoScroll
+
 local function CreateRow(index)
     local row = CreateFrame("Button", nil, listChild)
     row:SetHeight(ROW_HEIGHT)
@@ -285,18 +478,31 @@ local function CreateRow(index)
     row:SetScript("OnDragStart", function(self)
         Config.dragging = self.auraID
         self.selection:Show()
+        self:SetScript("OnUpdate", function()
+            AutoScroll()
+            ShowDropMark()
+        end)
     end)
 
     row:SetScript("OnDragStop", function(self)
+        self:SetScript("OnUpdate", nil)
+        if Config.dropLine then Config.dropLine:Hide() end
+        if Config.dropGlow then Config.dropGlow:Hide() end
         local dragged = Config.dragging
         Config.dragging = nil
         if not dragged then return end
 
-        local target, inside = Config:RowUnderCursor()
-        if target and target ~= dragged then
-            local aura = ns.FindAura(dragged)
+        local target, where = Config:RowUnderCursor()
+        local aura = ns.FindAura(dragged)
+        if aura and where == "end" then
+            if ns.MoveAuraToEnd(aura) then
+                selectedID = dragged
+                Commit(true)
+                return
+            end
+        elseif target and target ~= dragged then
             local onto = ns.FindAura(target)
-            if aura and onto and ns.MoveAura(aura, onto, inside) then
+            if aura and onto and ns.MoveAura(aura, onto, where) then
                 selectedID = dragged
                 Commit(true)
                 return
@@ -369,7 +575,7 @@ end
 -- a local is in scope only after its own line, so a widget callback written
 -- further up that names SetDisplay would be reading a nil global instead.
 
-local function TriggerOf(aura) return ns.SubTable(aura, "trigger") end
+local function TriggerOf(aura) return ns.TriggerTable(aura, currentTrigger) end
 local function DisplayOf(aura) return ns.SubTable(aura, "display") end
 local function LoadOf(aura) return ns.SubTable(aura, "load") end
 local function ActionsOf(aura) return ns.SubTable(aura, "actions") end
@@ -490,9 +696,9 @@ local function BuildField(pane, field)
         local choose = Button(host, "Choose...", 90, function()
             local aura = Current()
             if not aura then return end
-            ns.Sounds:Open(ns.ActionField(aura, field.key),
-                           ns.ActionField(aura, "channel"),
-                           function(value) field.set(aura, value) end)
+            local value = field.get and field.get(aura) or ns.ActionField(aura, field.key)
+            ns.Sounds:Open(value, ns.ActionField(aura, "channel"),
+                           function(picked) field.set(aura, picked) end)
         end)
         choose:SetPoint("LEFT", current, "RIGHT", 6, 0)
         widget.choose = choose
@@ -500,8 +706,8 @@ local function BuildField(pane, field)
         local test = Button(host, "Play", 56, function()
             local aura = Current()
             if not aura then return end
-            if not ns.Sounds:Preview(ns.ActionField(aura, field.key),
-                                     ns.ActionField(aura, "channel")) then
+            local value = field.get and field.get(aura) or ns.ActionField(aura, field.key)
+            if not ns.Sounds:Preview(value, ns.ActionField(aura, "channel")) then
                 ns.Print("nothing played -- pick one from the list, or check the path.")
             end
         end)
@@ -517,12 +723,263 @@ local function BuildField(pane, field)
         if field.tip then Tooltip(label, field.label, field.tip) end
 
         function widget:Read(aura)
-            self.current:SetText(ns.Sounds:Label(ns.ActionField(aura, field.key)))
+            local value = field.get and field.get(aura) or ns.ActionField(aura, field.key)
+            self.current:SetText(ns.Sounds:Label(value))
         end
         function widget:SetEnabled(enabled)
             self.choose:SetEnabled(enabled)
             self.test:SetEnabled(enabled)
             self.clear:SetEnabled(enabled)
+        end
+
+    elseif field.kind == "strip" then
+        -- A numbered row: one button per item (condition, check, change), +
+        -- to add one, Remove, and optionally up and down to reorder. What the
+        -- numbers stand for, and what + and Remove do, come from the field.
+        host:SetHeight(44)
+        local label = Text(host, field.label, "GameFontNormalSmall")
+        label:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        widget.label = label
+        if field.tip then Tooltip(label, field.label, field.tip) end
+        local MAX = field.max or 10
+        widget.numbers = {}
+        for i = 1, MAX do
+            local button = Button(host, tostring(i), 26, function()
+                field.select(i)
+                Config:Refresh()
+            end)
+            if i == 1 then
+                button:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
+            else
+                button:SetPoint("LEFT", widget.numbers[i - 1], "RIGHT", 2, 0)
+            end
+            widget.numbers[i] = button
+        end
+        widget.add = Button(host, "+", 26, function()
+            local aura = Current()
+            if not aura or field.count(aura) >= MAX then return end
+            field.add(aura)
+            Commit(false)
+        end)
+        widget.remove = Button(host, "Remove", 64, function()
+            local aura = Current()
+            if aura and field.count(aura) > 0 then
+                field.remove(aura)
+                Commit(false)
+            end
+        end)
+        if field.move then
+            widget.up = Button(host, "^", 22, function()
+                local aura = Current()
+                if aura then field.move(aura, -1) Commit(false) end
+            end)
+            widget.down = Button(host, "v", 22, function()
+                local aura = Current()
+                if aura then field.move(aura, 1) Commit(false) end
+            end)
+            Tooltip(widget.up, "Move up", "Earlier conditions are overridden by later ones.")
+        end
+        widget.empty = Text(host, field.empty or "", "GameFontDisableSmall")
+
+        function widget:Read(aura)
+            local count = field.count(aura)
+            local current = field.current()
+            if current > count then current = math.max(count, 1) field.select(current) end
+            for i, button in ipairs(self.numbers) do
+                button:SetShown(i <= count)
+                if i == current then button:LockHighlight() else button:UnlockHighlight() end
+            end
+            local anchor = count > 0 and self.numbers[math.min(count, #self.numbers)] or nil
+            self.add:ClearAllPoints()
+            if anchor then
+                self.add:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
+            else
+                self.add:SetPoint("TOPLEFT", self.label, "BOTTOMLEFT", 0, -4)
+            end
+            self.remove:ClearAllPoints()
+            self.remove:SetPoint("LEFT", self.add, "RIGHT", 4, 0)
+            self.remove:SetShown(count > 0)
+            local last = self.remove
+            if self.up then
+                self.up:ClearAllPoints()
+                self.up:SetPoint("LEFT", self.remove, "RIGHT", 4, 0)
+                self.down:ClearAllPoints()
+                self.down:SetPoint("LEFT", self.up, "RIGHT", 2, 0)
+                self.up:SetShown(count > 1)
+                self.down:SetShown(count > 1)
+                if count > 1 then last = self.down end
+            end
+            self.empty:ClearAllPoints()
+            self.empty:SetPoint("LEFT", count > 0 and last or self.add, "RIGHT", 8, 0)
+            self.empty:SetShown(count == 0)
+        end
+        function widget:SetEnabled(enabled)
+            self.add:SetEnabled(enabled)
+            self.remove:SetEnabled(enabled)
+        end
+
+    elseif field.kind == "triggers" then
+        -- The strip above the Trigger tab: one button per trigger, + to add
+        -- one (a copy of the one open), Remove, and -- once there is more than
+        -- one -- how they combine and which one the aura's timer comes from.
+        host:SetHeight(76)
+        local label = Text(host, "Triggers", "GameFontNormalSmall")
+        label:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        widget.label = label
+
+        widget.numbers = {}
+        local MAX_SHOWN = 8
+        for i = 1, MAX_SHOWN do
+            local button = Button(host, tostring(i), 26, function()
+                currentTrigger = i
+                Config:Refresh()
+            end)
+            if i == 1 then
+                button:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
+            else
+                button:SetPoint("LEFT", widget.numbers[i - 1], "RIGHT", 2, 0)
+            end
+            widget.numbers[i] = button
+        end
+        widget.add = Button(host, "+", 26, function()
+            local aura = Current()
+            if not aura or ns.TriggerCount(aura) >= MAX_SHOWN then return end
+            currentTrigger = ns.AddTrigger(aura, ns.Trigger(aura, currentTrigger))
+            Commit(true)
+        end)
+        Tooltip(widget.add, "Add a trigger", "A copy of the one open, to change from there.")
+        widget.remove = Button(host, "Remove", 64, function()
+            local aura = Current()
+            if aura and ns.RemoveTrigger(aura, currentTrigger) then
+                currentTrigger = math.max(1, currentTrigger - 1)
+                Commit(true)
+            end
+        end)
+
+        local showLabel = Text(host, "Show when", "GameFontNormalSmall")
+        showLabel:SetPoint("TOPLEFT", widget.numbers[1], "BOTTOMLEFT", 0, -8)
+        widget.showLabel = showLabel
+        local modeHost = CreateFrame("Frame", nil, host)
+        modeHost:SetSize(220, 22)
+        modeHost:SetPoint("LEFT", showLabel, "RIGHT", 6, 0)
+        widget.mode = ButtonGroup(modeHost, {
+            { text = "All", value = "all" }, { text = "Any", value = "any" },
+            { text = "Custom", value = "custom" } }, 60, function(value)
+            local aura = Current()
+            if not aura then return end
+            ns.NormalizeTriggers(aura)
+            aura.triggers = aura.triggers or { {} }
+            aura.triggers.disjunctive = value
+            Commit(false)
+        end)
+        Tooltip(showLabel, "Show when",
+            "All: every trigger is met. Any: at least one is. Custom: a Lua function"
+            .. " decides, given the triggers' answers as a list -- trigger[1] and so on.")
+
+        widget.info = Button(host, "Info: first active", 130, function()
+            local aura = Current()
+            if not aura then return end
+            local count = ns.TriggerCount(aura)
+            local mode = ns.ActiveTriggerMode(aura)
+            local nextMode = (mode == -10) and 1 or (mode + 1)
+            if nextMode > count then nextMode = -10 end
+            ns.NormalizeTriggers(aura)
+            aura.triggers = aura.triggers or { {} }
+            aura.triggers.activeTriggerMode = nextMode
+            Commit(false)
+        end)
+        widget.info:SetPoint("LEFT", modeHost, "RIGHT", 4, 0)
+        Tooltip(widget.info, "Which trigger the aura shows",
+            "The timer, stacks, name and icon come from one trigger: the first one"
+            .. " that is met, or the one picked here.")
+
+        function widget:Read(aura)
+            local count = ns.TriggerCount(aura)
+            if currentTrigger > count then currentTrigger = count end
+            for i, button in ipairs(self.numbers) do
+                button:SetShown(i <= count)
+                if i == currentTrigger then button:LockHighlight() else button:UnlockHighlight() end
+            end
+            self.add:ClearAllPoints()
+            self.add:SetPoint("LEFT", self.numbers[math.min(count, #self.numbers)], "RIGHT", 6, 0)
+            self.add:SetShown(count < #self.numbers)
+            self.remove:ClearAllPoints()
+            self.remove:SetPoint("LEFT", self.add, "RIGHT", 4, 0)
+            self.remove:SetEnabled(count > 1)
+            self.mode:SetValue(ns.TriggerMode(aura))
+            local mode = ns.ActiveTriggerMode(aura)
+            self.info:SetText(mode == -10 and "Info: first active" or ("Info: trigger " .. mode))
+            local several = count > 1
+            self.mode:SetEnabled(several)
+            self.info:SetEnabled(several)
+        end
+        function widget:SetEnabled(enabled)
+            for _, button in ipairs(self.numbers) do button:SetEnabled(enabled) end
+            self.add:SetEnabled(enabled)
+            self.label:SetTextColor(enabled and 1 or 0.4, enabled and 0.82 or 0.4, enabled and 0 or 0.4)
+        end
+
+    elseif field.kind == "code" then
+        -- Lua, several lines of it. Saved when the box loses focus or Save is
+        -- pressed; what the compiler or the last run said sits underneath.
+        host:SetHeight(field.height or 150)
+        local label = Text(host, field.label, "GameFontNormalSmall")
+        label:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        widget.label = label
+        if field.tip then Tooltip(label, field.label, field.tip) end
+
+        local back = CreateFrame("Frame", nil, host)
+        back:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
+        back:SetSize(PANE_W - 24, (field.height or 150) - 44)
+        local fill = back:CreateTexture(nil, "BACKGROUND")
+        fill:SetAllPoints()
+        fill:SetColorTexture(0, 0, 0, 0.5)
+
+        local scroll = CreateFrame("ScrollFrame", nil, back)
+        scroll:SetPoint("TOPLEFT", 4, -4)
+        scroll:SetPoint("BOTTOMRIGHT", -4, 4)
+        local box = CreateFrame("EditBox", nil, scroll)
+        box:SetMultiLine(true)
+        box:SetAutoFocus(false)
+        box:SetFontObject("ChatFontNormal")
+        box:SetWidth(PANE_W - 36)
+        box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        scroll:SetScrollChild(box)
+        back:EnableMouse(true)
+        back:SetScript("OnMouseDown", function() box:SetFocus() end)
+        widget.box = box
+
+        local function Save()
+            local aura = Current()
+            if aura then field.set(aura, box:GetText()) end
+        end
+        box:SetScript("OnEditFocusLost", Save)
+        local save = Button(host, "Save", 50, function() box:ClearFocus() Save() end)
+        save:SetPoint("TOPLEFT", back, "BOTTOMLEFT", 0, -4)
+        widget.save = save
+        local status = Text(host, "", "GameFontDisableSmall")
+        status:SetPoint("LEFT", save, "RIGHT", 8, 0)
+        status:SetWidth(PANE_W - 90)
+        status:SetJustifyH("LEFT")
+        widget.status = status
+
+        function widget:Read(aura)
+            if not self.box:HasFocus() then
+                self.box:SetText(field.get(aura) or "")
+                self.box:SetCursorPosition(0)
+            end
+            local err = field.error and field.error(aura)
+            if err then
+                self.status:SetText("|cffff5555" .. tostring(err) .. "|r")
+            else
+                self.status:SetText(field.hint or "")
+            end
+        end
+        function widget:SetEnabled(enabled)
+            self.box:SetEnabled(enabled)
+            self.save:SetEnabled(enabled)
+            self.box:SetTextColor(enabled and 1 or 0.5, enabled and 1 or 0.5, enabled and 1 or 0.5)
+            self.label:SetTextColor(enabled and 1 or 0.4, enabled and 0.82 or 0.4, enabled and 0 or 0.4)
         end
 
     elseif field.kind == "button" then
@@ -640,11 +1097,23 @@ local function BuildField(pane, field)
         local groupHost = CreateFrame("Frame", nil, host)
         groupHost:SetSize(PANE_W, 22)
         groupHost:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 2, -4)
-        widget.group = ButtonGroup(groupHost, field.values, field.width or 84,
-            function(value)
-                local aura = Current()
-                if aura then field.set(aura, value) end
-            end)
+        local function pick(value)
+            local aura = Current()
+            if aura then field.set(aura, value) end
+        end
+        if field.dropdown then
+            -- Too many to lay out as buttons: a list that opens instead.
+            widget.group = Dropdown(groupHost, field.width or 200, field.values, pick)
+            widget.dropdown = widget.group
+        else
+            local width = field.width or 84
+            local perRow
+            if field.wrap or #field.values * (width + 4) > PANE_W then
+                perRow = math.max(1, math.floor((PANE_W - 8) / (width + 4)))
+            end
+            widget.group = ButtonGroup(groupHost, field.values, width, pick, perRow)
+            host:SetHeight(18 + widget.group.rows * 26)
+        end
         if field.tip then Tooltip(label, field.label, field.tip) end
 
         function widget:Read(aura) self.group:SetValue(field.get(aura)) end
@@ -717,7 +1186,7 @@ local function BuildField(pane, field)
         function widget:Read(aura) self.slider:SetDisplayValue(field.get(aura) or field.min) end
         function widget:SetEnabled(enabled) self.slider:SetEnabled(enabled) end
 
-    elseif field.kind == "text" or field.kind == "spell" then
+    elseif field.kind == "text" or field.kind == "spell" or field.kind == "item" then
         host:SetHeight(44)
         local label = Text(host, field.label, "GameFontNormalSmall")
         label:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
@@ -731,6 +1200,25 @@ local function BuildField(pane, field)
         widget.box = box
         if field.tip then Tooltip(label, field.label, field.tip) end
 
+        if field.kind == "item" then
+            local function takeItem()
+                local what, itemID = GetCursorInfo()
+                if what ~= "item" then return end
+                ClearCursor()
+                local aura = Current()
+                if aura and itemID then field.set(aura, tostring(itemID)) end
+            end
+            box:SetScript("OnReceiveDrag", takeItem)
+            box:HookScript("OnMouseDown", takeItem)
+            local set = Button(host, "Set", 44, function()
+                local aura = Current()
+                if aura then field.set(aura, box:GetText()) end
+            end)
+            set:SetPoint("LEFT", box, "RIGHT", 6, 0)
+            widget.setButton = set
+            local hint = Text(host, "or drag an item here", "GameFontDisableSmall")
+            hint:SetPoint("LEFT", set, "RIGHT", 8, 0)
+        end
         if field.kind == "spell" then
             AcceptsSpellDrop(box, function(spellID)
                 local aura = Current()
@@ -845,6 +1333,57 @@ local function BuildField(pane, field)
                                     enabled and 0 or 0.4)
         end
 
+    elseif field.kind == "colour" then
+        local label = Text(host, field.label, "GameFontNormalSmall")
+        label:SetPoint("LEFT", host, "LEFT", 0, 0)
+        widget.label = label
+        local swatch = CreateFrame("Button", nil, host)
+        swatch:SetSize(20, 20)
+        swatch:SetPoint("LEFT", label, "RIGHT", 8, 0)
+        local edge = swatch:CreateTexture(nil, "BACKGROUND")
+        edge:SetAllPoints()
+        edge:SetColorTexture(0.8, 0.8, 0.8, 1)
+        local fill = swatch:CreateTexture(nil, "ARTWORK")
+        fill:SetPoint("TOPLEFT", 2, -2)
+        fill:SetPoint("BOTTOMRIGHT", -2, 2)
+        widget.swatch, widget.fill = swatch, fill
+        swatch:SetScript("OnClick", function()
+            local aura = Current()
+            if not aura then return end
+            PickColour(field.get(aura), function(hex) field.set(aura, hex) end)
+        end)
+        local reset = Button(host, "Default", 60, function()
+            local aura = Current()
+            if aura then field.set(aura, nil) end
+        end)
+        reset:SetPoint("LEFT", swatch, "RIGHT", 8, 0)
+        widget.reset = reset
+        if field.tip then Tooltip(label, field.label, field.tip) end
+        function widget:Read(aura)
+            local hex = field.get(aura) or "ffffff"
+            local r = (tonumber(hex:sub(1, 2), 16) or 255) / 255
+            local g = (tonumber(hex:sub(3, 4), 16) or 255) / 255
+            local b = (tonumber(hex:sub(5, 6), 16) or 255) / 255
+            self.fill:SetColorTexture(r, g, b, 1)
+        end
+        function widget:SetEnabled(enabled)
+            self.swatch:SetEnabled(enabled)
+            self.reset:SetEnabled(enabled)
+            self.label:SetTextColor(enabled and 1 or 0.4, enabled and 0.82 or 0.4, enabled and 0 or 0.4)
+        end
+
+    elseif field.kind == "note" then
+        local text = Text(host, field.text or "", "GameFontHighlightSmall")
+        text:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        text:SetWidth(PANE_W - 20)
+        text:SetJustifyH("LEFT")
+        local okH, height = pcall(text.GetStringHeight, text)
+        height = (okH and type(height) == "number") and height or 24
+        host:SetHeight(math.max(height + 4, 16))
+        widget.text = text
+        function widget:Read() end
+        function widget:SetEnabled() end
+
     else -- "header"
         host:SetHeight(26)
         local label = Text(host, field.label, "GameFontNormal")
@@ -872,13 +1411,26 @@ local function BuildPane(parent, fields)
     pane.contentHeight = offset
 
     function pane:Read(aura)
+        -- Fields that apply only sometimes (a trigger type's settings) are
+        -- left out rather than greyed, and the rest close up.
+        local y = 0
         for _, widget in ipairs(self.widgets) do
             local field = widget.field
-            local enabled = true
-            if field.enabled then enabled = field.enabled(aura) and true or false end
-            widget:SetEnabled(enabled)
-            widget:Read(aura)
+            local shown = true
+            if field.visible then shown = field.visible(aura) and true or false end
+            widget.host:SetShown(shown)
+            if shown then
+                widget.host:ClearAllPoints()
+                widget.host:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
+                y = y + (widget.host:GetHeight() or 24) + FIELD_GAP
+                local enabled = true
+                if field.enabled then enabled = field.enabled(aura) and true or false end
+                widget:SetEnabled(enabled)
+                widget:Read(aura)
+            end
         end
+        self.contentHeight = y
+        pcall(self.SetHeight, self, math.max(y, 1))
     end
 
     pane:Hide()
@@ -891,24 +1443,114 @@ end
 
 local function IsAura(aura)
     return not ns.IsGroup(aura)
-        and ns.TriggerField(aura, "type") == "aura"
+        and ns.TriggerField(aura, "type", currentTrigger) == "aura"
 end
 
 local function ByID(aura)
-    return IsAura(aura) and ns.TriggerField(aura, "match") == "id"
+    return IsAura(aura) and ns.TriggerField(aura, "match", currentTrigger) == "id"
 end
 
 local function ByName(aura)
-    return IsAura(aura) and ns.TriggerField(aura, "match") == "name"
+    return IsAura(aura) and ns.TriggerField(aura, "match", currentTrigger) == "name"
 end
+
+local function IsCustom(aura)
+    return not ns.IsGroup(aura) and ns.TriggerField(aura, "type", currentTrigger) == "custom"
+end
+
+local function CustomKind(aura)
+    return ns.Custom.Kind(ns.Trigger(aura, currentTrigger))
+end
+
+local TRIGGER_TEMPLATE = "function(event, ...)\n    return true\nend"
+local UNTRIGGER_TEMPLATE = "function(event, ...)\n    return true\nend"
+local TSU_TEMPLATE = "function(allstates, event, ...)\n    allstates[\"\"] = { show = true,"
+    .. " changed = true, name = \"Custom\" }\n    return true\nend"
+
+-- A code box for one of a custom trigger's functions. `template` fills an
+-- empty one (a string, or a function of the aura); `extraEnabled` narrows
+-- when it applies.
+local function CodeField(key, label, template, tip, extraEnabled)
+    return {
+        kind = "code", label = label, key = key, height = 120, tip = tip,
+        hint = "saved when you click away",
+        enabled = function(aura)
+            if not IsCustom(aura) then return false end
+            return not extraEnabled or extraEnabled(aura)
+        end,
+        get = function(aura)
+            local source = ns.Trigger(aura, currentTrigger)[key]
+            if source and source ~= "" then return source end
+            if type(template) == "function" then return template(aura) end
+            return template or ""
+        end,
+        set = function(aura, text)
+            local fill = type(template) == "function" and template(aura) or template
+            if text == "" or text == fill and not ns.Trigger(aura, currentTrigger)[key] and key ~= "custom" then
+                TriggerOf(aura)[key] = nil
+            else
+                TriggerOf(aura)[key] = text
+            end
+            Commit(true)
+        end,
+        error = function(aura)
+            if aura.untrusted then return "imported code: approve it above before it runs" end
+            local source = ns.Trigger(aura, currentTrigger)[key]
+            if source and source ~= "" then
+                local fn, err = ns.Env:Compile(source, key)
+                if not fn then return err end
+            end
+            local state = ns.Engine.states[aura.id]
+            local ts = state and state.triggers and state.triggers[currentTrigger]
+            return ts and ts.error or nil
+        end,
+    }
+end
+
+local DEFAULT_ACTIVATION = "function(trigger)\n    return trigger[1] and trigger[2]\nend"
 
 local TRIGGER_FIELDS = {
     {
+        kind = "triggers", key = "triggers",
+        enabled = function(aura) return not ns.IsGroup(aura) end,
+    },
+    {
+        kind = "code", label = "Custom activation", key = "customTriggerLogic", height = 140,
+        tip = "Lua that decides whether the aura shows. It is handed the triggers'"
+           .. " answers as a list: trigger[1] is true when the first is met, and so"
+           .. " on. It runs in a sandbox, the way WeakAuras' does.",
+        hint = "function(trigger) ... end -- saved when you click away",
+        enabled = function(aura)
+            return not ns.IsGroup(aura) and ns.TriggerMode(aura) == "custom"
+        end,
+        get = function(aura)
+            local list = aura.triggers
+            return (type(list) == "table" and list.customTriggerLogic) or DEFAULT_ACTIVATION
+        end,
+        set = function(aura, text)
+            ns.NormalizeTriggers(aura)
+            aura.triggers = aura.triggers or { {} }
+            aura.triggers.customTriggerLogic = text
+            Commit(false)
+        end,
+        error = function(aura)
+            local list = aura.triggers
+            local source = type(list) == "table" and list.customTriggerLogic
+            if source then
+                local fn, err = ns.Env:Compile(source, "activation")
+                if not fn then return err end
+            end
+            local state = ns.Engine.states[aura.id]
+            return state and state.error or nil
+        end,
+    },
+    {
         kind = "choice", label = "Trigger", key = "type", width = 110,
         values = { { text = "Aura", value = "aura" },
-                   { text = "Cooldown", value = "cooldown" } },
+                   { text = "Cooldown", value = "cooldown" },
+                   { text = "Custom", value = "custom" } },
         enabled = function(aura) return not ns.IsGroup(aura) end,
-        get = function(aura) return ns.TriggerField(aura, "type") end,
+        get = function(aura) return ns.TriggerField(aura, "type", currentTrigger) end,
         set = function(aura, value)
             TriggerOf(aura).type = value
             Commit(true)
@@ -923,7 +1565,7 @@ local TRIGGER_FIELDS = {
         values = { { text = "Spell", value = "id" },
                    { text = "Name", value = "name" } },
         enabled = IsAura,
-        get = function(aura) return ns.TriggerField(aura, "match") end,
+        get = function(aura) return ns.TriggerField(aura, "match", currentTrigger) end,
         set = function(aura, value)
             TriggerOf(aura).match = value
             Commit(true)
@@ -934,10 +1576,10 @@ local TRIGGER_FIELDS = {
         tip = "A spell name or numeric ID.",
         enabled = function(aura)
             return not ns.IsGroup(aura)
-               and (ByID(aura) or ns.TriggerField(aura, "type") == "cooldown")
+               and (ByID(aura) or ns.TriggerField(aura, "type", currentTrigger) == "cooldown")
         end,
         get = function(aura)
-            local spellID = ns.Trigger(aura).spellID
+            local spellID = ns.Trigger(aura, currentTrigger).spellID
             if not spellID then return "" end
             return ns.Engine:SpellName(spellID) .. " (" .. spellID .. ")"
         end,
@@ -957,7 +1599,7 @@ local TRIGGER_FIELDS = {
         tip = "The text as it appears on the aura: Well Fed, Drink, a proc you "
            .. "only know by sight. Case does not matter.",
         enabled = ByName,
-        get = function(aura) return ns.Trigger(aura).text or "" end,
+        get = function(aura) return ns.Trigger(aura, currentTrigger).text or "" end,
         set = function(aura, text)
             TriggerOf(aura).text = (text ~= "" and text) or nil
             Commit(true)
@@ -968,7 +1610,7 @@ local TRIGGER_FIELDS = {
         tip = "Matches any aura whose name contains the text, rather than one "
            .. "that equals it. One aura for a whole family of them.",
         enabled = ByName,
-        get = function(aura) return ns.TriggerField(aura, "partial") end,
+        get = function(aura) return ns.TriggerField(aura, "partial", currentTrigger) end,
         set = function(aura, checked)
             TriggerOf(aura).partial = checked or nil
             Commit(false)
@@ -979,12 +1621,12 @@ local TRIGGER_FIELDS = {
         values = { { text = "Buff", value = false },
                    { text = "Debuff", value = true } },
         enabled = IsAura,
-        get = function(aura) return ns.TriggerField(aura, "harmful") end,
+        get = function(aura) return ns.TriggerField(aura, "harmful", currentTrigger) end,
         set = function(aura, value)
             TriggerOf(aura).harmful = value or nil
             -- A debuff nobody said where to look for means the target, the same
             -- way the slash command reads it.
-            if value and not ns.Trigger(aura).unit then
+            if value and not ns.Trigger(aura, currentTrigger).unit then
                 TriggerOf(aura).unit = "target"
             end
             Commit(false)
@@ -997,7 +1639,7 @@ local TRIGGER_FIELDS = {
                    { text = "Focus", value = "focus" },
                    { text = "Pet", value = "pet" } },
         enabled = IsAura,
-        get = function(aura) return ns.TriggerField(aura, "unit") end,
+        get = function(aura) return ns.TriggerField(aura, "unit", currentTrigger) end,
         set = function(aura, value)
             TriggerOf(aura).unit = value
             Commit(false)
@@ -1008,7 +1650,7 @@ local TRIGGER_FIELDS = {
         tip = "Ignores the same aura coming from anyone else. Useful for a "
            .. "debuff several people can put on one target.",
         enabled = IsAura,
-        get = function(aura) return ns.TriggerField(aura, "mine") end,
+        get = function(aura) return ns.TriggerField(aura, "mine", currentTrigger) end,
         set = function(aura, checked)
             TriggerOf(aura).mine = checked or nil
             Commit(false)
@@ -1021,7 +1663,7 @@ local TRIGGER_FIELDS = {
                    { text = "at most", value = "<=" },
                    { text = "exactly", value = "==" } },
         enabled = IsAura,
-        get = function(aura) return ns.TriggerField(aura, "stacksOp") end,
+        get = function(aura) return ns.TriggerField(aura, "stacksOp", currentTrigger) end,
         set = function(aura, value)
             TriggerOf(aura).stacksOp = value
             Commit(false)
@@ -1030,16 +1672,159 @@ local TRIGGER_FIELDS = {
     {
         kind = "slider", label = "Stack count", key = "stacks", min = 0, max = 40,
         enabled = IsAura,
-        get = function(aura) return ns.TriggerField(aura, "stacks") end,
+        get = function(aura) return ns.TriggerField(aura, "stacks", currentTrigger) end,
         set = function(aura, value)
             TriggerOf(aura).stacks = (value > 0) and value or nil
             Commit(false)
         end,
     },
+    { kind = "header", label = "Custom Lua" },
+    {
+        kind = "button", label = "Approve its code", key = "approve", text = "Approve its code",
+        tip = "This aura came from an import and carries custom Lua. Read it in the"
+           .. " boxes below first -- it runs as you once approved. Until then it does"
+           .. " nothing.",
+        enabled = function(aura) return aura.untrusted and true or false end,
+        click = function(aura)
+            aura.untrusted = nil
+            ns.Print("custom code approved for " .. tostring(aura.name or aura.id) .. ".")
+            Commit(true)
+        end,
+    },
+    {
+        kind = "choice", label = "Kind", key = "custom_type", width = 110,
+        tip = "Status: your function says whether it is on, whenever one of the events"
+           .. " fires (or every update). Event: your function fires it on an event, and"
+           .. " it hides after a while or when your untrigger says so. State updater:"
+           .. " WeakAuras' TSU -- your function fills in allstates itself.",
+        values = { { text = "Status", value = "status" }, { text = "Event", value = "event" },
+                   { text = "State updater", value = "stateupdate" } },
+        enabled = IsCustom,
+        get = function(aura) return ns.Custom.Kind(ns.Trigger(aura, currentTrigger)) end,
+        set = function(aura, value)
+            TriggerOf(aura).custom_type = value
+            Commit(true)
+        end,
+    },
+    {
+        kind = "text", label = "Events", key = "events", width = 380,
+        tip = "Space-separated, as WeakAuras writes them: PLAYER_TARGET_CHANGED"
+           .. " UNIT_POWER_UPDATE:player. A unit after a colon filters on the event's"
+           .. " first argument. TRIGGER:1 fires when trigger 1 changes; any other name"
+           .. " is a custom event, sent with WeakAuras.ScanEvents. The combat log does"
+           .. " not exist on this client.",
+        enabled = IsCustom,
+        get = function(aura) return ns.Trigger(aura, currentTrigger).events or "" end,
+        set = function(aura, text)
+            TriggerOf(aura).events = text ~= "" and text or nil
+            Commit(true)
+        end,
+    },
+    {
+        kind = "choice", label = "Check", key = "check", width = 110,
+        tip = "On events: the function runs when one of the events fires. Every update:"
+           .. " ten times a second, whatever happens.",
+        values = { { text = "On events", value = "event" }, { text = "Every update", value = "update" } },
+        enabled = function(aura) return IsCustom(aura) and CustomKind(aura) == "status" end,
+        get = function(aura) return ns.Trigger(aura, currentTrigger).check or "event" end,
+        set = function(aura, value)
+            TriggerOf(aura).check = value ~= "event" and value or nil
+            Commit(true)
+        end,
+    },
+    {
+        kind = "choice", label = "Hide", key = "customHide", width = 110,
+        tip = "Timed: it shows for the duration below, then hides. Custom: it hides"
+           .. " when your untrigger function returns true.",
+        values = { { text = "Timed", value = "timed" }, { text = "Custom", value = "custom" } },
+        enabled = function(aura) return IsCustom(aura) and CustomKind(aura) == "event" end,
+        get = function(aura) return ns.Trigger(aura, currentTrigger).customHide or "timed" end,
+        set = function(aura, value)
+            TriggerOf(aura).customHide = value ~= "timed" and value or nil
+            Commit(true)
+        end,
+    },
+    {
+        kind = "text", label = "Duration (seconds)", key = "duration", width = 60,
+        enabled = function(aura)
+            return IsCustom(aura) and CustomKind(aura) == "event"
+                and (ns.Trigger(aura, currentTrigger).customHide or "timed") == "timed"
+        end,
+        get = function(aura) return tostring(ns.Trigger(aura, currentTrigger).duration or 1) end,
+        set = function(aura, text)
+            local seconds = tonumber(text)
+            TriggerOf(aura).duration = (seconds and seconds > 0) and seconds or nil
+            Commit(true)
+        end,
+    },
+    CodeField("custom", "Trigger", function(aura)
+        local kind = CustomKind(aura)
+        if kind == "stateupdate" then return TSU_TEMPLATE end
+        return TRIGGER_TEMPLATE
+    end, "Status: return true while it should show. Event: return true to fire it."
+       .. " State updater: fill in allstates and return true when you changed it."),
+    CodeField("customUntrigger", "Untrigger", UNTRIGGER_TEMPLATE,
+        "Status: once on, it stays on until this returns true. Event (hide: custom):"
+        .. " it hides when this returns true.", function(aura)
+            local kind = CustomKind(aura)
+            return kind == "status" or (kind == "event"
+                and ns.Trigger(aura, currentTrigger).customHide == "custom")
+        end),
+    CodeField("customDuration", "Duration", nil,
+        "Optional. return duration, expirationTime -- drawn as the aura's timer."),
+    CodeField("customName", "Name", nil, "Optional. return the name %n shows."),
+    CodeField("customIcon", "Icon", nil, "Optional. return a texture path or file ID."),
+    CodeField("customStacks", "Stacks", nil, "Optional. return the stack count."),
 }
 
 local function IsKind(wanted)
     return function(aura) return ns.RegionKind(aura) == wanted end
+end
+
+local OUTLINES = {
+    { text = "Game", value = "" }, { text = "None", value = "NONE" },
+    { text = "Outline", value = "OUTLINE" }, { text = "Thick", value = "THICKOUTLINE" },
+}
+
+-- Font, outline and color for one piece of text.
+local function TextStyleFields(prefix, fontKey, outlineKey, colourKey, enabled)
+    return {
+        {
+            kind = "choice", label = prefix .. " font", key = fontKey, width = 200,
+            values = FONT_VALUES, dropdown = true, enabled = enabled,
+            get = function(aura) return ns.DisplayField(aura, fontKey) end,
+            set = function(aura, value)
+                SetDisplay(aura, fontKey, value ~= "" and value or nil)
+                Commit(false)
+            end,
+        },
+        {
+            kind = "choice", label = prefix .. " outline", key = outlineKey, width = 64,
+            values = OUTLINES, enabled = enabled,
+            get = function(aura) return ns.DisplayField(aura, outlineKey) end,
+            set = function(aura, value)
+                SetDisplay(aura, outlineKey, value)
+                Commit(false)
+            end,
+        },
+        {
+            kind = "colour", label = prefix .. " color", key = colourKey, enabled = enabled,
+            get = function(aura)
+                local hex = ns.DisplayField(aura, colourKey)
+                if not hex or hex == "" then hex = ns.DisplayField(aura, "colour") end
+                return hex
+            end,
+            set = function(aura, hex)
+                SetDisplay(aura, colourKey, hex)
+                Commit(false)
+            end,
+        },
+    }
+end
+
+local function Append(list, extra)
+    for _, field in ipairs(extra) do list[#list + 1] = field end
+    return list
 end
 
 local COLOURS = {
@@ -1059,6 +1844,166 @@ local POSITION_TIP = "Where its center sits, in pixels from the center of the "
     .. "screen: 0, 0 is dead center, X grows to the right and Y upward. Drag "
     .. "the slider, or type a number and press Enter. Inside a group the group "
     .. "decides, so set the group's instead."
+
+-- Display settings, built alike: one key on the Display tab each.
+local function DisplayCheck(key, label, visible, tip, enabled)
+    return {
+        kind = "check", label = label, key = key, tip = tip, visible = visible, enabled = enabled,
+        get = function(aura) return ns.DisplayField(aura, key) end,
+        set = function(aura, checked)
+            SetDisplay(aura, key, checked and true or false)
+            Commit(false)
+        end,
+    }
+end
+local function DisplaySlider(key, label, low, high, visible, tip, step)
+    return {
+        kind = "slider", label = label, key = key, min = low, max = high, step = step,
+        tip = tip, visible = visible,
+        get = function(aura) return ns.DisplayField(aura, key) end,
+        set = function(aura, value)
+            SetDisplay(aura, key, value)
+            Commit(false)
+        end,
+    }
+end
+local function DisplayChoice(key, label, values, visible, width, dropdown, tip)
+    return {
+        kind = "choice", label = label, key = key, values = values, width = width,
+        dropdown = dropdown, visible = visible, tip = tip,
+        get = function(aura) return ns.DisplayField(aura, key) end,
+        set = function(aura, value)
+            SetDisplay(aura, key, value)
+            Commit(false)
+        end,
+    }
+end
+local function DisplayText(key, label, visible, width, tip)
+    return {
+        kind = "text", label = label, key = key, width = width or 240, tip = tip, visible = visible,
+        get = function(aura) return tostring(ns.DisplayField(aura, key) or "") end,
+        set = function(aura, text)
+            SetDisplay(aura, key, text ~= "" and text or nil)
+            Commit(false)
+        end,
+    }
+end
+local function DisplayColour(key, label, visible, fallback, tip)
+    return {
+        kind = "colour", label = label, key = key, visible = visible, tip = tip,
+        get = function(aura)
+            local hex = ns.DisplayField(aura, key)
+            if not hex or hex == "" then hex = fallback and ns.DisplayField(aura, fallback) or "ffffff" end
+            return hex
+        end,
+        set = function(aura, hex)
+            SetDisplay(aura, key, hex)
+            Commit(false)
+        end,
+    }
+end
+
+-- Visible for some shapes only.
+local function KindIn(...)
+    local wanted = {}
+    for i = 1, select("#", ...) do wanted[select(i, ...)] = true end
+    return function(aura) return wanted[ns.RegionKind(aura)] and true or false end
+end
+local function NotGroup(aura) return not ns.IsGroup(aura) end
+local function Both(a, b) return function(aura) return a(aura) and b(aura) end end
+local function DisplayIs(key, value)
+    return function(aura) return ns.DisplayField(aura, key) == value end
+end
+
+local POINTS = {
+    { text = "TL", value = "TOPLEFT" }, { text = "Top", value = "TOP" },
+    { text = "TR", value = "TOPRIGHT" }, { text = "Left", value = "LEFT" },
+    { text = "Mid", value = "CENTER" }, { text = "Right", value = "RIGHT" },
+    { text = "BL", value = "BOTTOMLEFT" }, { text = "Bot", value = "BOTTOM" },
+    { text = "BR", value = "BOTTOMRIGHT" },
+}
+
+local DIRECTIONS = {
+    { text = "Right", value = "RIGHT" }, { text = "Left", value = "LEFT" },
+    { text = "Up", value = "UP" }, { text = "Down", value = "DOWN" },
+}
+
+-- Pictures from the game's own files, and the aura's own icon. Any other
+-- file path or file ID can be typed in.
+local TEXTURES = {
+    { text = "The aura's icon", value = "icon" },
+    { text = "Solid", value = "Interface\\Buttons\\WHITE8X8" },
+    { text = "Circle", value = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask" },
+    { text = "Ring", value = "Interface\\Cooldown\\ping4" },
+    { text = "Star", value = "Interface\\Cooldown\\star4" },
+    { text = "Starburst", value = "Interface\\Cooldown\\starburst" },
+    { text = "Glow", value = "Interface\\GLUES\\Models\\UI_Draenei\\GenericGlow64" },
+    { text = "Spark", value = "Interface\\CastingBar\\UI-CastingBar-Spark" },
+    { text = "Skull", value = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull" },
+    { text = "Raid star", value = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1" },
+    { text = "Raid skull", value = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8" },
+    { text = "Arrow", value = "Interface\\Minimap\\MinimapArrow" },
+    { text = "Status bar", value = "Interface\\TargetingFrame\\UI-StatusBar" },
+}
+
+-- Bar fills: flat, the game's, and any LibSharedMedia carries.
+local BAR_TEXTURES = {}
+local function RefreshBarTextures()
+    wipe(BAR_TEXTURES)
+    local builtin = {
+        { "Flat", "" }, { "Blizzard", "Interface\\TargetingFrame\\UI-StatusBar" },
+        { "Raid", "Interface\\RaidFrame\\Raid-Bar-Hp-Fill" },
+        { "Skills", "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar" },
+    }
+    local seen = {}
+    for _, entry in ipairs(builtin) do
+        BAR_TEXTURES[#BAR_TEXTURES + 1] = { text = entry[1], value = entry[2] }
+        seen[entry[2]] = true
+    end
+    local stub = _G.LibStub
+    local ok, media = pcall(function() return stub and stub("LibSharedMedia-3.0", true) end)
+    if ok and media and type(media.List) == "function" then
+        local okL, names = pcall(media.List, media, "statusbar")
+        for _, name in ipairs(okL and names or {}) do
+            local okF, path = pcall(media.Fetch, media, "statusbar", name)
+            if okF and path and not seen[path] then
+                BAR_TEXTURES[#BAR_TEXTURES + 1] = { text = name, value = path }
+                seen[path] = true
+            end
+        end
+    end
+end
+RefreshBarTextures()
+
+-- Templates for a group's own layout code.
+local GROW_TEMPLATE = "function(newPositions, activeRegions)\n"
+    .. "    for i, regionData in ipairs(activeRegions) do\n"
+    .. "        newPositions[i] = { (i - 1) * (regionData.regionWidth + 4), 0 }\n"
+    .. "    end\nend"
+local SORT_TEMPLATE = "function(a, b)\n    return a.id < b.id\nend"
+
+-- Which of the aura's extra texts the Display tab is editing.
+local currentText = 1
+local function TextsOf(aura)
+    local list = type(aura.display) == "table" and aura.display.texts
+    return type(list) == "table" and list or nil
+end
+local function CurText(aura)
+    local list = TextsOf(aura)
+    return list and list[currentText]
+end
+local function HasText(aura) return not ns.IsGroup(aura) and CurText(aura) ~= nil end
+local function TextValue(aura, key) return ns.SubRegions.TextField(CurText(aura), key) end
+local function SetText(aura, key, value)
+    local entry = CurText(aura)
+    if not entry then return end
+    entry[key] = value
+    Commit(false)
+end
+function Config.__textCursor(i)
+    if i then currentText = i end
+    return currentText
+end
 
 local DISPLAY_FIELDS = {
     {
@@ -1082,12 +2027,15 @@ local DISPLAY_FIELDS = {
         end,
     },
     {
-        kind = "choice", label = "Draw it as", key = "type", width = 70,
+        kind = "choice", label = "Draw it as", key = "type", width = 160, dropdown = true,
         tip = "The same trigger, drawn differently. Everything else about the "
            .. "aura survives the change.",
         values = { { text = "Icon", value = "icon" },
                    { text = "Text", value = "text" },
-                   { text = "Bar", value = "bar" } },
+                   { text = "Bar", value = "bar" },
+                   { text = "Texture", value = "texture" },
+                   { text = "Progress texture", value = "progress" },
+                   { text = "Model", value = "model" } },
         enabled = function(aura) return not ns.IsGroup(aura) end,
         get = function(aura) return ns.RegionKind(aura) end,
         set = function(aura, value)
@@ -1211,6 +2159,97 @@ local DISPLAY_FIELDS = {
             Commit(false)
         end,
     },
+    DisplaySlider("iconZoom", "Zoom (%)", 0, 60, IsKind("icon"),
+        "Crops the icon's art in from its edge."),
+    DisplayCheck("cooldownReverse", "Reverse the swipe", IsKind("icon"),
+        "The swipe fills in rather than empties out."),
+    DisplayCheck("cooldownEdge", "Swipe edge", IsKind("icon"), "A bright line along the swipe's edge."),
+    DisplayCheck("cooldownText", "Countdown numbers", IsKind("icon"),
+        "The client's own numbers on the swipe."),
+
+    DisplaySlider("width", "Width", 4, 512, KindIn("texture", "progress", "model")),
+    DisplaySlider("height", "Height", 4, 512, KindIn("texture", "progress", "model")),
+
+    { kind = "header", label = "Texture", visible = IsKind("texture") },
+    DisplayChoice("texture", "Picture", TEXTURES, IsKind("texture"), 200, true,
+        "One of the game's own, or the aura's icon. Type any other file path or file ID below."),
+    DisplayText("texture", "Or a file", IsKind("texture"), 280,
+        "A texture path, like Interface\\Icons\\Spell_Nature_Rejuvenation, or a file ID."),
+    DisplayColour("textureColour", "Color", IsKind("texture")),
+    DisplaySlider("textureRotation", "Rotation", 0, 360, IsKind("texture")),
+    DisplayCheck("textureMirror", "Mirror", IsKind("texture")),
+    DisplayChoice("textureBlend", "Blend", { { text = "Normal", value = "BLEND" },
+        { text = "Add (glowing)", value = "ADD" } }, IsKind("texture"), 100),
+
+    { kind = "header", label = "Progress texture", visible = IsKind("progress") },
+    DisplayChoice("progressStyle", "Shape", { { text = "Bar", value = "linear" },
+        { text = "Round", value = "circular" } }, IsKind("progress"), 80, false,
+        "A bar fills one way; round sweeps like a cooldown. Round follows a timer only."),
+    DisplayChoice("progressTexture", "Picture", TEXTURES, IsKind("progress"), 200, true),
+    DisplayText("progressTexture", "Or a file", IsKind("progress"), 280),
+    DisplayColour("progressColour", "Fill color", IsKind("progress"), "colour"),
+    DisplayColour("progressBackColour", "Background color", IsKind("progress")),
+    DisplaySlider("progressBackAlpha", "Background opacity (%)", 0, 100, IsKind("progress")),
+    DisplayChoice("progressDirection", "Fills toward", DIRECTIONS,
+        Both(IsKind("progress"), DisplayIs("progressStyle", "linear")), 62),
+    DisplayCheck("progressInverse", "Inverse", IsKind("progress"),
+        "Fill with the time gone rather than the time left."),
+
+    { kind = "header", label = "Model", visible = IsKind("model") },
+    DisplayChoice("modelSource", "Show", { { text = "A unit", value = "unit" },
+        { text = "Display ID", value = "display" }, { text = "File ID", value = "file" } },
+        IsKind("model"), 90),
+    DisplayChoice("modelUnit", "Unit", { { text = "Player", value = "player" },
+        { text = "Target", value = "target" }, { text = "Focus", value = "focus" },
+        { text = "Pet", value = "pet" } }, Both(IsKind("model"), DisplayIs("modelSource", "unit")), 62),
+    {
+        kind = "text", label = "ID", key = "modelID", width = 120,
+        visible = function(aura) return ns.RegionKind(aura) == "model" and ns.DisplayField(aura, "modelSource") ~= "unit" end,
+        get = function(aura) return tostring(ns.DisplayField(aura, "modelID") or 0) end,
+        set = function(aura, text)
+            SetDisplay(aura, "modelID", tonumber(text) or nil)
+            Commit(false)
+        end,
+    },
+    DisplaySlider("modelFacing", "Facing", 0, 360, IsKind("model")),
+    DisplaySlider("modelZoom", "Zoom (%)", 0, 100, IsKind("model")),
+    { kind = "header", label = "Text on the icon" },
+    {
+        kind = "text", label = "What it says", key = "iconText", width = 240,
+        tip = "Drawn on top of the icon. %t time left, %s stacks, %n the name, "
+           .. "%p per cent left, %d the full duration. Leave it empty for none.",
+        enabled = IsKind("icon"),
+        get = function(aura) return ns.DisplayField(aura, "iconText") end,
+        set = function(aura, text)
+            SetDisplay(aura, "iconText", text ~= "" and text or nil)
+            Commit(false)
+        end,
+    },
+    {
+        kind = "choice", label = "Where", key = "iconTextPoint", width = 44,
+        values = {
+            { text = "TL", value = "TOPLEFT" }, { text = "Top", value = "TOP" },
+            { text = "TR", value = "TOPRIGHT" }, { text = "Left", value = "LEFT" },
+            { text = "Mid", value = "CENTER" }, { text = "Right", value = "RIGHT" },
+            { text = "BL", value = "BOTTOMLEFT" }, { text = "Bot", value = "BOTTOM" },
+            { text = "BR", value = "BOTTOMRIGHT" },
+        },
+        enabled = IsKind("icon"),
+        get = function(aura) return ns.DisplayField(aura, "iconTextPoint") end,
+        set = function(aura, value)
+            SetDisplay(aura, "iconTextPoint", value)
+            Commit(false)
+        end,
+    },
+    {
+        kind = "slider", label = "Size", key = "iconTextSize", min = 6, max = 32,
+        enabled = IsKind("icon"),
+        get = function(aura) return ns.DisplayField(aura, "iconTextSize") end,
+        set = function(aura, value)
+            SetDisplay(aura, "iconTextSize", value)
+            Commit(false)
+        end,
+    },
     { kind = "header", label = "Text" },
     {
         kind = "text", label = "What it says", key = "textFormat", width = 240,
@@ -1285,17 +2324,122 @@ local DISPLAY_FIELDS = {
     },
     {
         kind = "choice", label = "Color", key = "colour", width = 62,
-        tip = "Colors the bar, or the words.",
+        tip = "Colors the bar, or the words -- including the text on an icon.",
         values = COLOURS,
         enabled = function(aura)
             local kind = ns.RegionKind(aura)
-            return ns.IsGroup(aura) or kind == "text" or kind == "bar"
+            return ns.IsGroup(aura) or kind == "text" or kind == "bar" or kind == "icon"
         end,
         get = function(aura) return ns.DisplayField(aura, "colour") end,
         set = function(aura, value)
             SetDisplay(aura, "colour", value)
             Commit(false)
         end,
+    },
+
+    DisplayChoice("barTexture", "Bar texture", BAR_TEXTURES, IsKind("bar"), 200, true),
+    DisplayColour("barBackColour", "Background color", IsKind("bar")),
+    DisplaySlider("barBackAlpha", "Background opacity (%)", 0, 100, IsKind("bar")),
+    DisplayChoice("barDirection", "Fills toward", DIRECTIONS, IsKind("bar"), 62),
+    DisplayCheck("barSpark", "Spark", IsKind("bar"), "A spark at the moving edge while it has a timer."),
+    DisplayCheck("barInverse", "Inverse", IsKind("bar"), "Fill with the time gone rather than the time left."),
+
+    { kind = "header", label = "Border and background", visible = NotGroup },
+    DisplayCheck("border", "Border", NotGroup),
+    DisplayColour("borderColour", "Border color", Both(NotGroup, DisplayIs("border", true))),
+    DisplaySlider("borderSize", "Border size", 1, 10, Both(NotGroup, DisplayIs("border", true))),
+    DisplaySlider("borderOffset", "Border and background offset", -10, 10, NotGroup,
+        "Out from the edge, or in from it."),
+    DisplayCheck("backdrop", "Background", NotGroup),
+    DisplayColour("backdropColour", "Background color", Both(NotGroup, DisplayIs("backdrop", true))),
+    DisplaySlider("backdropAlpha", "Background opacity (%)", 0, 100, Both(NotGroup, DisplayIs("backdrop", true))),
+
+    { kind = "header", label = "Glow", visible = NotGroup },
+    DisplayCheck("glow", "Glow while it shows", NotGroup,
+        "A glow round it for as long as it shows. A condition can glow it too; it uses the style set here."),
+    DisplayChoice("glowType", "Style", { { text = "Pulse", value = "pulse" },
+        { text = "Pixel", value = "pixel" }, { text = "Shine", value = "shine" } }, NotGroup, 62, false,
+        "Pulse breathes a border in and out; pixel runs lines round the edge; shine runs dots round it. "
+        .. "The game's own action-button glow is not on this client."),
+    DisplayColour("glowColour", "Glow color", NotGroup),
+    DisplaySlider("glowLines", "Lines or dots", 1, 30, Both(NotGroup, function(aura)
+        return ns.DisplayField(aura, "glowType") ~= "pulse" end)),
+    DisplaySlider("glowThickness", "Thickness", 1, 8, NotGroup),
+    DisplaySlider("glowSpeed", "Speed", 5, 200, Both(NotGroup, function(aura)
+        return ns.DisplayField(aura, "glowType") ~= "pulse" end),
+        "How far round it goes in a second, per cent."),
+
+    { kind = "header", label = "Ticks", visible = KindIn("bar", "progress") },
+    DisplayText("ticks", "Marks at", KindIn("bar", "progress"), 160,
+        "Numbers, split by commas: seconds left, or per cent along. \"3, 10\" marks 3 and 10 seconds left."),
+    DisplayChoice("tickMode", "Measured in", { { text = "Seconds left", value = "seconds" },
+        { text = "Per cent", value = "percent" } }, KindIn("bar", "progress"), 100),
+    DisplayColour("tickColour", "Tick color", KindIn("bar", "progress")),
+    DisplaySlider("tickThickness", "Tick thickness", 1, 8, KindIn("bar", "progress")),
+
+    { kind = "header", label = "More text", visible = NotGroup },
+    {
+        kind = "strip", label = "Texts", key = "texts", max = 8, visible = NotGroup,
+        empty = "none yet -- + adds one",
+        tip = "Any number of texts, each placed and styled on its own, with the text codes.",
+        count = function(aura) local list = TextsOf(aura) return list and #list or 0 end,
+        current = function() return currentText end,
+        select = function(i) currentText = i end,
+        add = function(aura)
+            local display = DisplayOf(aura)
+            display.texts = display.texts or {}
+            display.texts[#display.texts + 1] = { text = "%n" }
+            currentText = #display.texts
+        end,
+        remove = function(aura)
+            local list = TextsOf(aura)
+            if not list then return end
+            table.remove(list, currentText)
+            currentText = math.max(1, currentText - 1)
+        end,
+    },
+    {
+        kind = "text", label = "What it says", key = "subText", width = 240, visible = HasText,
+        tip = "The same codes as everywhere: %n, %s, %t, %p, %c, %field...",
+        get = function(aura) return TextValue(aura, "text") end,
+        set = function(aura, text) SetText(aura, "text", text) end,
+    },
+    {
+        kind = "choice", label = "Where", key = "subTextPoint", width = 44, values = POINTS, visible = HasText,
+        get = function(aura) return TextValue(aura, "point") end,
+        set = function(aura, value) SetText(aura, "point", value) end,
+    },
+    {
+        kind = "slider", label = "Across", key = "subTextX", min = -200, max = 200, visible = HasText,
+        get = function(aura) return TextValue(aura, "x") end,
+        set = function(aura, value) SetText(aura, "x", value) end,
+    },
+    {
+        kind = "slider", label = "Up", key = "subTextY", min = -200, max = 200, visible = HasText,
+        get = function(aura) return TextValue(aura, "y") end,
+        set = function(aura, value) SetText(aura, "y", value) end,
+    },
+    {
+        kind = "slider", label = "Size", key = "subTextSize", min = 6, max = 48, visible = HasText,
+        get = function(aura) return TextValue(aura, "size") end,
+        set = function(aura, value) SetText(aura, "size", value) end,
+    },
+    {
+        kind = "choice", label = "Font", key = "subTextFont", width = 200, values = FONT_VALUES,
+        dropdown = true, visible = HasText,
+        get = function(aura) return TextValue(aura, "font") end,
+        set = function(aura, value) SetText(aura, "font", value) end,
+    },
+    {
+        kind = "choice", label = "Outline", key = "subTextOutline", width = 64, values = OUTLINES,
+        visible = HasText,
+        get = function(aura) return TextValue(aura, "outline") end,
+        set = function(aura, value) SetText(aura, "outline", value) end,
+    },
+    {
+        kind = "colour", label = "Color", key = "subTextColour", visible = HasText,
+        get = function(aura) return TextValue(aura, "colour") end,
+        set = function(aura, hex) SetText(aura, "colour", hex) end,
     },
 
     { kind = "header", label = "Group layout" },
@@ -1311,7 +2455,9 @@ local DISPLAY_FIELDS = {
                    { text = "Down", value = "DOWN" },
                    { text = "Up", value = "UP" },
                    { text = "Center H", value = "HCENTER" },
-                   { text = "Center V", value = "VCENTER" } },
+                   { text = "Center V", value = "VCENTER" },
+                   { text = "Circle", value = "CIRCLE" },
+                   { text = "Custom", value = "CUSTOM" } },
         get = function(aura) return ns.GroupField(aura, "growth") end,
         set = function(aura, value)
             aura.growth = value
@@ -1338,15 +2484,78 @@ local DISPLAY_FIELDS = {
         end,
     },
     {
+        kind = "slider", label = "Radius (0 fits them)", key = "radius", min = 0, max = 400,
+        visible = function(aura) return ns.IsGroup(aura) and ns.GroupField(aura, "growth") == "CIRCLE" end,
+        get = function(aura) return ns.GroupField(aura, "radius") end,
+        set = function(aura, value) aura.radius = value Commit(false) end,
+    },
+    {
+        kind = "slider", label = "Start (degrees from the top)", key = "arcStart", min = 0, max = 360,
+        visible = function(aura) return ns.IsGroup(aura) and ns.GroupField(aura, "growth") == "CIRCLE" end,
+        get = function(aura) return ns.GroupField(aura, "arcStart") end,
+        set = function(aura, value) aura.arcStart = value Commit(false) end,
+    },
+    {
+        kind = "slider", label = "Arc (360 is the whole ring)", key = "arcRange", min = 10, max = 360,
+        visible = function(aura) return ns.IsGroup(aura) and ns.GroupField(aura, "growth") == "CIRCLE" end,
+        get = function(aura) return ns.GroupField(aura, "arcRange") end,
+        set = function(aura, value) aura.arcRange = value Commit(false) end,
+    },
+    {
+        kind = "code", label = "Custom growth", key = "growCustom", height = 150,
+        tip = "WeakAuras' custom grow: fill newPositions[i] = { x, y } from the group's center for "
+           .. "each of activeRegions (region, regionWidth, regionHeight, data, state).",
+        hint = "saved when you click away",
+        visible = function(aura) return ns.IsGroup(aura) and ns.GroupField(aura, "growth") == "CUSTOM" end,
+        get = function(aura)
+            local source = aura.growCustom
+            if source and source ~= "" then return source end
+            return GROW_TEMPLATE
+        end,
+        set = function(aura, text)
+            aura.growCustom = (text ~= "" and text ~= GROW_TEMPLATE) and text or nil
+            Commit(false)
+        end,
+        error = function(aura)
+            if not aura.growCustom then return nil end
+            if aura.untrusted then return "imported code: approve it first" end
+            local fn, err = ns.Env:Compile(aura.growCustom, "growth")
+            return (not fn) and err or nil
+        end,
+    },
+    {
         kind = "choice", label = "Sort (dynamic only)", key = "sort", width = 78,
         values = { { text = "List order", value = "none" },
                    { text = "Name", value = "name" },
-                   { text = "Time left", value = "time" } },
+                   { text = "Time left", value = "time" },
+                   { text = "Custom", value = "custom" } },
         enabled = function(aura) return aura.type == "dynamic" end,
         get = function(aura) return ns.GroupField(aura, "sort") end,
         set = function(aura, value)
             aura.sort = value
             Commit(false)
+        end,
+    },
+    {
+        kind = "code", label = "Custom sort", key = "sortCustom", height = 130,
+        tip = "WeakAuras' custom sort: return true when a goes before b. Each has region, data, "
+           .. "id, cloneId and state.",
+        hint = "saved when you click away",
+        visible = function(aura) return aura.type == "dynamic" and ns.GroupField(aura, "sort") == "custom" end,
+        get = function(aura)
+            local source = aura.sortCustom
+            if source and source ~= "" then return source end
+            return SORT_TEMPLATE
+        end,
+        set = function(aura, text)
+            aura.sortCustom = (text ~= "" and text ~= SORT_TEMPLATE) and text or nil
+            Commit(false)
+        end,
+        error = function(aura)
+            if not aura.sortCustom then return nil end
+            if aura.untrusted then return "imported code: approve it first" end
+            local fn, err = ns.Env:Compile(aura.sortCustom, "sort")
+            return (not fn) and err or nil
         end,
     },
     {
@@ -1385,10 +2594,494 @@ local SOUND_TIP = "Choose one from the client's own list -- clicking a name "
     .. "plays it, so you hear it before you keep it -- or type a file path in "
     .. "the list window and press Use path. Empty is silence."
 
+-------------------------------------------------------------------------------
+-- The Conditions tab
+-------------------------------------------------------------------------------
+-- A strip of conditions; for the one open, a strip of its checks and one of
+-- its changes; and for the check and change open, their settings. Every
+-- setting shows only while it applies, as on the Trigger tab.
+
+local currentCondition, currentCheck, currentChange = 1, 1, 1
+
+local function Conds(aura)
+    aura.conditions = aura.conditions or {}
+    return aura.conditions
+end
+local function Cond(aura)
+    return aura.conditions and aura.conditions[currentCondition]
+end
+
+-- A condition's checks as a list: several under an AND/OR, or its one.
+local function CheckList(cond)
+    if not cond or type(cond.check) ~= "table" then return {} end
+    if tonumber(cond.check.trigger) == -2 then return cond.check.checks or {} end
+    return { cond.check }
+end
+local function CurCheck(aura)
+    local list = CheckList(Cond(aura))
+    return list[currentCheck]
+end
+local function Change(aura)
+    local cond = Cond(aura)
+    return cond and cond.changes and cond.changes[currentChange]
+end
+
+local function HasCond(aura) return not ns.IsGroup(aura) and Cond(aura) ~= nil end
+local function HasCheck(aura) return HasCond(aura) and CurCheck(aura) ~= nil end
+local function HasChange(aura) return HasCond(aura) and Change(aura) ~= nil end
+local function CheckOnTrigger(aura)
+    local check = CurCheck(aura)
+    return check and (tonumber(check.trigger) or 1) > 0
+end
+local function CheckKind(aura)
+    local check = CurCheck(aura)
+    return check and ns.Conditions.KindOf(check.variable) or nil
+end
+local function ChangeIs(...)
+    local wanted = { ... }
+    return function(aura)
+        local change = HasChange(aura) and Change(aura)
+        if not change then return false end
+        for _, w in ipairs(wanted) do if change.property == w then return true end end
+        return false
+    end
+end
+
+local function Hex(colour)
+    if type(colour) ~= "table" then return "ffffff" end
+    return string.format("%02x%02x%02x", math.floor((tonumber(colour[1]) or 1) * 255 + 0.5),
+        math.floor((tonumber(colour[2]) or 1) * 255 + 0.5), math.floor((tonumber(colour[3]) or 1) * 255 + 0.5))
+end
+local function FromHex(hex)
+    hex = hex or "ffffff"
+    return { (tonumber(hex:sub(1, 2), 16) or 255) / 255, (tonumber(hex:sub(3, 4), 16) or 255) / 255,
+             (tonumber(hex:sub(5, 6), 16) or 255) / 255, 1 }
+end
+
+local DEFAULT_VALUE = {
+    alpha = 50, color = { 1, 0.2, 0.2, 1 }, desaturate = true, glow = true, scale = 1.5,
+    text = "%s", sound = { sound = "" }, chat = { message = "", channel = "PRINT" },
+    customcode = { custom = "function()\n    \nend" },
+}
+
+local TRIGGER_CHOICES = {}
+for i = 1, 8 do TRIGGER_CHOICES[#TRIGGER_CHOICES + 1] = { text = "Trigger " .. i, value = i } end
+TRIGGER_CHOICES[#TRIGGER_CHOICES + 1] = { text = "Custom Lua", value = -1 }
+
+local NUMBER_OPS = {
+    { text = ">=", value = ">=" }, { text = "<=", value = "<=" }, { text = "=", value = "==" },
+    { text = ">", value = ">" }, { text = "<", value = "<" }, { text = "not", value = "~=" },
+}
+local STRING_OPS = { { text = "is", value = "==" }, { text = "is not", value = "~=" },
+                     { text = "contains", value = "find" } }
+
+local function SetCheck(aura, key, value)
+    local check = CurCheck(aura)
+    if check then check[key] = value end
+    Commit(false)
+end
+local function SetChangeValue(aura, value)
+    local change = Change(aura)
+    if change then change.value = value end
+    Commit(false)
+end
+
+local CONDITION_FIELDS = {
+    { kind = "note", key = "conditionsNote",
+      text = "When a trigger's values meet a check, the aura changes: its color, glow,"
+          .. " transparency, size or text while it holds, or a sound, chat message or"
+          .. " custom code the moment it starts. Later conditions override earlier ones.",
+      visible = function(aura) return not ns.IsGroup(aura) end },
+    {
+        kind = "strip", key = "conditionStrip", label = "Conditions", move = true,
+        empty = "none yet -- + adds one",
+        visible = function(aura) return not ns.IsGroup(aura) end,
+        count = function(aura) return #(aura.conditions or {}) end,
+        current = function() return currentCondition end,
+        select = function(i) currentCondition, currentCheck, currentChange = i, 1, 1 end,
+        add = function(aura)
+            local list = Conds(aura)
+            list[#list + 1] = {
+                check = { trigger = 1, variable = "stacks", op = ">=", value = 1 },
+                changes = { { property = "glow", value = true } },
+            }
+            currentCondition, currentCheck, currentChange = #list, 1, 1
+        end,
+        remove = function(aura)
+            local list = Conds(aura)
+            table.remove(list, currentCondition)
+            currentCondition = math.max(1, currentCondition - 1)
+            if #list == 0 then aura.conditions = nil end
+        end,
+        move = function(aura, step)
+            local list = Conds(aura)
+            local to = currentCondition + step
+            if to < 1 or to > #list then return end
+            list[currentCondition], list[to] = list[to], list[currentCondition]
+            currentCondition = to
+        end,
+    },
+    {
+        kind = "check", label = "Else if (only when the one above did not hold)", key = "linked",
+        visible = function(aura) return HasCond(aura) and currentCondition > 1 end,
+        get = function(aura) return Cond(aura).linked end,
+        set = function(aura, on) Cond(aura).linked = on or nil Commit(false) end,
+    },
+
+    { kind = "header", label = "When", visible = HasCond },
+    {
+        kind = "strip", key = "checkStrip", label = "Checks", max = 6,
+        visible = HasCond,
+        count = function(aura) return #CheckList(Cond(aura)) end,
+        current = function() return currentCheck end,
+        select = function(i) currentCheck = i end,
+        add = function(aura)
+            local cond = Cond(aura)
+            local new = { trigger = 1, variable = "show", op = "==", value = true }
+            local list = CheckList(cond)
+            if #list == 0 then
+                cond.check = new
+            elseif tonumber(cond.check.trigger) == -2 then
+                table.insert(cond.check.checks, new)
+            else
+                cond.check = { trigger = -2, variable = "AND", checks = { cond.check, new } }
+            end
+            currentCheck = #CheckList(cond)
+        end,
+        remove = function(aura)
+            local cond = Cond(aura)
+            if tonumber(cond.check and cond.check.trigger) == -2 then
+                table.remove(cond.check.checks, currentCheck)
+                if #cond.check.checks == 1 then cond.check = cond.check.checks[1] end
+            else
+                cond.check = nil
+            end
+            currentCheck = math.max(1, currentCheck - 1)
+        end,
+    },
+    {
+        kind = "choice", label = "Combine", key = "combine", width = 70,
+        values = { { text = "All", value = "AND" }, { text = "Any", value = "OR" } },
+        visible = function(aura) return HasCond(aura) and #CheckList(Cond(aura)) > 1 end,
+        get = function(aura) return Cond(aura).check.variable end,
+        set = function(aura, value) Cond(aura).check.variable = value Commit(false) end,
+    },
+    {
+        kind = "choice", label = "Look at", key = "checkTrigger", width = 160, dropdown = true,
+        values = TRIGGER_CHOICES, visible = HasCheck,
+        get = function(aura) return tonumber(CurCheck(aura).trigger) or 1 end,
+        set = function(aura, value)
+            local check = CurCheck(aura)
+            check.trigger = value
+            if value == -1 then
+                check.variable = "customcheck"
+                check.value = "function(trigger)\n    return trigger[1] and trigger[1].met\nend"
+                check.op = nil
+            elseif check.variable == "customcheck" then
+                check.variable, check.op, check.value = "show", "==", true
+            end
+            Commit(false)
+        end,
+    },
+    {
+        kind = "choice", label = "Its", key = "checkVariable", width = 160, dropdown = true,
+        values = ns.Conditions.VARIABLES, visible = CheckOnTrigger,
+        get = function(aura) return CurCheck(aura).variable end,
+        set = function(aura, value)
+            local check = CurCheck(aura)
+            local kind = ns.Conditions.KindOf(value)
+            check.variable = value
+            if kind == "bool" then check.op, check.value = "==", true
+            elseif kind == "string" then check.op, check.value = "==", ""
+            else check.op, check.value = ">=", 1 end
+            Commit(false)
+        end,
+    },
+    {
+        kind = "text", label = "Value name", key = "checkField", width = 160,
+        tip = "Any value of the trigger's state -- one a custom state updater sets, say.",
+        visible = function(aura) return CheckOnTrigger(aura) and CurCheck(aura).variable == "custom" end,
+        get = function(aura) return CurCheck(aura).field or "" end,
+        set = function(aura, text) SetCheck(aura, "field", text ~= "" and text or nil) end,
+    },
+    {
+        kind = "choice", label = "Is", key = "checkOpNumber", width = 44, values = NUMBER_OPS,
+        visible = function(aura)
+            local kind = CheckOnTrigger(aura) and CheckKind(aura)
+            return kind == "number" or kind == "timer"
+        end,
+        get = function(aura) return CurCheck(aura).op or ">=" end,
+        set = function(aura, value) SetCheck(aura, "op", value) end,
+    },
+    {
+        kind = "choice", label = "Is", key = "checkOpString", width = 70, values = STRING_OPS,
+        visible = function(aura) return CheckOnTrigger(aura) and CheckKind(aura) == "string" end,
+        get = function(aura) return CurCheck(aura).op or "==" end,
+        set = function(aura, value) SetCheck(aura, "op", value) end,
+    },
+    {
+        kind = "choice", label = "Is", key = "checkBool", width = 60,
+        values = { { text = "True", value = true }, { text = "False", value = false } },
+        visible = function(aura) return CheckOnTrigger(aura) and CheckKind(aura) == "bool" end,
+        get = function(aura) local v = CurCheck(aura).value return v == true or v == "true" end,
+        set = function(aura, value) SetCheck(aura, "value", value) end,
+    },
+    {
+        kind = "text", label = "Than", key = "checkValue", width = 120,
+        tip = "Time left is in seconds. A value this client keeps secret never matches.",
+        visible = function(aura)
+            local kind = CheckOnTrigger(aura) and CheckKind(aura)
+            return kind == "number" or kind == "timer" or kind == "string"
+        end,
+        get = function(aura) return tostring(CurCheck(aura).value or "") end,
+        set = function(aura, text)
+            local kind = CheckKind(aura)
+            SetCheck(aura, "value", (kind == "string") and text or tonumber(text))
+        end,
+    },
+    {
+        kind = "code", label = "Custom check", key = "checkCode", height = 120,
+        tip = "Given the triggers' states -- trigger[1].met, trigger[1].count, .name,"
+           .. " .start, .duration -- return true when the condition holds.",
+        visible = function(aura) return HasCheck(aura) and tonumber(CurCheck(aura).trigger) == -1 end,
+        get = function(aura) return CurCheck(aura).value or "" end,
+        set = function(aura, text) SetCheck(aura, "value", text) end,
+        error = function(aura)
+            if aura.untrusted then return "imported code: approve it on the Trigger tab" end
+            local fn, err = ns.Env:Compile(CurCheck(aura).value, "condition")
+            return (not fn) and err or nil
+        end,
+    },
+
+    { kind = "header", label = "Then", visible = HasCond },
+    {
+        kind = "strip", key = "changeStrip", label = "Changes", max = 8,
+        visible = HasCond,
+        count = function(aura) return #((Cond(aura) or {}).changes or {}) end,
+        current = function() return currentChange end,
+        select = function(i) currentChange = i end,
+        add = function(aura)
+            local cond = Cond(aura)
+            cond.changes = cond.changes or {}
+            cond.changes[#cond.changes + 1] = { property = "glow", value = true }
+            currentChange = #cond.changes
+        end,
+        remove = function(aura)
+            local cond = Cond(aura)
+            table.remove(cond.changes, currentChange)
+            currentChange = math.max(1, currentChange - 1)
+        end,
+    },
+    {
+        kind = "choice", label = "Change", key = "changeProperty", width = 160, dropdown = true,
+        values = ns.Conditions.PROPERTIES, visible = HasChange,
+        get = function(aura) return Change(aura).property end,
+        set = function(aura, value)
+            local change = Change(aura)
+            change.property = value
+            local default = DEFAULT_VALUE[value]
+            if type(default) == "table" then
+                local copy = {}
+                for k, v in pairs(default) do copy[k] = v end
+                default = copy
+            end
+            change.value = default
+            Commit(false)
+        end,
+    },
+    {
+        kind = "slider", label = "Opacity (per cent)", key = "changeAlpha", min = 0, max = 100,
+        visible = ChangeIs("alpha"),
+        get = function(aura) return tonumber(Change(aura).value) or 100 end,
+        set = SetChangeValue,
+    },
+    {
+        kind = "colour", label = "Color", key = "changeColour", visible = ChangeIs("color"),
+        get = function(aura) return Hex(Change(aura).value) end,
+        set = function(aura, hex) SetChangeValue(aura, FromHex(hex)) end,
+    },
+    {
+        kind = "choice", label = "Set to", key = "changeBool", width = 60,
+        values = { { text = "On", value = true }, { text = "Off", value = false } },
+        visible = ChangeIs("desaturate", "glow"),
+        get = function(aura) return Change(aura).value and true or false end,
+        set = SetChangeValue,
+    },
+    {
+        kind = "slider", label = "Size (times)", key = "changeScale", min = 0.5, max = 3, step = 0.1,
+        visible = ChangeIs("scale"),
+        get = function(aura) return tonumber(Change(aura).value) or 1 end,
+        set = SetChangeValue,
+    },
+    {
+        kind = "text", label = "Text", key = "changeText", width = 240,
+        tip = "Replaces what the aura says while this holds. Text codes work: %s, %t, %n...",
+        visible = ChangeIs("text"),
+        get = function(aura) return tostring(Change(aura).value or "") end,
+        set = SetChangeValue,
+    },
+    {
+        kind = "sound", label = "Sound", key = "changeSound", visible = ChangeIs("sound"),
+        get = function(aura)
+            local v = Change(aura).value
+            return type(v) == "table" and v.sound or v or ""
+        end,
+        set = function(aura, sound) SetChangeValue(aura, { sound = sound }) end,
+    },
+    {
+        kind = "text", label = "Message", key = "changeMessage", width = 280,
+        tip = "Text codes work. Said once, when the condition starts to hold.",
+        visible = ChangeIs("chat"),
+        get = function(aura)
+            local v = Change(aura).value
+            return type(v) == "table" and v.message or ""
+        end,
+        set = function(aura, text)
+            local v = Change(aura).value
+            v = type(v) == "table" and v or {}
+            v.message = text
+            SetChangeValue(aura, v)
+        end,
+    },
+    {
+        kind = "choice", label = "Where", key = "changeChannel", width = 64,
+        values = { { text = "Me only", value = "PRINT" }, { text = "Say", value = "SAY" },
+                   { text = "Party", value = "PARTY" }, { text = "Raid", value = "RAID" },
+                   { text = "Guild", value = "GUILD" } },
+        visible = ChangeIs("chat"),
+        get = function(aura)
+            local v = Change(aura).value
+            return type(v) == "table" and v.channel or "PRINT"
+        end,
+        set = function(aura, channel)
+            local v = Change(aura).value
+            v = type(v) == "table" and v or {}
+            v.channel = channel
+            SetChangeValue(aura, v)
+        end,
+    },
+    {
+        kind = "code", label = "Custom code", key = "changeCode", height = 120,
+        tip = "Runs once, when the condition starts to hold. aura_env is the aura's table.",
+        visible = ChangeIs("customcode"),
+        get = function(aura)
+            local v = Change(aura).value
+            return type(v) == "table" and v.custom or ""
+        end,
+        set = function(aura, text) SetChangeValue(aura, { custom = text }) end,
+        error = function(aura)
+            if aura.untrusted then return "imported code: approve it on the Trigger tab" end
+            local v = Change(aura).value
+            local fn, err = ns.Env:Compile(type(v) == "table" and v.custom or "", "condition code")
+            return (not fn and err ~= "empty") and err or nil
+        end,
+    },
+}
+Config.__conditionFields = CONDITION_FIELDS
+function Config.__conditionCursor(a, b, c)
+    if a then currentCondition, currentCheck, currentChange = a, b or 1, c or 1 end
+    return currentCondition, currentCheck, currentChange
+end
+
+local CHAT_WHERE = {
+    { text = "Me only", value = "PRINT" }, { text = "Say", value = "SAY" },
+    { text = "Party", value = "PARTY" }, { text = "Raid", value = "RAID" },
+    { text = "Guild", value = "GUILD" }, { text = "Yell", value = "YELL" },
+}
+
+local function ActionText(key, label, tip)
+    return {
+        kind = "text", label = label, key = key, width = 280, tip = tip,
+        get = function(aura) return ns.ActionField(aura, key) end,
+        set = function(aura, text)
+            ActionsOf(aura)[key] = text ~= "" and text or nil
+            Commit(false)
+        end,
+    }
+end
+local function ActionWhere(key)
+    return {
+        kind = "choice", label = "Where", key = key, width = 60, values = CHAT_WHERE,
+        get = function(aura) return ns.ActionField(aura, key) end,
+        set = function(aura, value)
+            ActionsOf(aura)[key] = value
+            Commit(false)
+        end,
+    }
+end
+local function ActionCode(key, label, tip)
+    return {
+        kind = "code", label = label, key = key, height = 110, tip = tip,
+        hint = "function() ... end -- saved when you click away",
+        get = function(aura)
+            local source = ns.ActionField(aura, key)
+            if source and source ~= "" then return source end
+            return "function()\n    \nend"
+        end,
+        set = function(aura, text)
+            local blank = text == "" or text == "function()\n    \nend"
+            ActionsOf(aura)[key] = (not blank) and text or nil
+            Commit(false)
+        end,
+        error = function(aura)
+            local source = ns.ActionField(aura, key)
+            if not source or source == "" then return nil end
+            if aura.untrusted then return "imported code: approve it on the Trigger tab" end
+            local fn, err = ns.Env:Compile(source, key)
+            return (not fn) and err or nil
+        end,
+    }
+end
+
 local ACTION_FIELDS = {
-    { kind = "header", label = "Sound" },
-    SoundField("onShow", "When it comes up", SOUND_TIP),
-    SoundField("onHide", "When it goes away", SOUND_TIP),
+    { kind = "header", label = "When it comes up" },
+    SoundField("onShow", "Sound", SOUND_TIP),
+    ActionText("onShowMessage", "Chat message",
+        "Said once as it comes up. Text codes work: %n, %s, %t..."),
+    ActionWhere("onShowChannel"),
+    ActionCode("onShowCode", "Custom code", "Runs once as it comes up. aura_env.state is its state."),
+
+    { kind = "header", label = "When it goes away" },
+    SoundField("onHide", "Sound", SOUND_TIP),
+    ActionText("onHideMessage", "Chat message", "Said once as it goes."),
+    ActionWhere("onHideChannel"),
+    ActionCode("onHideCode", "Custom code", "Runs once as it goes."),
+
+    { kind = "header", label = "Glow another frame while it shows" },
+    {
+        kind = "choice", label = "Glow", key = "glowFrame", width = 220, dropdown = true,
+        tip = "A glowing border on another frame while this aura shows -- WeakAuras' external"
+           .. " glow. 'The spell's action button' finds the trigger's spell on your bars.",
+        values = {
+            { text = "Nothing", value = "none" },
+            { text = "The spell's action button", value = "button" },
+            { text = "Player frame", value = "player" }, { text = "Target frame", value = "target" },
+            { text = "Focus frame", value = "focus" }, { text = "Pet frame", value = "pet" },
+            { text = "A frame by name...", value = "name" },
+        },
+        get = function(aura) return ns.ActionField(aura, "glowFrame") end,
+        set = function(aura, value)
+            ActionsOf(aura).glowFrame = value ~= "none" and value or nil
+            Commit(false)
+        end,
+    },
+    {
+        kind = "text", label = "Frame name", key = "glowFrameName", width = 200,
+        tip = "The frame's global name, as /fstack shows it.",
+        visible = function(aura) return ns.ActionField(aura, "glowFrame") == "name" end,
+        get = function(aura) return ns.ActionField(aura, "glowFrameName") end,
+        set = function(aura, text)
+            ActionsOf(aura).glowFrameName = text ~= "" and text or nil
+            Commit(false)
+        end,
+    },
+
+    { kind = "header", label = "Custom code as it loads" },
+    ActionCode("initCode", "On init", "Once, the first time the aura is set up (again after an edit)."),
+    ActionCode("loadCode", "On load", "Each time its load conditions start to hold."),
+    ActionCode("unloadCode", "On unload", "Each time they stop."),
+
+    { kind = "header", label = "Sound channel" },
     {
         kind = "choice", label = "Channel", key = "channel", width = 78,
         tip = "Master ignores the sound-effects volume, which is usually what "
@@ -1408,8 +3101,282 @@ local ACTION_FIELDS = {
 -- The offline tests drive these the way the window does, rather than poking at
 -- the stored tables behind them, so a field that stops doing what it says is a
 -- failing check instead of a surprise in the game.
+-- Each piece of text gets its own font, outline and color, next to the rest
+-- of its settings; the text codes' own options close the tab.
+do
+    local function InsertAfter(list, key, extra)
+        for i, field in ipairs(list) do
+            if field.key == key then
+                for j, e in ipairs(extra) do table.insert(list, i + j, e) end
+                return
+            end
+        end
+    end
+    -- An aura that shows while something is missing has no stacks or timer to
+    -- show at that moment; text asking for them would always be empty.
+    local function EmptyByInversion(formatKey)
+        return function(aura)
+            if ns.IsGroup(aura) or not ns.DisplayField(aura, "invert") then return false end
+            local text = ns.DisplayField(aura, formatKey) or ""
+            return text:find("%%[stpd]") ~= nil
+        end
+    end
+    local INVERT_NOTE = "|cffffd100'Show when missing' is on: this aura shows only while the buff is"
+        .. " missing, so there are no stacks or time left to show -- %s, %t and %p will be empty."
+        .. " Turn it off to show them while the buff is up.|r"
+    for _, key in ipairs({ "iconText", "textFormat", "barFormat" }) do
+        InsertAfter(DISPLAY_FIELDS, key, { {
+            kind = "note", key = key .. "InvertNote", text = INVERT_NOTE,
+            visible = EmptyByInversion(key),
+        } })
+    end
+
+    InsertAfter(DISPLAY_FIELDS, "iconTextSize",
+        TextStyleFields("Icon text", "iconTextFont", "iconTextOutline", "iconTextColour", IsKind("icon")))
+    InsertAfter(DISPLAY_FIELDS, "fontSize",
+        TextStyleFields("Text", "textFont", "textOutline", "textColour", IsKind("text")))
+    InsertAfter(DISPLAY_FIELDS, "barFormat", Append({
+        {
+            kind = "slider", label = "Bar text size", key = "barFontSize", min = 6, max = 32,
+            enabled = IsKind("bar"),
+            get = function(aura) return ns.DisplayField(aura, "barFontSize") end,
+            set = function(aura, value)
+                SetDisplay(aura, "barFontSize", value)
+                Commit(false)
+            end,
+        },
+    }, TextStyleFields("Bar text", "barFont", "barOutline", "barTextColour", IsKind("bar"))))
+
+    local function HasText(aura)
+        return not ns.IsGroup(aura)
+    end
+    Append(DISPLAY_FIELDS, {
+        { kind = "header", label = "Text codes" },
+        {
+            kind = "note", key = "textCodesNote",
+            text = "%n name, %s stacks, %i the icon, %c your custom text (%c1, %c2... for"
+                .. " several), %stacks or %{field} any value of the trigger, %2.p trigger 2's."
+                .. " ChairAuras codes: %t time left, %p per cent left, %d the full duration."
+                .. " WeakAuras codes: %p time left, %t the full duration.",
+        },
+        {
+            kind = "choice", label = "Codes", key = "textStyle", width = 100,
+            tip = "Which meaning %t and %p have. Auras made here use ChairAuras'; ones"
+               .. " imported from WeakAuras use WeakAuras'.",
+            values = { { text = "ChairAuras", value = "chairauras" }, { text = "WeakAuras", value = "weakauras" } },
+            enabled = HasText,
+            get = function(aura) return ns.DisplayField(aura, "textStyle") end,
+            set = function(aura, value)
+                SetDisplay(aura, "textStyle", value)
+                Commit(false)
+            end,
+        },
+        {
+            kind = "choice", label = "Time as", key = "timeFormat", width = 80,
+            tip = "Auto: 2h, 4:05, 12, 3.4. Clock: 0:03. Seconds: 3.",
+            values = { { text = "Auto", value = "auto" }, { text = "Clock", value = "clock" },
+                       { text = "Seconds", value = "seconds" } },
+            enabled = HasText,
+            get = function(aura) return ns.DisplayField(aura, "timeFormat") end,
+            set = function(aura, value)
+                SetDisplay(aura, "timeFormat", value)
+                Commit(false)
+            end,
+        },
+        {
+            kind = "slider", label = "Decimals", key = "timePrecision", min = 0, max = 3,
+            tip = "Auto shows them under ten seconds; seconds always. A clock has none.",
+            enabled = HasText,
+            get = function(aura) return ns.DisplayField(aura, "timePrecision") end,
+            set = function(aura, value)
+                SetDisplay(aura, "timePrecision", value)
+                Commit(false)
+            end,
+        },
+        {
+            kind = "code", label = "Custom text (%c)", key = "customText", height = 120,
+            tip = "A Lua function; what it returns is %c, and %c1, %c2 for several values."
+               .. " aura_env.state is the aura's state. Runs each time the text is drawn.",
+            hint = "function() return ... end -- saved when you click away",
+            enabled = HasText,
+            get = function(aura)
+                local source = ns.DisplayField(aura, "customText")
+                if source and source ~= "" then return source end
+                return "function()\n    return \"\"\nend"
+            end,
+            set = function(aura, text)
+                local blank = text == "" or text == "function()\n    return \"\"\nend"
+                SetDisplay(aura, "customText", (not blank) and text or nil)
+                Commit(false)
+            end,
+            error = function(aura)
+                local source = ns.DisplayField(aura, "customText")
+                if not source or source == "" then return nil end
+                if aura.untrusted then return "imported code: approve it on the Trigger tab" end
+                local fn, err = ns.Env:Compile(source, "custom text")
+                return (not fn) and err or nil
+            end,
+        },
+    })
+end
+
 Config.__displayFields = DISPLAY_FIELDS
+-------------------------------------------------------------------------------
+-- The built-in trigger types' settings, made from their own descriptions
+-------------------------------------------------------------------------------
+-- Triggers.lua says what each type needs; the fields here are made from that,
+-- shown only while their type is the one picked. The type picker lists them
+-- all, and every setting that belongs to one kind of trigger -- Aura's,
+-- Cooldown's, Custom's -- hides for the others, so the tab shows what applies.
+
+do
+    local function TypeIs(key)
+        return function(aura)
+            return not ns.IsGroup(aura) and ns.TriggerField(aura, "type", currentTrigger) == key
+        end
+    end
+
+    local function Default(spec)
+        if spec.default ~= nil then return spec.default end
+        if spec.kind == "choice" and spec.values and spec.values[1] then return spec.values[1].value end
+        if spec.kind == "slider" then return spec.min or 0 end
+        if spec.kind == "check" then return false end
+        return nil
+    end
+
+    local function ResolveItem(text)
+        local id = tonumber(text)
+        if id then return id end
+        local item = _G.C_Item
+        local getInstant = (item and item.GetItemInfoInstant) or _G.GetItemInfoInstant
+        if type(getInstant) == "function" then
+            local ok, found = pcall(getInstant, text)
+            if ok and tonumber(found) then return tonumber(found) end
+        end
+        return nil
+    end
+
+    local function MakeField(typeKey, spec)
+        local field = {}
+        for k, v in pairs(spec) do field[k] = v end
+        local shown = TypeIs(typeKey)
+        field.visible, field.enabled = shown, shown
+        local key = spec.key
+        field.get = function(aura)
+            local value = ns.Trigger(aura, currentTrigger)[key]
+            if value == nil then value = Default(spec) end
+            if spec.kind == "spell" then
+                if not value then return "" end
+                return ns.Engine:SpellName(value) .. " (" .. value .. ")"
+            elseif spec.kind == "item" then
+                if not value then return "" end
+                local name = ns.ItemInfo and ns.ItemInfo(value)
+                return (name or "item") .. " (" .. value .. ")"
+            end
+            return value
+        end
+        field.set = function(aura, value)
+            local trigger = TriggerOf(aura)
+            if spec.kind == "spell" then
+                if value == "" then trigger[key] = nil Commit(true) return end
+                local spellID = ns.ResolveSpell(value)
+                if not spellID then
+                    ns.Print("this client does not know that spell -- try its numeric ID.")
+                    Config:Refresh()
+                    return
+                end
+                trigger[key] = spellID
+            elseif spec.kind == "item" then
+                local itemID = ResolveItem(value)
+                if not itemID then
+                    ns.Print("could not find that item -- try its numeric ID, or drag it here.")
+                    Config:Refresh()
+                    return
+                end
+                trigger[key] = itemID
+            elseif spec.kind == "check" then
+                trigger[key] = value and true or nil
+            elseif spec.kind == "text" then
+                trigger[key] = (value ~= "") and value or nil
+            else
+                trigger[key] = value
+            end
+            Commit(true)
+        end
+        return field
+    end
+
+    -- The picker lists every type.
+    for _, field in ipairs(TRIGGER_FIELDS) do
+        if field.key == "type" and field.kind == "choice" then
+            local GROUPS = {
+                { "Auras & cooldowns", { "aura", "cooldown" } },
+                { "Spells", { "usable", "known", "range", "charges", "cast" } },
+                { "Items", { "itemcooldown", "slotcooldown", "itemcount", "equipped", "enchant" } },
+                { "You", { "form", "threat", "xp", "money", "status", "zone" } },
+                { "Events", { "chat", "readycheck" } },
+                { "Bars (display only)", { "health", "power" } },
+                { "Custom", { "custom" } },
+            }
+            local names = { aura = "Aura", cooldown = "Cooldown", custom = "Custom Lua" }
+            for key, def in pairs(ns.TriggerTypes or {}) do names[key] = def.text end
+            local values, placed = {}, {}
+            for _, group in ipairs(GROUPS) do
+                values[#values + 1] = { header = group[1] }
+                for _, key in ipairs(group[2]) do
+                    if names[key] then
+                        values[#values + 1] = { text = names[key], value = key }
+                        placed[key] = true
+                    end
+                end
+            end
+            -- Anything registered and not in a group still gets listed.
+            for _, key in ipairs(ns.TriggerTypeOrder or {}) do
+                if not placed[key] then values[#values + 1] = { text = names[key], value = key } end
+            end
+            field.values = values
+            field.width = 200
+            field.dropdown = true
+            field.tip = "What the trigger watches. Aura and Cooldown are the classics;"
+                .. " Custom is your own Lua; the rest are WeakAuras' built-in"
+                .. " triggers that this client can answer."
+        end
+    end
+
+    -- What belongs to one kind of trigger hides for the others.
+    for _, field in ipairs(TRIGGER_FIELDS) do
+        if field.key ~= "type" and field.kind ~= "triggers" and field.key ~= "customTriggerLogic" then
+            if field.kind == "header" then
+                field.visible = IsCustom
+            elseif field.enabled and not field.visible then
+                field.visible = field.enabled
+            end
+        end
+    end
+    -- The custom activation box shows only when it is in use.
+    for _, field in ipairs(TRIGGER_FIELDS) do
+        if field.key == "customTriggerLogic" then field.visible = field.enabled end
+    end
+
+    -- And each built-in type's own settings, after a short description.
+    for _, key in ipairs(ns.TriggerTypeOrder or {}) do
+        local def = ns.TriggerTypes[key]
+        TRIGGER_FIELDS[#TRIGGER_FIELDS + 1] = {
+            kind = "header", label = def.text, visible = TypeIs(key),
+        }
+        if def.tip then
+            TRIGGER_FIELDS[#TRIGGER_FIELDS + 1] = {
+                kind = "note", key = key .. "Note", text = def.tip, visible = TypeIs(key),
+            }
+        end
+        for _, spec in ipairs(def.fields or {}) do
+            TRIGGER_FIELDS[#TRIGGER_FIELDS + 1] = MakeField(key, spec)
+        end
+    end
+end
+
 Config.__triggerFields = TRIGGER_FIELDS
+function Config.__currentTrigger(n) if n then currentTrigger = n end return currentTrigger end
 Config.__actionFields = ACTION_FIELDS
 
 -- The Load tab is generated from the condition list, so the window and the
@@ -1502,17 +3469,276 @@ end
 -- Editor assembly
 -------------------------------------------------------------------------------
 
+-------------------------------------------------------------------------------
+-- Animations tab
+-------------------------------------------------------------------------------
+-- One slot at a time -- start, main, finish -- in WeakAuras' own fields, so
+-- an imported aura's animations read back as they were written.
+
+local currentAnim = "start"
+function Config.__animCursor(which)
+    if which then currentAnim = which end
+    return currentAnim
+end
+
+local function AnimValue(aura, key, default)
+    local list = aura.animation
+    local anim = type(list) == "table" and list[currentAnim]
+    local value = type(anim) == "table" and anim[key]
+    if value == nil then return default end
+    return value
+end
+
+-- Set on the aura; on a group, on everything inside it as well, like the rest
+-- of a group's look. A running animation starts again with the change.
+local function SetAnim(aura, key, value)
+    local targets = { aura }
+    if ns.IsGroup(aura) then
+        for _, child in ipairs(ns.Descendants(aura.id)) do targets[#targets + 1] = child end
+    end
+    for _, target in ipairs(targets) do
+        target.animation = type(target.animation) == "table" and target.animation or {}
+        local anim = target.animation[currentAnim]
+        if type(anim) ~= "table" then
+            anim = { type = "none" }
+            target.animation[currentAnim] = anim
+        end
+        anim[key] = CopyValue(value)
+        if ns.Animations then
+            for frame in pairs(ns.Animations.__running) do
+                if frame.auraID == target.id then ns.Animations:Stop(frame) end
+            end
+        end
+    end
+    Commit(false)
+end
+
+local function AnimType(aura) return AnimValue(aura, "type", "none") end
+local function AnimCustom(aura) return AnimType(aura) == "custom" end
+local function AnimUses(part)
+    return function(aura) return AnimCustom(aura) and AnimValue(aura, "use_" .. part, false) and true or false end
+end
+local function AnimPathIs(part, kind)
+    return function(aura)
+        return AnimUses(part)(aura) and AnimValue(aura, part .. "Type") == kind
+    end
+end
+
+local ANIM_PATHS = {
+    alpha = { { "Normal", "straight" }, { "Pulse", "alphaPulse" }, { "Hide", "hide" },
+              { "Custom function", "custom" } },
+    translate = { { "Normal", "straightTranslate" }, { "Circle", "circle" }, { "Spiral", "spiral" },
+                  { "Spiral in and out", "spiralandpulse" }, { "Shake", "shake" }, { "Bounce", "bounce" },
+                  { "Bounce with decay", "bounceDecay" }, { "Custom function", "custom" } },
+    scale = { { "Normal", "straightScale" }, { "Pulse", "pulse" }, { "Spin", "fauxspin" },
+              { "Flip", "fauxflip" }, { "Custom function", "custom" } },
+    rotate = { { "Normal", "straight" }, { "Back and forth", "backandforth" }, { "Wobble", "wobble" },
+               { "Custom function", "custom" } },
+    color = { { "Gradient", "straightColor" }, { "Gradient pulse", "pulseColor" },
+              { "Custom function", "custom" } },
+}
+local ANIM_DEFAULT_PATH = {
+    alpha = "straight", translate = "straightTranslate", scale = "straightScale",
+    rotate = "straight", color = "straightColor",
+}
+local ANIM_TEMPLATES = {
+    alpha = "function(progress, start, delta)\n    return start + (progress * delta)\nend",
+    translate = "function(progress, startX, startY, deltaX, deltaY)\n"
+        .. "    return startX + (progress * deltaX), startY + (progress * deltaY)\nend",
+    scale = "function(progress, startX, startY, scaleX, scaleY)\n"
+        .. "    return startX + (progress * (scaleX - startX)), startY + (progress * (scaleY - startY))\nend",
+    rotate = "function(progress, start, delta)\n    return start + (progress * delta)\nend",
+    color = "function(progress, r1, g1, b1, a1, r2, g2, b2, a2)\n"
+        .. "    return r1 + (progress * (r2 - r1)), g1 + (progress * (g2 - g1)),\n"
+        .. "           b1 + (progress * (b2 - b1)), a1 + (progress * (a2 - a1))\nend",
+}
+
+local function AnimCheck(part, label, tip)
+    return {
+        kind = "check", label = label, key = "use_" .. part, tip = tip, visible = AnimCustom,
+        get = function(aura) return AnimValue(aura, "use_" .. part, false) end,
+        set = function(aura, checked) SetAnim(aura, "use_" .. part, checked and true or nil) end,
+    }
+end
+local function AnimNumber(key, label, low, high, part, scale, default, step)
+    scale = scale or 1
+    return {
+        kind = "slider", label = label, key = key, min = low, max = high, step = step,
+        visible = AnimUses(part),
+        get = function(aura) return (tonumber(AnimValue(aura, key, default)) or 0) * scale end,
+        set = function(aura, value) SetAnim(aura, key, value / scale) end,
+    }
+end
+local function AnimPath(part)
+    local values = {}
+    for i, entry in ipairs(ANIM_PATHS[part]) do values[i] = { text = entry[1], value = entry[2] } end
+    return {
+        kind = "choice", label = "Path", key = part .. "Type", width = 180, dropdown = true,
+        values = values, visible = AnimUses(part),
+        get = function(aura) return AnimValue(aura, part .. "Type", ANIM_DEFAULT_PATH[part]) end,
+        set = function(aura, value) SetAnim(aura, part .. "Type", value) end,
+    }
+end
+local function AnimCode(part)
+    local key = part .. "Func"
+    return {
+        kind = "code", label = "Function", key = key, height = 120,
+        visible = AnimPathIs(part, "custom"),
+        hint = "WeakAuras' signature -- saved when you click away",
+        get = function(aura)
+            local source = AnimValue(aura, key)
+            if source and source ~= "" then return source end
+            return ANIM_TEMPLATES[part]
+        end,
+        set = function(aura, text)
+            local blank = text == "" or text == ANIM_TEMPLATES[part]
+            SetAnim(aura, key, (not blank) and text or nil)
+        end,
+        error = function(aura)
+            local source = AnimValue(aura, key)
+            if not source or source == "" then return nil end
+            if aura.untrusted then return "imported code: approve it on the Trigger tab" end
+            local fn, err = ns.Env:Compile(source, key)
+            return (not fn) and err or nil
+        end,
+    }
+end
+
+local function PresetField(slot)
+    local values = {}
+    for i, entry in ipairs(ns.Animations.SLOT_PRESETS[slot]) do
+        values[i] = { text = entry[2], value = entry[1] }
+    end
+    return {
+        kind = "choice", label = "Preset", key = "preset_" .. slot, width = 180, dropdown = true,
+        values = values,
+        visible = function(aura) return currentAnim == slot and AnimType(aura) == "preset" end,
+        get = function(aura) return AnimValue(aura, "preset") end,
+        set = function(aura, value) SetAnim(aura, "preset", value) end,
+    }
+end
+
+local ANIMATION_FIELDS = {
+    {
+        kind = "choice", label = "Animation", key = "animSlot", width = 70,
+        tip = "Start plays as it comes up, main loops while it shows, finish plays as it goes.",
+        values = { { text = "Start", value = "start" }, { text = "Main", value = "main" },
+                   { text = "Finish", value = "finish" } },
+        get = function() return currentAnim end,
+        set = function(_, value)
+            currentAnim = value
+            Config:Refresh()
+        end,
+    },
+    {
+        kind = "choice", label = "Type", key = "animType", width = 70,
+        values = { { text = "None", value = "none" }, { text = "Preset", value = "preset" },
+                   { text = "Custom", value = "custom" } },
+        get = function(aura) return AnimType(aura) end,
+        set = function(aura, value)
+            SetAnim(aura, "type", value)
+            if value == "preset" and not AnimValue(aura, "preset") then
+                SetAnim(aura, "preset", ns.Animations.SLOT_PRESETS[currentAnim][1][1])
+            end
+        end,
+    },
+    PresetField("start"), PresetField("main"), PresetField("finish"),
+    {
+        kind = "button", label = "Play it", text = "Play it", key = "animPreview",
+        tip = "Plays this one on the aura now.",
+        visible = function(aura) return AnimType(aura) ~= "none" and not ns.IsGroup(aura) end,
+        click = function(aura)
+            local frame = ns.Display.__regions[aura.id]
+            if frame and ns.Animations then ns.Animations:Play(frame, aura, currentAnim) end
+        end,
+    },
+    {
+        kind = "slider", label = "Duration (tenths of a second)", key = "animDuration",
+        min = 1, max = 100, visible = AnimCustom,
+        get = function(aura) return math.floor((tonumber(AnimValue(aura, "duration", 0.25)) or 0.25) * 10 + 0.5) end,
+        set = function(aura, value) SetAnim(aura, "duration", value / 10) end,
+    },
+    {
+        kind = "choice", label = "Duration is", key = "duration_type", width = 130,
+        values = { { text = "Seconds", value = "seconds" },
+                   { text = "Of the timer", value = "relative" } },
+        tip = "Of the timer: one pass takes that share of the aura's own duration, so it speeds up as it runs out.",
+        visible = function(aura) return AnimCustom(aura) and currentAnim == "main" end,
+        get = function(aura) return AnimValue(aura, "duration_type", "seconds") end,
+        set = function(aura, value) SetAnim(aura, "duration_type", value) end,
+    },
+    {
+        kind = "choice", label = "Easing", key = "easeType", width = 100,
+        values = { { text = "None", value = "none" }, { text = "Ease in", value = "easeIn" },
+                   { text = "Ease out", value = "easeOut" }, { text = "In and out", value = "easeOutIn" } },
+        visible = AnimCustom,
+        get = function(aura) return AnimValue(aura, "easeType", "none") end,
+        set = function(aura, value) SetAnim(aura, "easeType", value) end,
+    },
+    {
+        kind = "slider", label = "Ease strength", key = "easeStrength", min = 1, max = 5,
+        visible = function(aura) return AnimCustom(aura) and AnimValue(aura, "easeType", "none") ~= "none" end,
+        get = function(aura) return AnimValue(aura, "easeStrength", 3) end,
+        set = function(aura, value) SetAnim(aura, "easeStrength", value) end,
+    },
+
+    { kind = "header", label = "Fade", visible = AnimCustom },
+    AnimCheck("alpha", "Fade", "To this opacity; a start animation fades in from it."),
+    AnimNumber("alpha", "Opacity (%)", 0, 100, "alpha", 100, 0),
+    AnimPath("alpha"), AnimCode("alpha"),
+
+    { kind = "header", label = "Move", visible = AnimCustom },
+    AnimCheck("translate", "Move", "By this much from where it sits."),
+    AnimNumber("x", "Across", -400, 400, "translate", 1, 0),
+    AnimNumber("y", "Up", -400, 400, "translate", 1, 0),
+    AnimPath("translate"), AnimCode("translate"),
+
+    { kind = "header", label = "Zoom", visible = AnimCustom },
+    AnimCheck("scale", "Zoom", "To this size, per cent of its own."),
+    AnimNumber("scalex", "Width (%)", 0, 500, "scale", 100, 1),
+    AnimNumber("scaley", "Height (%)", 0, 500, "scale", 100, 1),
+    AnimPath("scale"), AnimCode("scale"),
+
+    { kind = "header", label = "Rotate", visible = AnimCustom },
+    AnimCheck("rotate", "Rotate", "Turns an icon's or a texture's picture."),
+    AnimNumber("rotate", "Degrees", -360, 360, "rotate", 1, 0),
+    AnimPath("rotate"), AnimCode("rotate"),
+
+    { kind = "header", label = "Color", visible = AnimCustom },
+    AnimCheck("color", "Color", "To this color."),
+    {
+        kind = "colour", label = "To", key = "animColour", visible = AnimUses("color"),
+        get = function(aura)
+            local r = tonumber(AnimValue(aura, "colorR", 1)) or 1
+            local g = tonumber(AnimValue(aura, "colorG", 1)) or 1
+            local b = tonumber(AnimValue(aura, "colorB", 1)) or 1
+            return string.format("%02x%02x%02x", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5),
+                                 math.floor(b * 255 + 0.5))
+        end,
+        set = function(aura, hex)
+            hex = hex or "ffffff"
+            SetAnim(aura, "colorR", (tonumber(hex:sub(1, 2), 16) or 255) / 255)
+            SetAnim(aura, "colorG", (tonumber(hex:sub(3, 4), 16) or 255) / 255)
+            SetAnim(aura, "colorB", (tonumber(hex:sub(5, 6), 16) or 255) / 255)
+        end,
+    },
+    AnimPath("color"), AnimCode("color"),
+}
+Config.__animationFields = ANIMATION_FIELDS
+
 local TABS = {
     { key = "trigger",    text = "Trigger" },
     { key = "display",    text = "Display" },
+    { key = "conditions", text = "Conditions" },
     { key = "load",       text = "Load" },
     { key = "actions",    text = "Actions" },
+    { key = "animations", text = "Animations" },
 }
 
 local function BuildEditor(parent)
     editor = CreateFrame("Frame", nil, parent)
-    editor:SetSize(PANE_W + 20, LIST_H + 40)
     editor:SetPoint("TOPLEFT", parent, "TOPLEFT", LIST_W + 32, -76)
+    editor:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -16, 44)
 
     local hint = Text(editor, "Select something on the left,\nor add an aura below.",
                       "GameFontDisableLarge")
@@ -1544,7 +3770,7 @@ local function BuildEditor(parent)
     -- Tabs
     editor.tabButtons = {}
     for index, tab in ipairs(TABS) do
-        local button = Button(body, tab.text, 90, function()
+        local button = Button(body, tab.text, 70, function()
             Config:SetTab(tab.key)
         end)
         if index == 1 then
@@ -1562,15 +3788,17 @@ local function BuildEditor(parent)
     local specs = {
         trigger = TRIGGER_FIELDS,
         display = DISPLAY_FIELDS,
+        conditions = CONDITION_FIELDS,
         load    = BuildLoadFields(),
         actions = ACTION_FIELDS,
+        animations = ANIMATION_FIELDS,
     }
 
     for key, fields in pairs(specs) do
         local scroll = CreateFrame("ScrollFrame", "ChairAurasPane" .. key, body,
                                    "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -62)
-        scroll:SetSize(PANE_W, LIST_H - 62)
+        scroll:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -24, 34)
 
         local pane = BuildPane(scroll, fields)
         scroll:SetScrollChild(pane)
@@ -1584,7 +3812,7 @@ local function BuildEditor(parent)
 
     -- Parent
     local parentLabel = Text(body, "Inside group", "GameFontNormalSmall")
-    parentLabel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -(LIST_H + 4))
+    parentLabel:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 10)
     editor.parentLabel = parentLabel
 
     local parentBox = EditBox(body, 150, function(text)
@@ -1671,18 +3899,80 @@ function Config:RowUnderCursor()
             if top and bottom and cursorY <= top and cursorY >= bottom then
                 local aura = ns.FindAura(row.auraID)
                 local height = top - bottom
-                local inside = ns.IsGroup(aura)
-                    and cursorY < top - height / 3
-                    and cursorY > bottom + height / 3
-                return row.auraID, inside
+                -- The top of a row is above it and the bottom below; the
+                -- middle of a group is inside it.
+                if ns.IsGroup(aura) and cursorY < top - height / 3 and cursorY > bottom + height / 3 then
+                    return row.auraID, "inside"
+                end
+                return row.auraID, (cursorY >= bottom + height / 2) and "before" or "after"
             end
         end
     end
 
+    -- Below the last row: the end of the list.
+    local last
+    for _, row in ipairs(rows) do
+        if row:IsShown() and row.auraID then last = row end
+    end
+    local bottom = last and last:GetBottom()
+    if bottom and cursorY < bottom then return "END", "end" end
     return nil
 end
 
+-- The mark that shows where a dragged row will land: a line between rows, or
+-- the group it will go inside lit up. And the list scrolls when the cursor is
+-- held near its top or bottom.
+ShowDropMark = function()
+    local marker, glow = Config.dropLine, Config.dropGlow
+    if not (marker and glow) then return end
+    marker:Hide()
+    glow:Hide()
+    local target, where = Config:RowUnderCursor()
+    if not target or target == Config.dragging then return end
+    local row
+    if where == "end" then
+        for _, one in ipairs(rows) do if one:IsShown() and one.auraID then row = one end end
+        where = "after"
+    else
+        for _, one in ipairs(rows) do if one.auraID == target and one:IsShown() then row = one end end
+    end
+    if not row then return end
+    if where == "inside" then
+        glow:ClearAllPoints()
+        glow:SetAllPoints(row)
+        glow:Show()
+    else
+        marker:ClearAllPoints()
+        local point = (where == "before") and "TOP" or "BOTTOM"
+        marker:SetPoint("LEFT", row, point .. "LEFT", 0, 0)
+        marker:SetPoint("RIGHT", row, point .. "RIGHT", 0, 0)
+        marker:Show()
+    end
+end
+
+AutoScroll = function()
+    local scroll = Config.listScroll
+    if not scroll then return end
+    local scale = UIParent:GetEffectiveScale()
+    local _, cursorY = GetCursorPosition()
+    local top, bottom = scroll:GetTop(), scroll:GetBottom()
+    if not (cursorY and top and bottom) then return end
+    cursorY = cursorY / scale
+    local at = scroll:GetVerticalScroll() or 0
+    local most = scroll:GetVerticalScrollRange() or 0
+    if cursorY > top - 20 then
+        scroll:SetVerticalScroll(math.max(0, at - 6))
+    elseif cursorY < bottom + 20 then
+        scroll:SetVerticalScroll(math.min(most, at + 6))
+    end
+end
+
 function Config:Select(id)
+    if id ~= selectedID then
+        currentTrigger = 1
+        currentCondition, currentCheck, currentChange = 1, 1, 1
+        currentText = 1
+    end
     selectedID = id
     self:Refresh()
 end
@@ -1996,8 +4286,20 @@ end
 
 local function BuildWindow()
     window = CreateFrame("Frame", "ChairAurasConfig", UIParent, "BackdropTemplate")
-    window:SetSize(WINDOW_W, WINDOW_H)
+    -- As tall as fits comfortably on a 1920x1080 screen, and resizable from
+    -- the corner; the size is remembered.
+    local screenH = tonumber(UIParent:GetHeight()) or 768
+    local saved = type(ChairAurasDB) == "table" and ChairAurasDB.window or nil
+    local width = saved and tonumber(saved.w) or WINDOW_W
+    local height = saved and tonumber(saved.h) or math.max(WINDOW_H, math.min(760, screenH - 80))
+    window:SetSize(width, height)
     window:SetPoint("CENTER")
+    pcall(window.SetResizable, window, true)
+    if type(window.SetResizeBounds) == "function" then
+        pcall(window.SetResizeBounds, window, WINDOW_W, WINDOW_H, 1600, 1400)
+    elseif type(window.SetMinResize) == "function" then
+        pcall(window.SetMinResize, window, WINDOW_W, WINDOW_H)
+    end
     window:SetFrameStrata("DIALOG")
     window:SetMovable(true)
     window:EnableMouse(true)
@@ -2016,7 +4318,7 @@ local function BuildWindow()
     -- Escape closes it, the same as every other panel in the game.
     tinsert(UISpecialFrames, "ChairAurasConfig")
 
-    local title = Text(window, "ChairAuras", "GameFontNormalLarge")
+    local title = Text(window, ns.WINDOW_TITLE, "GameFontNormalLarge")
     title:SetPoint("TOP", window, "TOP", 0, -14)
 
     local version = Text(window, "v" .. ns.version, "GameFontDisableSmall")
@@ -2078,17 +4380,19 @@ local function BuildWindow()
         .. "matched against the name the aura carries, and the Trigger tab can "
         .. "loosen that to 'contains' for a whole family of them.")
 
-    local shiftHint = Text(window, "drag rows to reorder",
-                           "GameFontDisableSmall")
-    shiftHint:SetPoint("TOPLEFT", window, "TOPLEFT", 18, -444)
 
     local dropHint = Text(window, "or drag a spell here", "GameFontDisableSmall")
     dropHint:SetPoint("LEFT", namedButton, "RIGHT", 10, 0)
 
     -- List
     local inset = CreateFrame("Frame", nil, window, "InsetFrameTemplate3")
-    inset:SetSize(LIST_W, LIST_H)
+    inset:SetWidth(LIST_W)
     inset:SetPoint("TOPLEFT", window, "TOPLEFT", 16, -76)
+    inset:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 16, 76)
+
+    local shiftHint = Text(window, "drag rows to reorder or regroup",
+                           "GameFontDisableSmall")
+    shiftHint:SetPoint("BOTTOMRIGHT", inset, "TOPRIGHT", 0, 1)
 
     local scroll = CreateFrame("ScrollFrame", "ChairAurasConfigScroll", inset,
                                "UIPanelScrollFrameTemplate")
@@ -2098,6 +4402,61 @@ local function BuildWindow()
     listChild = CreateFrame("Frame", nil, scroll)
     listChild:SetSize(LIST_W - 32, 1)
     scroll:SetScrollChild(listChild)
+    Config.listScroll = scroll
+
+    -- Where a dragged row will land.
+    local dropLine = listChild:CreateTexture(nil, "OVERLAY")
+    dropLine:SetColorTexture(1, 0.82, 0, 0.95)
+    dropLine:SetHeight(2)
+    dropLine:Hide()
+    Config.dropLine = dropLine
+    local dropGlow = listChild:CreateTexture(nil, "OVERLAY")
+    dropGlow:SetColorTexture(1, 0.82, 0, 0.25)
+    dropGlow:Hide()
+    Config.dropGlow = dropGlow
+
+    -- The corner grip that resizes the window.
+    local grip = CreateFrame("Button", nil, window)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -2, 2)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    -- Inside the Chaircraft menu the window is pinned to the menu, and sizing
+    -- it directly would pull it loose -- the menu's background left behind as
+    -- one window, the controls as another (2026-09-26). So there the grip
+    -- sizes the menu, and the window, pinned to both its corners, follows.
+    local function SizingTarget()
+        if window.chairEmbedded then
+            local host = window:GetParent()
+            if host and host ~= UIParent then return host end
+        end
+        return window
+    end
+    grip:SetScript("OnMouseDown", function()
+        local target = SizingTarget()
+        pcall(target.SetResizable, target, true)
+        if target ~= window then
+            local extra = (tonumber(target:GetHeight()) or 0) - (tonumber(window:GetHeight()) or 0)
+            if type(target.SetResizeBounds) == "function" then
+                pcall(target.SetResizeBounds, target, WINDOW_W, WINDOW_H + extra, 1600, 1400)
+            elseif type(target.SetMinResize) == "function" then
+                pcall(target.SetMinResize, target, WINDOW_W, WINDOW_H + extra)
+            end
+        end
+        target:StartSizing("BOTTOMRIGHT")
+    end)
+    grip:SetScript("OnMouseUp", function()
+        local target = SizingTarget()
+        target:StopMovingOrSizing()
+        local w = math.floor((tonumber(window:GetWidth()) or WINDOW_W) + 0.5)
+        local h = math.floor((tonumber(window:GetHeight()) or WINDOW_H) + 0.5)
+        -- Kept as the window's own size too, for when it is shown on its own.
+        pcall(window.SetSize, window, w, h)
+        if type(ChairAurasDB) == "table" then ChairAurasDB.window = { w = w, h = h } end
+    end)
+    Tooltip(grip, "Resize", "Drag to make the window bigger or smaller. The size is remembered.")
+    window.grip = grip
 
     local newGroup = Button(window, "New group", 110, function()
         Config:AddGroup(false)
@@ -2155,6 +4514,7 @@ end
 -- the buttons and the offline tests take the same path into it.
 -- Seams for the offline tests: the rows as built, and what is selected.
 Config.__rows = rows
+function Config.__rowList() return rows end
 function Config.__selected() return selectedID end
 
 function Config:SetTab(key)

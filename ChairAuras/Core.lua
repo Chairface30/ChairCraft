@@ -3,6 +3,9 @@ local suiteName, Chaircraft = ...
 local addonName = "ChairAuras"
 local ns = Chaircraft.ChairAuras
 
+-- The window's title while ChairAuras grows toward WeakAuras' feature set.
+ns.WINDOW_TITLE = "ChairAuras |cffff9900*Beta*|r"
+
 _G.ChairAurasNS = ns
 
 ns.version = "0.3"
@@ -77,15 +80,47 @@ end
 -- "I could not read it" and "there are none" are different answers, and
 -- conflating them made a grey-out-at-zero-stacks rule fire permanently.
 
-local STACK_FIELDS = { "applications", "stackCount", "count", "charges", "stacks" }
+-- Every value read off an aura goes the same way the stack count does -- the
+-- method that found it: a list of the names each client has used for it,
+-- tried in order, the first READABLE one taken (a real 0 included), and a
+-- secret or missing value is unknown -- nil -- never a made-up zero or blank.
+-- The second return names the field that answered, for the diagnostics.
+--
+-- One reader for all of them means a client that renames a field is fixed in
+-- one line here, and no feature reads it differently from another.
+local AURA_FIELDS = {
+    stacks   = { kind = "number", "applications", "stackCount", "count", "charges", "stacks" },
+    name     = { kind = "text",   "name", "spellName" },
+    spellId  = { kind = "number", "spellId", "spellID", "id" },
+    icon     = { kind = "number", "icon", "iconFileID", "texture" },
+    duration = { kind = "number", "duration" },
+    expires  = { kind = "number", "expirationTime", "expires", "expirationtime" },
+    source   = { kind = "text",   "sourceUnit", "unitCaster", "caster" },
+    dispel   = { kind = "text",   "dispelName", "debuffType", "dispelType" },
+    instance = { kind = "number", "auraInstanceID", "instanceID" },
+}
+ns.AURA_FIELDS = AURA_FIELDS
 
-function ns.StackCount(data)
-    if type(data) ~= "table" then return nil end
-    for _, field in ipairs(STACK_FIELDS) do
-        local value = ns.SafeNumber(data[field])
-        if value then return value, field end
+-- The same for any table a client call hands back: `names` in order, the
+-- first readable one taken.
+function ns.ReadField(data, names, kind)
+    if type(data) ~= "table" or type(names) ~= "table" then return nil end
+    local read = (kind == "text") and ns.SafeText or ns.SafeNumber
+    for _, field in ipairs(names) do
+        local value = read(data[field])
+        if value ~= nil then return value, field end
     end
     return nil
+end
+
+function ns.AuraField(data, what)
+    local names = AURA_FIELDS[what]
+    if not names then return nil end
+    return ns.ReadField(data, names, names.kind)
+end
+
+function ns.StackCount(data)
+    return ns.AuraField(data, "stacks")
 end
 
 -- A font string built from a font object this client does not have draws

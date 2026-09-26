@@ -23,7 +23,7 @@ local ns = Chaircraft.ChairAuras
 -- one was about to land and gets written back over the settings on the way out.
 -- It waits, and only falls back to defaults once waiting has clearly failed.
 
-local DB_VERSION = 2
+local DB_VERSION = 3
 local DB_GRACE_SECONDS = 15
 
 -------------------------------------------------------------------------------
@@ -86,6 +86,21 @@ local DISPLAY_DEFAULTS = {
     barHeight  = 18,
     barIcon    = true,
     colour     = "ffffff",
+    -- Text drawn on an icon, WeakAuras-style: the same tokens as above, at one
+    -- of nine spots. Empty draws nothing.
+    iconText      = "",
+    iconTextPoint = "CENTER",
+    iconTextSize  = 12,
+    -- Every piece of text has its own font, outline and color. An empty font
+    -- or outline keeps the game's; an empty color falls back to `colour`.
+    textFont      = "", textOutline      = "", textColour      = "",
+    barFont       = "", barOutline       = "", barTextColour   = "ffffff", barFontSize = 10,
+    iconTextFont  = "", iconTextOutline  = "OUTLINE", iconTextColour = "",
+    -- Text codes (Text.lua): ChairAuras' meaning of %t and %p, or WeakAuras'.
+    textStyle     = "chairauras",
+    timeFormat    = "auto",      -- auto | clock | seconds
+    timePrecision = 1,           -- decimals, under ten seconds (auto) or always
+    customText    = "",          -- %c: a Lua function returning the text
     invert     = false,    -- show while NOT met
     hide       = false,    -- disappear when not met, rather than dim
     desaturate = true,     -- grey out while not met
@@ -94,6 +109,62 @@ local DISPLAY_DEFAULTS = {
     flash      = true,     -- flash on the edge into shown
     alpha      = 100,      -- percent, while shown
     dimAlpha   = 30,       -- percent, while not
+
+    -- Icons, as WeakAuras offers them.
+    iconZoom        = 0,       -- per cent the art is cropped in
+    cooldownReverse = false,   -- the swipe fills rather than empties
+    cooldownEdge    = false,   -- the bright line along the swipe
+    cooldownText    = true,    -- the client's own countdown numbers
+
+    -- Bars.
+    barTexture    = "",        -- empty: flat
+    barBackColour = "000000",
+    barBackAlpha  = 55,
+    barDirection  = "RIGHT",   -- RIGHT | LEFT | UP | DOWN: which way it fills
+    barSpark      = false,     -- a spark at the moving edge
+    barInverse    = false,     -- fill with the time gone rather than the time left
+
+    -- Texture, progress texture and model take a free size.
+    width  = 64,
+    height = 64,
+
+    -- Texture: a picture, colored, turned and mirrored.
+    texture         = "Interface\\Buttons\\WHITE8X8",
+    textureColour   = "ffffff",
+    textureRotation = 0,       -- degrees
+    textureMirror   = false,
+    textureBlend    = "BLEND", -- BLEND | ADD
+
+    -- Progress texture: a texture that fills with the timer.
+    progressStyle      = "linear",  -- linear | circular
+    progressTexture    = "Interface\\Buttons\\WHITE8X8",
+    progressColour     = "",        -- empty: `colour`
+    progressBackColour = "000000",
+    progressBackAlpha  = 50,
+    progressDirection  = "RIGHT",   -- linear: RIGHT | LEFT | UP | DOWN
+    progressInverse    = false,
+
+    -- Model: a unit's, or one by display or file ID.
+    modelSource = "unit",   -- unit | display | file
+    modelUnit   = "player",
+    modelID     = 0,
+    modelFacing = 0,        -- degrees
+    modelZoom   = 0,        -- per cent, portrait zoom
+
+    -- Sub-regions, WeakAuras' border, background, glow and ticks. More text
+    -- than the one each shape has goes in `texts`, a list with no default.
+    border       = false, borderColour   = "000000", borderSize = 1, borderOffset = 0,
+    backdrop     = false, backdropColour = "000000", backdropAlpha = 50,
+    glow         = false,             -- glow while shown
+    glowType     = "pulse",           -- pulse | pixel | shine
+    glowColour   = "ffd933",
+    glowLines    = 8,
+    glowThickness = 2,
+    glowSpeed    = 25,                -- per cent of the way round a second
+    ticks        = "",                -- bars: "3, 10" marks at 3s and 10s left
+    tickMode     = "seconds",         -- seconds | percent
+    tickColour   = "ffffff",
+    tickThickness = 2,
 }
 ns.DISPLAY_DEFAULTS = DISPLAY_DEFAULTS
 
@@ -103,6 +174,14 @@ ns.DISPLAY_DEFAULTS = DISPLAY_DEFAULTS
 -- knows, anything else is a file path -- because which of those a client
 -- accepts is not a thing to decide on their behalf.
 local ACTION_DEFAULTS = {
+    -- On show / on hide: a chat message (text codes work) and custom code.
+    onShowMessage = "", onShowChannel = "PRINT", onShowCode = "",
+    onHideMessage = "", onHideChannel = "PRINT", onHideCode = "",
+    -- Custom code as the aura is first set up, and as it loads and unloads.
+    initCode = "", loadCode = "", unloadCode = "",
+    -- Another frame glowing while the aura shows: none | player | target |
+    -- focus | pet | button (the trigger's spell on your bars) | name.
+    glowFrame = "none", glowFrameName = "",
     onShow = "",
     onHide = "",
     channel = "Master",
@@ -118,8 +197,29 @@ local GROUP_DEFAULTS = {
     sort    = "none",      -- none | name | time
     limit   = 0,           -- dynamic only; 0 means no limit
     columns = 0,           -- 0 means a single row or column
+    -- CIRCLE: round a ring. The radius is worked out from what is in it at 0.
+    radius   = 0,
+    arcStart = 0,          -- degrees clockwise from the top
+    arcRange = 360,        -- the whole ring, or an arc of it
+    -- CUSTOM growth and custom sort: WeakAuras' Lua functions,
+    -- function(newPositions, activeRegions) and function(a, b).
+    growCustom = "",
+    sortCustom = "",
 }
 ns.GROUP_DEFAULTS = GROUP_DEFAULTS
+
+-- Animations, in WeakAuras' shape: aura.animation.start / main / finish, each
+-- { type = "none" | "preset" | "custom", preset, duration, easeType,
+--   easeStrength, use_alpha, alpha, alphaType, alphaFunc, use_translate, x, y,
+--   translateType, translateFunc, use_scale, scalex, scaley, scaleType,
+--   scaleFunc, use_rotate, rotate, rotateType, rotateFunc, use_color, colorR,
+--   colorG, colorB, colorA, colorType, colorFunc }. None is the default.
+function ns.Animation(aura, which)
+    local list = aura and aura.animation
+    local anim = type(list) == "table" and list[which]
+    if type(anim) ~= "table" or (anim.type or "none") == "none" then return nil end
+    return anim
+end
 
 -- Load conditions live in Load.lua: the list of them is also what the options
 -- window draws, so there is one place to add one.
@@ -271,15 +371,26 @@ local function InitDatabase()
     end
 
     if (db.version or 1) < 2 then MigrateV1(profile) end
+    -- Version 3: one trigger became a list of them (see NormalizeTriggers).
+    for _, aura in ipairs(profile.auras or {}) do ns.NormalizeTriggers(aura) end
     db.version = DB_VERSION
 
     profile.label = "Account"
     profile.auras = profile.auras or {}
 
-    -- Conditions were removed (2026-09-25). Rules saved before then are
-    -- dropped here, so nothing is left carrying a setting no window shows.
+    -- Conditions came back in WeakAuras' shape. Rules saved in the shape
+    -- that was removed on 2026-09-25 (property/op/value/effect) cannot be read
+    -- as it, and are dropped rather than half-applied.
     for _, aura in ipairs(profile.auras) do
-        if type(aura) == "table" then aura.conditions = nil end
+        if type(aura) == "table" and type(aura.conditions) == "table" then
+            local kept = {}
+            for _, condition in ipairs(aura.conditions) do
+                if type(condition) == "table" and (condition.check ~= nil or condition.changes ~= nil) then
+                    kept[#kept + 1] = condition
+                end
+            end
+            aura.conditions = (#kept > 0) and kept or nil
+        end
     end
 
     -- A profile with nothing in it is either a genuine first run or this
@@ -305,8 +416,92 @@ end
 
 -- Everything an aura does not say for itself, answered from the defaults above,
 -- so no reader anywhere has to remember what a missing field means.
-function ns.Trigger(aura)
-    return aura.trigger or {}
+--
+-- Triggers are a list, the shape WeakAuras uses so its auras map across:
+--   aura.triggers = { { trigger = {...} }, { trigger = {...} },
+--                     disjunctive = "all" | "any" | "custom",
+--                     customTriggerLogic = "function(t) ... end",
+--                     activeTriggerMode = -10 (first active) or a number }
+-- Auras from before version 3 carried one aura.trigger; NormalizeTriggers
+-- moves it into the list, and is called wherever an aura can come in.
+
+local TRIGGERS_DEFAULTS = { disjunctive = "all", activeTriggerMode = -10 }
+ns.TRIGGERS_DEFAULTS = TRIGGERS_DEFAULTS
+
+function ns.NormalizeTriggers(aura)
+    if type(aura) ~= "table" then return end
+    if aura.trigger ~= nil then
+        aura.triggers = aura.triggers or {}
+        if aura.triggers[1] == nil then
+            aura.triggers[1] = { trigger = aura.trigger }
+        end
+        aura.trigger = nil
+    end
+end
+
+function ns.TriggerCount(aura)
+    local list = aura.triggers
+    if type(list) ~= "table" then return aura.trigger and 1 or 1 end
+    return math.max(#list, 1)
+end
+
+function ns.Trigger(aura, index)
+    index = index or 1
+    local list = aura.triggers
+    local entry = type(list) == "table" and list[index]
+    if type(entry) == "table" then return entry.trigger or {} end
+    if index == 1 and aura.trigger then return aura.trigger end
+    return {}
+end
+
+-- The trigger table an edit writes into, made on demand.
+function ns.TriggerTable(aura, index)
+    index = index or 1
+    ns.NormalizeTriggers(aura)
+    aura.triggers = aura.triggers or {}
+    for i = #aura.triggers + 1, index do aura.triggers[i] = {} end
+    local entry = aura.triggers[index]
+    entry.trigger = entry.trigger or {}
+    return entry.trigger
+end
+
+function ns.AddTrigger(aura, copyFrom)
+    ns.NormalizeTriggers(aura)
+    aura.triggers = aura.triggers or {}
+    if #aura.triggers == 0 then aura.triggers[1] = {} end
+    local new = {}
+    if type(copyFrom) == "table" then
+        for k, v in pairs(copyFrom) do new[k] = v end
+    end
+    aura.triggers[#aura.triggers + 1] = { trigger = new }
+    return #aura.triggers
+end
+
+-- Removes trigger `index`. The last one cannot go: an aura needs a trigger.
+function ns.RemoveTrigger(aura, index)
+    ns.NormalizeTriggers(aura)
+    local list = aura.triggers
+    if type(list) ~= "table" or #list <= 1 or not list[index] then return false end
+    table.remove(list, index)
+    local active = list.activeTriggerMode
+    if type(active) == "number" and active > 0 then
+        if active == index then list.activeTriggerMode = nil
+        elseif active > index then list.activeTriggerMode = active - 1 end
+    end
+    return true
+end
+
+function ns.TriggerMode(aura)
+    local list = aura.triggers
+    return (type(list) == "table" and list.disjunctive) or TRIGGERS_DEFAULTS.disjunctive
+end
+
+function ns.ActiveTriggerMode(aura)
+    local list = aura.triggers
+    local mode = type(list) == "table" and list.activeTriggerMode
+    if type(mode) ~= "number" then return TRIGGERS_DEFAULTS.activeTriggerMode end
+    if mode > 0 and mode > ns.TriggerCount(aura) then return TRIGGERS_DEFAULTS.activeTriggerMode end
+    return mode
 end
 
 -- Two ways in, because half the callers hold an aura and the other half hold
@@ -317,8 +512,8 @@ function ns.TriggerFieldValue(trigger, field)
     return value
 end
 
-function ns.TriggerField(aura, field)
-    return ns.TriggerFieldValue(aura.trigger, field)
+function ns.TriggerField(aura, field, index)
+    return ns.TriggerFieldValue(ns.Trigger(aura, index), field)
 end
 
 function ns.DisplayField(aura, field)
@@ -351,7 +546,10 @@ end
 -- was a choice turns out to be.
 function ns.RegionKind(aura)
     local kind = aura.type or AURA_DEFAULTS.type
-    if kind == "text" or kind == "bar" then return kind end
+    if kind == "text" or kind == "bar" or kind == "texture" or kind == "progress"
+       or kind == "model" then
+        return kind
+    end
     if ns.IsGroup(aura) then return "group" end
     return "icon"
 end
@@ -417,8 +615,13 @@ end
 -- end, which is what dragging into a container means everywhere else. Dropping
 -- on an ordinary aura puts it beside that aura, in the same group, which is
 -- what dragging within a list means everywhere else.
-function ns.MoveAura(aura, target, inside)
+-- `where` is "inside" (a group: at the end of it), "before" or "after" the
+-- target, beside it under the same parent. true and false still mean inside
+-- and before, as they did.
+function ns.MoveAura(aura, target, where)
     if not aura or not target or aura == target then return false end
+    if where == true then where = "inside" elseif not where then where = "before" end
+    local inside = where == "inside"
 
     -- Where it would end up, asked before anything moves. The question is
     -- whether the aura would become its own ancestor, so it is the aura that
@@ -468,11 +671,27 @@ function ns.MoveAura(aura, target, inside)
             if within then last = index else break end
         end
         table.insert(auras, last + 1, aura)
+    elseif where == "after" then
+        table.insert(auras, to + 1, aura)
     else
         table.insert(auras, to, aura)
     end
 
     return true
+end
+
+-- To the very end of the list, outside every group.
+function ns.MoveAuraToEnd(aura)
+    local auras = ns.GetAuras()
+    for index, one in ipairs(auras) do
+        if one == aura then
+            table.remove(auras, index)
+            aura.parent = nil
+            auras[#auras + 1] = aura
+            return true
+        end
+    end
+    return false
 end
 
 -- A group cannot end up inside itself, however the ids are edited.
@@ -509,7 +728,22 @@ end
 
 local function CompactAura(aura)
     CompactTable(aura, AURA_DEFAULTS)
-    CompactTable(aura.trigger, TRIGGER_DEFAULTS)
+    ns.NormalizeTriggers(aura)
+    if type(aura.triggers) == "table" then
+        for _, entry in ipairs(aura.triggers) do
+            if type(entry) == "table" then
+                CompactTable(entry.trigger, TRIGGER_DEFAULTS)
+                DropIfEmpty(entry, "trigger")
+            end
+        end
+        CompactTable(aura.triggers, TRIGGERS_DEFAULTS)
+        -- One trigger at its defaults, and nothing else: nothing to keep.
+        local keys = 0
+        for _ in pairs(aura.triggers) do keys = keys + 1 end
+        if keys == 1 and type(aura.triggers[1]) == "table" and not next(aura.triggers[1]) then
+            aura.triggers = nil
+        end
+    end
     CompactTable(aura.display, DISPLAY_DEFAULTS)
     CompactTable(aura.load, ns.LOAD_DEFAULTS or {})
     CompactTable(aura.actions, ACTION_DEFAULTS)
@@ -527,8 +761,19 @@ local function CompactAura(aura)
         pos.y = math.floor(pos.y + 0.5)
     end
 
-    DropIfEmpty(aura, "trigger")
+    if type(aura.animation) == "table" then
+        for _, which in ipairs({ "start", "main", "finish" }) do
+            local anim = aura.animation[which]
+            if type(anim) == "table" and (anim.type or "none") == "none" then
+                aura.animation[which] = nil
+            end
+        end
+        DropIfEmpty(aura, "animation")
+    end
+    if type(aura.display) == "table" then DropIfEmpty(aura.display, "texts") end
+
     DropIfEmpty(aura, "display")
+    DropIfEmpty(aura, "conditions")
     DropIfEmpty(aura, "load")
     DropIfEmpty(aura, "actions")
     DropIfEmpty(aura, "pos")

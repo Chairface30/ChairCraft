@@ -71,6 +71,8 @@ Chaircraft.parts = {
     {
         key = "chairauras",
         title = "ChairAuras",
+        -- The page heading inside the menu; the nav button keeps "Auras".
+        pageTitle = "ChairAuras |cffff9900*Beta*|r",
         blurb = "Aura, debuff and cooldown watchers.",
         tokens = { "auras", "ca" },
         route = "/chair auras",

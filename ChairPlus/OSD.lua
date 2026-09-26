@@ -2113,11 +2113,34 @@ end
 -- Module
 -------------------------------------------------------------------------------
 
+-- ChairTracker on the display drops down on hover, and a list left hanging
+-- open under the line is in the way -- so putting it there turns its
+-- auto-hide on, at two seconds, unless it is on already (then its own delay
+-- stands). Done once, as it goes onto the display: turning auto-hide off
+-- afterwards is a choice, and is left alone.
+function ns.TrackerAutoHideOnDisplay()
+    local db = _G.WOWFTrackerDB
+    local s = type(db) == "table" and db.settings
+    if type(s) ~= "table" then return end
+    if ns.Get("osd") and ns.Get("osdTracker") then
+        if not s.osdAutoHideSet then
+            s.osdAutoHideSet = true
+            if not s.autoHide then
+                s.autoHide = true
+                s.showTime = 2
+            end
+        end
+    else
+        s.osdAutoHideSet = nil
+    end
+end
+
 ns.RegisterModule("osd", {
     title = "On-screen display",
     desc = "Money, bag slots and more on one line on screen.",
     Apply = function(enabled)
         ns.ApplyMinimapHiding()
+        ns.TrackerAutoHideOnDisplay()
         if not enabled then
             if frame then frame:Hide() end
             ns.DockTracker(nil)

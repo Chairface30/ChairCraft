@@ -269,6 +269,12 @@ function Share:Import(text)
         local oldID = aura.id
         aura.id = ns.NextID(profile)
         if oldID then mapping[oldID] = aura.id end
+        -- An export from before version 3 carries one trigger, not a list.
+        ns.NormalizeTriggers(aura)
+        -- Custom Lua from someone else runs only once you have read it and
+        -- said yes (the aura's Trigger tab, or /chair auras trust).
+        aura.untrusted = nil
+        if ns.Custom and #ns.Custom:CodeOf(aura) > 0 then aura.untrusted = true end
 
         profile.auras[#profile.auras + 1] = aura
         added[#added + 1] = aura

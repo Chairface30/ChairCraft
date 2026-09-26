@@ -6,9 +6,10 @@ local ns = Chaircraft.ChairAuras
 -------------------------------------------------------------------------------
 -- Triggers
 -------------------------------------------------------------------------------
--- Two kinds, and both read APIs the probe confirmed return plain values:
--- C_UnitAuras.GetAuraDataByIndex hands back every field readable, and
--- C_Spell.GetSpellCooldown returns a plain table.
+-- An aura has one or more triggers (see "Several triggers, one aura"), each
+-- of a registered type: aura (a buff or debuff) or cooldown. Out of combat
+-- both read plain values. In combat this client refuses aura reads and makes
+-- cooldowns secret -- see "What combat hides" for what is done about that.
 --
 -- There is deliberately no health or power trigger. UnitHealth and UnitPower are
 -- secret on this build: the number can be compared against its max but never
@@ -17,7 +18,7 @@ local ns = Chaircraft.ChairAuras
 -- to do it rather than shipping something that throws the first time it draws.
 --
 -- There is no combat-log trigger either, and that is the client's doing:
--- COMBAT_LOG_EVENT_UNFILTERED registers fine but every accessor is gone --
+-- registering COMBAT_LOG_EVENT_UNFILTERED is refused and every accessor is gone --
 -- CombatLogGetCurrentEventInfo, CombatLogGetNumEntries, CombatLogGetEventInfo
 -- and C_CombatLog.GetCurrentEventInfo are all missing -- so the event arrives
 -- with nothing readable attached.
@@ -102,33 +103,73 @@ function ns.SpellFromCursor()
 end
 
 -------------------------------------------------------------------------------
+-- What combat hides, and what is known anyway
+-------------------------------------------------------------------------------
+-- The probe (2026-09-26) found this client refuses every aura read to addon
+-- code in combat -- by index, by slot, by spell ID, by instance ID -- and
+-- hands spell cooldowns back as secret values. Your own casts, though, still
+-- arrive readable. So two things are learned out of combat and used in it:
+--
+--   how long a spell's buff lasts, and how long its cooldown is -- whenever
+--   they are seen readable;
+--
+--   when you last cast each spell -- from UNIT_SPELLCAST_SUCCEEDED, which
+--   still names the spell in combat.
+--
+-- In combat a buff you had at the pull is known to run until its recorded
+-- expiry, and recasting the spell that applies it refreshes it from the cast.
+-- A state worked out that way is marked assumed, so nothing mistakes it for a
+-- reading. A buff that appears in combat from nothing you cast cannot be
+-- known here by anyone, WeakAuras included.
+
+local COOLDOWN_START, COOLDOWN_DURATION
+local learnedAuraDuration = {}   -- spellID -> seconds
+local learnedCooldown = {}       -- spellID -> seconds
+local spellForName = {}          -- lower-case aura name -> spellID
+local lastCast = {}              -- spellID -> GetTime() of the cast
+Engine.lastCast = lastCast
+Engine.learnedAuraDuration = learnedAuraDuration
+Engine.learnedCooldown = learnedCooldown
+
+do
+    local casts = CreateFrame("Frame")
+    pcall(casts.RegisterUnitEvent or casts.RegisterEvent, casts, "UNIT_SPELLCAST_SUCCEEDED", "player")
+    casts:SetScript("OnEvent", function(_, _, unit, _, spellID)
+        if unit ~= "player" then return end
+        local id = ns.SafeNumber(spellID)
+        if id then
+            lastCast[id] = GetTime()
+            ns.RequestUpdate()
+        end
+    end)
+end
+
+-------------------------------------------------------------------------------
 -- Aura scan
 -------------------------------------------------------------------------------
 -- Two ways to match, because there are two kinds of thing people watch.
 --
--- By ID is exact and is what a dragged or typed spell gives. GetAuraDataBySpellName
--- exists but two spells can share a name across ranks, so the comparison is on
--- spellId -- note the lower-case d, which is what this client actually returns.
+-- By ID is exact and is what a dragged or typed spell gives. The comparison is
+-- on spellId -- note the lower-case d, which is what this client returns.
 --
 -- By name is for everything whose spell you cannot name: "Well Fed" is a dozen
--- different spell IDs depending on what you ate, food a private server added has
--- no ID anyone has written down, and a proc you only know by the text on your
--- screen has one that changes with rank. The name on the aura is the thing the
--- player actually recognises, so it is a first-class way to match rather than a
--- workaround -- exactly, or as a substring for a family of them.
+-- different spell IDs depending on what you ate, and a proc you only know by
+-- the text on your screen has one that changes with rank. The name on the aura
+-- is the thing the player recognises, so it is a first-class way to match --
+-- exactly, or as a substring for a family of them.
 
 local MAX_AURAS = 40
 
 -- Answers twice: whether this aura is the one, and whether it could be read at
--- all. The second matters as much as the first -- an aura whose fields come
--- back secret is not an aura that failed to match, it is a question this client
--- refused, and the two have opposite consequences for an inverted watcher.
+-- all. An aura whose fields come back secret is not one that failed to match,
+-- it is a question this client refused -- and the two have opposite
+-- consequences for an inverted watcher.
 local function Matches(data, trigger)
     if ns.TriggerFieldValue(trigger, "match") == "name" then
         local wanted = trigger.text
         if not wanted or wanted == "" then return false, false end
 
-        local name = ns.SafeText(data.name)
+        local name = ns.AuraField(data, "name")
         if not name then return false, true end
 
         if ns.TriggerFieldValue(trigger, "partial") then
@@ -139,9 +180,19 @@ local function Matches(data, trigger)
 
     if trigger.spellID == nil then return false, false end
 
-    local spellID = ns.SafeNumber(data.spellId)
+    local spellID = ns.AuraField(data, "spellId")
     if not spellID then return false, true end
-    return spellID == trigger.spellID, false
+    if spellID == trigger.spellID then return true, false end
+    -- The spell you cast and the buff it puts on you often have different
+    -- IDs (Plainsrunning: 1259918 cast, 1299038 on you). So a buff wearing
+    -- the chosen spell's name counts too -- which is what picking the ability
+    -- from the spellbook means.
+    local wanted = nameCache[trigger.spellID] or ns.Engine:SpellName(trigger.spellID)
+    local name = ns.AuraField(data, "name")
+    if wanted and name and not wanted:find("^spell %d+$") and name:lower() == wanted:lower() then
+        return true, false
+    end
+    return false, false
 end
 
 local function StacksSatisfied(trigger, count)
@@ -165,11 +216,8 @@ local function FindAura(unit, trigger)
     for index = 1, MAX_AURAS do
         local ok, data = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
 
-        -- A refusal is not the end of the list. This client will not hand an
-        -- aura to tainted code once it has decided the aura is secret, which it
-        -- does in combat, and every call from an addon is tainted by that
-        -- addon -- so the read throws and there is nothing to be done about it
-        -- except to know that it did.
+        -- A refusal is not the end of the list: this client will not hand an
+        -- aura to addon code in combat, and all there is to do is know that.
         if not ok then return nil, true end
         if not data then return nil, unreadable end
 
@@ -177,11 +225,11 @@ local function FindAura(unit, trigger)
         if blind then unreadable = true end
 
         if matched then
-            if StacksSatisfied(trigger, ns.SafeNumber(data.applications)) then
+            -- The same field search the stack count shown uses, so the two agree.
+            if StacksSatisfied(trigger, (ns.StackCount(data))) then
                 return data
             end
-            -- Same aura, wrong size. Keep walking: nothing says the client lists
-            -- only one aura of a given name on a unit.
+            -- Same aura, wrong size: keep walking.
         end
     end
 
@@ -189,185 +237,369 @@ local function FindAura(unit, trigger)
 end
 
 -------------------------------------------------------------------------------
--- Evaluation
+-- One trigger's evaluation
 -------------------------------------------------------------------------------
+-- Each trigger has its own state -- met, timer, stacks, name, icon -- and the
+-- aura's state is put together from them afterwards (see Combine). Zero
+-- stacks, deliberately: a buff that is not on you is one you have none of.
+-- nil stays reachable and means unknown.
 
--- Zero, and deliberately so.
---
--- A buff that is not on you is a buff you have no stacks of, and that is the
--- case "grey it out at zero stacks" is mostly written for: an aura set to sit
--- there dimmed shows the player they are missing something. Reporting nil
--- here instead reads as "could not tell", no rule matches, and the icon
--- never greys -- which is the wrong answer to the question being asked.
---
--- nil is still reachable and still means unknown: it comes out of StackCount
--- when the aura is present and the count cannot be read. That is the only
--- case that deserves it.
 local function ClearState(state)
     state.met, state.start, state.duration, state.count = false, nil, nil, 0
+    state.durationObject, state.assumed = nil, false
 end
 
-local function EvaluateAura(aura, state)
-    local trigger = ns.Trigger(aura)
+-- The spell a trigger stands for, when it can be named: its ID, or the ID
+-- last seen wearing the name it matches.
+local function TriggerSpell(trigger)
+    if ns.TriggerFieldValue(trigger, "match") == "name" then
+        local text = ns.SafeText(trigger.text)
+        return text and spellForName[text:lower()] or nil
+    end
+    return trigger.spellID
+end
+
+-- In combat, with the reads refused: what can still honestly be said.
+local function AssumeAura(trigger, ts, now)
+    ts.assumed = true
+    -- Recast since it was last known: it is back, for as long as it lasts.
+    local spell = TriggerSpell(trigger)
+    local cast = spell and lastCast[spell]
+    local lasts = spell and learnedAuraDuration[spell]
+    if cast and cast > (ts.castSeen or 0) and lasts and lasts > 0 then
+        ts.castSeen = cast
+        ts.met = true
+        ts.start, ts.duration = cast, lasts
+        return
+    end
+    -- Known to be up until a time that has now passed: gone.
+    if ts.met and ts.start and ts.duration and now >= ts.start + ts.duration then
+        ts.met = false
+        ts.start, ts.duration = nil, nil
+    end
+end
+
+local function EvaluateAura(trigger, ts, now)
     local unit = ns.TriggerFieldValue(trigger, "unit")
     local data, unknown = FindAura(unit, trigger)
 
     if not data and unknown then
-        -- "I could not look" is not "it is not there", and this is the one
-        -- place where confusing the two does real damage: an aura set to show
-        -- when something is MISSING reads a refused scan as the thing being
-        -- missing, and lights up. That is exactly what happened the moment
-        -- combat started -- the reads stopped working, every inverted watcher
-        -- came on, and they all went off again when combat ended and the reads
-        -- came back.
-        --
-        -- So nothing is decided here. The last answer stands until there is a
-        -- new one, which also means no flash and no sound fires on the way
-        -- through: an edge nobody can see is not an edge.
-        state.unknown = true
+        -- "I could not look" is not "it is not there". An aura set to show when
+        -- something is MISSING would read a refused scan as missing and light
+        -- up the moment combat started. So the last answer stands -- carried
+        -- forward by what is known (see AssumeAura), never guessed at.
+        ts.unknown = true
+        AssumeAura(trigger, ts, now)
         return
     end
 
-    state.unknown = false
+    ts.unknown, ts.assumed = false, false
+    ts.castSeen = now
 
     if not data then
-        ClearState(state)
+        ClearState(ts)
+        ts.icon, ts.name = nil, nil
         return
     end
 
-    state.met = true
-    -- The field an aura reports its stack count in is not the same on every
-    -- generation of this API -- applications is the current name, the older
-    -- ones are still what some clients fill in. Take whichever answers rather
-    -- than assuming, or a stacking aura silently reads as zero.
-    state.count = ns.StackCount(data)
-    -- Deliberately NOT "or 0". If none of those answered we do not know the
-    -- stack count, and calling that zero is a lie that does real damage: a
-    -- "grey out at zero stacks" rule then matches permanently, which is
-    -- exactly what it did. nil means unknown, and an unknown property never
-    -- matches a condition.
-    state.countKnown = state.count ~= nil
+    ts.met = true
+    -- applications is the current name for the stack count; older clients
+    -- fill in others. nil means the count could not be read, never zero.
+    ts.count = ns.StackCount(data)
+    ts.countKnown = ts.count ~= nil
 
-    -- A duration of zero is a permanent aura, not a zero-second one. Passing it
-    -- to SetCooldown would draw a swipe that instantly completes, so the swipe
-    -- is left off and the icon simply reads as on.
-    local duration = ns.SafeNumber(data.duration)
-    local expires  = ns.SafeNumber(data.expirationTime)
+    -- A duration of zero is a permanent aura, not a zero-second one.
+    local duration = ns.AuraField(data, "duration")
+    local expires  = ns.AuraField(data, "expires")
     if duration and duration > 0 and expires and expires > 0 then
-        state.duration = duration
-        state.start = expires - duration
+        ts.duration = duration
+        ts.start = expires - duration
     else
-        state.duration, state.start = nil, nil
+        ts.duration, ts.start = nil, nil
+    end
+    ts.durationObject = nil
+
+    -- Learned for combat, when none of this can be read.
+    local spellID = ns.AuraField(data, "spellId")
+    local name = ns.AuraField(data, "name")
+    if spellID then
+        if duration and duration > 0 then learnedAuraDuration[spellID] = duration end
+        if name then spellForName[name:lower()] = spellID end
     end
 
-    -- The icon the aura is actually wearing beats the one the spell ID implies:
-    -- they differ for anything that overrides its own appearance, and a
-    -- name-matched aura has no spell ID to take one from in the first place.
-    -- What the aura itself is wearing, unless the user said otherwise.
-    if not (aura.display or {}).icon then
-        state.icon = ns.SafeNumber(data.icon) or state.icon
-    end
-    state.lastIcon = ns.SafeNumber(data.icon) or state.lastIcon
-    state.name = ns.SafeText(data.name) or state.name
+    ts.icon = ns.AuraField(data, "icon")
+    ts.source = ns.AuraField(data, "source")
+    ts.dispel = ns.AuraField(data, "dispel")
+    ts.name = name
 end
 
-local function EvaluateCooldown(aura, state)
-    local trigger = ns.Trigger(aura)
-    if not trigger.spellID then
-        ClearState(state)
+local function EvaluateCooldown(trigger, ts, now)
+    local spellID = trigger.spellID
+    if not spellID then
+        ClearState(ts)
         return
     end
 
-    local ok, info = pcall(C_Spell.GetSpellCooldown, trigger.spellID)
+    local ok, info = pcall(C_Spell.GetSpellCooldown, spellID)
     if not ok then
-        state.unknown = true
+        ts.unknown = true
         return
     end
-
-    state.unknown = false
 
     if type(info) ~= "table" then
-        ClearState(state)
+        ts.unknown = false
+        ClearState(ts)
         return
     end
 
-    local duration = ns.SafeNumber(info.duration) or 0
-    local start    = ns.SafeNumber(info.startTime) or 0
+    -- In combat the start and duration come back secret. They cannot be
+    -- compared, but the client still hands out a duration object that a
+    -- cooldown swipe draws correctly -- so the display stays right, and the
+    -- ready-or-not answer is worked out from what is known.
+    if ns.IsSecret(info.startTime) or ns.IsSecret(info.duration) then
+        ts.unknown, ts.assumed = true, true
+        local okD, object = pcall(C_Spell.GetSpellCooldownDuration, spellID)
+        ts.durationObject = okD and object or nil
+        local cast = lastCast[spellID]
+        local base = learnedCooldown[spellID]
+        if cast and base and cast > (ts.castSeen or 0) then
+            ts.castSeen = cast
+            ts.start, ts.duration = cast, base
+        end
+        if ts.start and ts.duration then
+            ts.met = now >= ts.start + ts.duration
+            if ts.met then ts.start, ts.duration = nil, nil end
+        end
+        ts.count = nil
+        return
+    end
+
+    ts.unknown, ts.assumed = false, false
+    ts.durationObject = nil
+    ts.castSeen = now
+
+    local duration = ns.ReadField(info, COOLDOWN_DURATION) or 0
+    local start    = ns.ReadField(info, COOLDOWN_START) or 0
 
     -- The global cooldown runs on every spell at once and says nothing about
-    -- whether this one is ready. Anything that short is treated as ready, which
-    -- is what a player means by it.
+    -- whether this one is ready.
     local onRealCooldown = duration > 1.5 and start > 0
 
-    state.met = not onRealCooldown
-    -- A spell cooldown has no stacks to report, which is not the same as
-    -- having none. Left as nil so a stack rule simply never matches a
-    -- cooldown-triggered aura, rather than always matching it.
-    state.count = nil
+    ts.met = not onRealCooldown
+    -- A spell cooldown has no stacks, which is not the same as having none.
+    ts.count = nil
     if onRealCooldown then
-        state.start, state.duration = start, duration
+        ts.start, ts.duration = start, duration
+        learnedCooldown[spellID] = duration
     else
-        state.start, state.duration = nil, nil
+        ts.start, ts.duration = nil, nil
     end
 end
 
+-- The names a cooldown table has used for its two numbers.
+COOLDOWN_START = { "startTime", "start" }
+COOLDOWN_DURATION = { "duration" }
+
+local EVALUATORS = {
+    aura = EvaluateAura,
+    cooldown = EvaluateCooldown,
+}
+Engine.EVALUATORS = EVALUATORS
+
 -- What the icon should call itself and wear before any trigger has run. A
--- name-matched aura has the text the user typed and no spell at all, which is
--- the whole point of it.
+-- name-matched aura has the text the user typed and no spell at all.
 function Engine:Describe(aura)
     local trigger = ns.Trigger(aura)
     local display = aura.display or {}
     local borrowed = display.iconSpell
 
-    -- One picked out of the list is a decision, and a decision outranks
-    -- anything worked out from a spell or remembered from a sighting.
+    -- One picked out of the list is a decision, and outranks anything worked
+    -- out from a spell or remembered from a sighting.
     local chosen = display.icon
 
     if ns.TriggerFieldValue(trigger, "match") == "name" then
         local text = ns.SafeText(trigger.text)
-        -- The question mark is the honest answer for an aura that has never
-        -- been seen and names no spell: it says "nothing to show yet" rather
-        -- than picking something at random.
         local icon = chosen or (borrowed and self:SpellIcon(borrowed)) or 134400
         return aura.name or text or "unnamed", icon
     end
 
+    -- An item trigger wears the item.
+    if trigger.itemID and not trigger.spellID and ns.ItemInfo then
+        local itemName, itemIcon = ns.ItemInfo(trigger.itemID)
+        return aura.name or itemName or ("item " .. trigger.itemID) or "unnamed",
+               chosen or (borrowed and self:SpellIcon(borrowed)) or itemIcon or 134400
+    end
+
     local spellID = trigger.spellID
+    if not spellID then
+        return aura.name or "unnamed", chosen or (borrowed and self:SpellIcon(borrowed)) or 134400
+    end
     return aura.name or self:SpellName(spellID) or "unnamed",
            chosen or self:SpellIcon(borrowed or spellID)
 end
+
+-------------------------------------------------------------------------------
+-- Several triggers, one aura
+-------------------------------------------------------------------------------
+-- WeakAuras' model. Every trigger is evaluated, then:
+--
+--   "all"    shows when every trigger is met
+--   "any"    shows when at least one is
+--   "custom" asks a Lua function, given the triggers' answers as a list
+--
+-- and one trigger supplies what the aura shows -- its timer, stacks, name and
+-- icon: the first one met (activeTriggerMode -10, WeakAuras' "first active"),
+-- or a chosen one.
+
+local FIRST_ACTIVE = -10
+
+local function Combine(aura, state, count)
+    local mode = ns.TriggerMode(aura)
+    local answers = {}
+    for i = 1, count do answers[i] = state.triggers[i].met and true or false end
+
+    local met
+    if mode == "any" then
+        met = false
+        for i = 1, count do if answers[i] then met = true break end end
+    elseif mode == "custom" then
+        local source = aura.triggers and aura.triggers.customTriggerLogic
+        local fn, err
+        if aura.untrusted then
+            err = "imported code waits for your approval"
+        else
+            fn, err = ns.Env:Compile(source, (aura.name or aura.id) .. " activation")
+        end
+        if not fn then
+            state.error = err
+            met = false
+        else
+            local ok, result = ns.Env:Call(aura, fn, answers)
+            if not ok then
+                state.error = result
+                ns.Env:Report(aura, "custom activation", result)
+                met = false
+            else
+                state.error = nil
+                met = result and true or false
+            end
+        end
+    else
+        met = count > 0
+        for i = 1, count do if not answers[i] then met = false break end end
+    end
+
+    -- Which trigger speaks for the aura.
+    local chosen = ns.ActiveTriggerMode(aura)
+    local source
+    if chosen == FIRST_ACTIVE then
+        for i = 1, count do
+            if answers[i] then source = state.triggers[i] break end
+        end
+    else
+        source = state.triggers[chosen]
+    end
+    source = source or state.triggers[1] or {}
+
+    state.met = met
+    state.start, state.duration = source.start, source.duration
+    state.durationObject = source.durationObject
+    state.live = source.live
+    -- The trigger that speaks, for text codes that name one of its fields.
+    state.source = source
+    state.count, state.countKnown = source.count, source.countKnown
+    state.assumed = source.assumed and true or false
+
+    local unknown = false
+    for i = 1, count do if state.triggers[i].unknown then unknown = true end end
+    state.unknown = unknown
+
+    -- The icon the thing itself wears beats the one the spell implies, unless
+    -- the user picked one. Remembered, so a Well Fed that has dropped still
+    -- shows the meal rather than a question mark.
+    local display = aura.display or {}
+    if source.icon then
+        state.lastIcon = source.icon
+        if not display.icon then state.icon = source.icon end
+    elseif state.lastIcon and not display.icon and not display.iconSpell then
+        state.icon = state.lastIcon
+    end
+    if source.name then state.name = source.name end
+end
+
+-- One clone of a state-updater trigger, as a state of its own: what the
+-- display draws in the clone's region. It shares the aura's triggers and
+-- conditions; its name, icon, stacks and timer are the clone's.
+local function CloneState(base, key, st)
+    local clone = {
+        id = base.id, cloneKey = key, loaded = base.loaded, met = base.met,
+        shown = base.shown, props = base.props, triggers = base.triggers,
+        assumed = base.assumed,
+    }
+    clone.name = ns.SafeText(st.name) or base.name
+    clone.icon = st.icon or base.icon
+    clone.count = ns.SafeNumber(st.stacks)
+    clone.countKnown = clone.count ~= nil
+    local duration = ns.SafeNumber(st.duration)
+    local expires = ns.SafeNumber(st.expirationTime)
+    if duration and duration > 0 and expires then
+        clone.start, clone.duration = expires - duration, duration
+    end
+    clone.source = { chosenState = st, name = clone.name, icon = clone.icon,
+                     count = clone.count, start = clone.start, duration = clone.duration }
+    return clone
+end
+Engine.CloneState = CloneState
 
 function Engine:Evaluate(aura, state)
     state.id = aura.id
     state.name, state.icon = self:Describe(aura)
 
-    -- An aura matched by name wears whatever icon the thing itself carries, and
-    -- that is only readable while it is up. Remembering the last one means a
-    -- Well Fed that has dropped still shows the meal rather than reverting to a
-    -- question mark the moment it expires. An explicit choice outranks it.
-    local display = aura.display or {}
-    if state.lastIcon and not display.icon and not display.iconSpell then
-        state.icon = state.lastIcon
-    end
-
     state.loaded = ns.Load:Test(aura)
     if not state.loaded then
         ClearState(state)
         state.shown = false
+        state.props, state.conditionWas = nil, nil
+        state.clones = nil
         return
     end
 
-    local trigger = ns.Trigger(aura)
-    if ns.TriggerFieldValue(trigger, "type") == "cooldown" then
-        EvaluateCooldown(aura, state)
-    else
-        EvaluateAura(aura, state)
+    local now = GetTime()
+    local count = ns.TriggerCount(aura)
+    state.triggers = state.triggers or {}
+    for i = 1, count do
+        local ts = state.triggers[i]
+        if not ts then
+            ts = { met = false, count = 0 }
+            state.triggers[i] = ts
+        end
+        local trigger = ns.Trigger(aura, i)
+        local evaluate = EVALUATORS[ns.TriggerFieldValue(trigger, "type")] or EvaluateAura
+        evaluate(trigger, ts, now, aura, i)
     end
+    for i = count + 1, #state.triggers do state.triggers[i] = nil end
+    if ns.Custom then ns.Custom:AfterTriggers(aura, state) end
 
-    -- Inversion is applied once, here, so nothing downstream has to know the
-    -- aura was inverted at all.
+    Combine(aura, state, count)
+
+    -- Inversion is applied once, here, so nothing downstream has to know.
     state.shown = state.met
     if ns.DisplayField(aura, "invert") then state.shown = not state.shown end
+
+    -- A state updater with several states shown: one region each, WeakAuras'
+    -- clones. The first is the aura's own state.
+    local list = state.shown and state.source and state.source.cloneStates
+    if type(list) == "table" and #list > 1 then
+        state.clones = {}
+        for i, entry in ipairs(list) do
+            state.clones[i] = CloneState(state, entry.key, entry.state)
+        end
+    else
+        state.clones = nil
+    end
+
+    -- And then the conditions, which read everything above.
+    if ns.Conditions then ns.Conditions:Evaluate(aura, state, now) end
 end
 
 -------------------------------------------------------------------------------
@@ -378,22 +610,6 @@ end
 --
 -- Time is worked out here rather than stored, so a bar redrawing sixty times a
 -- second gets a fresh number without the engine having to sweep that often.
-
-local function FormatTime(seconds)
-    if not seconds or seconds < 0 then return "" end
-    if seconds >= 3600 then
-        return string.format("%dh", math.floor(seconds / 3600 + 0.5))
-    end
-    if seconds >= 60 then
-        return string.format("%d:%02d", math.floor(seconds / 60), math.floor(seconds % 60))
-    end
-    if seconds >= 10 then
-        return string.format("%d", math.floor(seconds))
-    end
-    -- Under ten seconds the tenths are the part you are actually reading.
-    return string.format("%.1f", seconds)
-end
-ns.FormatTime = FormatTime
 
 -- How far through its duration a state is, as a fraction that has already been
 -- clamped: callers use it to set a bar and should never have to think about a
@@ -411,34 +627,7 @@ function Engine:Progress(state, now)
     return left / state.duration, left
 end
 
-function Engine:FormatText(template, aura, state, now)
-    if not template or template == "" then return "" end
-
-    local fraction, left = self:Progress(state, now)
-
-    -- gsub with a table would need every token present; a function lets each
-    -- one answer for itself and leaves an unknown token alone rather than
-    -- eating it.
-    local text = template:gsub("%%(.)", function(token)
-        if token == "n" then return state and state.name or "" end
-        if token == "s" then
-            local count = state and state.count or 0
-            return (count > 0) and tostring(count) or ""
-        end
-        if token == "t" then return FormatTime(left) end
-        if token == "d" then
-            return FormatTime(state and state.duration)
-        end
-        if token == "p" then
-            if not fraction then return "" end
-            return tostring(math.floor(fraction * 100 + 0.5))
-        end
-        if token == "%" then return "%" end
-        return "%" .. token
-    end)
-
-    return text
-end
+-- Engine:FormatText lives in Text.lua, with WeakAuras' text codes.
 
 -------------------------------------------------------------------------------
 -- Sweep
@@ -451,6 +640,10 @@ end
 function Engine:Rebuild()
     wipe(states)
     self:ClearSpellCache()
+    -- An edited aura is set up again, so its on-init code runs again, as in
+    -- WeakAuras.
+    if ns.Actions then ns.Actions:Reset() end
+    if ns.Custom then ns.Custom:Rebuild() end
     ns.Display:Rebuild()
     -- So an aura added from a slash command shows up in an open window, and the
     -- two configuration surfaces cannot disagree about what exists.
@@ -466,6 +659,7 @@ function Engine:UpdateAll()
     local live = {}
 
     for _, aura in ipairs(auras) do
+        ns.NormalizeTriggers(aura)
         if not ns.IsGroup(aura) then
             local state = states[aura.id]
             if not state then

@@ -38,6 +38,51 @@ Display.__regions = regions
 
 local DEFAULT_X, DEFAULT_Y = 0, -150
 
+-- Every shape a region can take beyond the four built in here -- texture,
+-- progress texture, model -- registers how it is made, drawn, measured and
+-- colored (Regions.lua).
+local KINDS = {}
+Display.KINDS = KINDS
+function Display.RegisterKind(kind, def) KINDS[kind] = def end
+
+-- Where layout put a frame, kept, so an animation can move it from there and
+-- put it back: layout pins, an animation adds an offset on top.
+local function Pin(frame, point, relative, relativePoint, x, y)
+    x, y = x or 0, y or 0
+    frame.pin = { point, relative, relativePoint, x, y }
+    frame:ClearAllPoints()
+    frame:SetPoint(point, relative, relativePoint, x + (frame.animX or 0), y + (frame.animY or 0))
+end
+Display.Pin = Pin
+function Display.RePin(frame)
+    local pin = frame.pin
+    -- Not while the player is dragging it: that is the cursor's to place.
+    if not pin or (Display.movingID and Display.movingID == frame.auraID) then return end
+    Pin(frame, pin[1], pin[2], pin[3], pin[4], pin[5])
+end
+
+-- A region going out of use: hidden, and nothing left animating it.
+local function Retire(frame)
+    frame:Hide()
+    if ns.Animations then ns.Animations:Stop(frame) end
+end
+
+-- And the size layout gave it, which an animation scales.
+local function Size(frame, width, height)
+    width, height = tonumber(width) or 0, tonumber(height) or 0
+    frame.baseW, frame.baseH = width, height
+    local sx, sy = frame.animScaleX, frame.animScaleY
+    if sx or sy then
+        width = width * math.max(math.abs(sx or 1), 0.001)
+        height = height * math.max(math.abs(sy or 1), 0.001)
+    end
+    frame:SetSize(width, height)
+end
+Display.Size = Size
+function Display.Rescale(frame)
+    if frame.baseW then Size(frame, frame.baseW, frame.baseH) end
+end
+
 -------------------------------------------------------------------------------
 -- Region creation
 -------------------------------------------------------------------------------
@@ -73,6 +118,12 @@ local function CreateIconRegion(id)
 
     icon.count = icon.countFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     icon.count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 2, 0)
+
+    -- The text drawn on the icon, on the same high frame so the swipe and the
+    -- flash cannot cover it.
+    icon.overlay = icon.countFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    icon.overlay:SetPoint("CENTER", icon, "CENTER", 0, 0)
+    ns.EnsureFont(icon.overlay)
     -- NumberFontNormal is not on every build, and a font string with no font
     -- draws nothing at all while answering every call you make to it. This
     -- client has already lost ActionButton_ShowOverlayGlow and friends, so a
@@ -119,6 +170,40 @@ local function Colour(aura)
     return r / 255, g / 255, b / 255
 end
 
+local function Hex(hex, fallback)
+    hex = (hex and hex ~= "") and hex or fallback or "ffffff"
+    local r = tonumber(hex:sub(1, 2), 16) or 255
+    local g = tonumber(hex:sub(3, 4), 16) or 255
+    local b = tonumber(hex:sub(5, 6), 16) or 255
+    return r / 255, g / 255, b / 255
+end
+
+-- One piece of text styled by its own settings: font, size, outline, color.
+-- The game's font is remembered the first time, so "default" can go back.
+local function StyleText(fontString, aura, fontKey, sizeKey, outlineKey, colourKey)
+    if not fontString then return end
+    local current, currentSize, currentFlags = fontString:GetFont()
+    if not fontString.baseFont then
+        fontString.baseFont, fontString.baseFlags = current, currentFlags
+    end
+    local font = ns.DisplayField(aura, fontKey)
+    local size = ns.DisplayField(aura, sizeKey) or currentSize
+    local outline = ns.DisplayField(aura, outlineKey)
+    local flags
+    if outline == "NONE" then flags = ""
+    elseif outline and outline ~= "" then flags = outline
+    else flags = fontString.baseFlags or "" end
+    local path = (font and font ~= "") and font or fontString.baseFont
+    if path then
+        if not pcall(fontString.SetFont, fontString, path, size, flags) then
+            pcall(fontString.SetFont, fontString, fontString.baseFont, size, flags)
+        end
+    end
+    fontString:SetTextColor(Hex(ns.DisplayField(aura, colourKey), ns.DisplayField(aura, "colour")))
+end
+Display.StyleText = StyleText
+Display.Hex = Hex
+
 local function CreateTextRegion(id)
     local region = CreateFrame("Frame", nil, UIParent)
     region.kind = "text"
@@ -135,7 +220,6 @@ local function CreateBarRegion(id)
     region.kind = "bar"
 
     region.background = region:CreateTexture(nil, "BACKGROUND")
-    region.background:SetAllPoints()
     region.background:SetColorTexture(0, 0, 0, 0.55)
 
     region.icon = region:CreateTexture(nil, "ARTWORK")
@@ -151,6 +235,12 @@ local function CreateBarRegion(id)
     region.text:SetPoint("RIGHT", region.bar, "RIGHT", -4, 0)
     region.text:SetJustifyH("LEFT")
 
+    -- The spark at the moving edge, on while the bar has a timer.
+    region.spark = region.bar:CreateTexture(nil, "OVERLAY")
+    region.spark:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
+    pcall(region.spark.SetBlendMode, region.spark, "ADD")
+    region.spark:Hide()
+
     -- A bar with a duration on it has to move between sweeps or it is a
     -- staircase: the engine looks every 0.15s and an eye reads a timer faster
     -- than that. The frame keeps the last state it was given and redraws
@@ -160,9 +250,17 @@ local function CreateBarRegion(id)
         local state = self.lastState
         if not (aura and state) then return end
 
-        local fraction = ns.Engine:Progress(state)
-        if fraction then
-            self.bar:SetValue(fraction)
+        -- Health and power are secret: handed to the bar to draw, never read.
+        if state.live and ns.DrawLive and ns.DrawLive(self.bar, state.live) then
+            -- drawn
+        else
+            local fraction = ns.Engine:Progress(state)
+            if fraction then
+                if ns.DisplayField(aura, "barInverse") then fraction = 1 - fraction end
+                self.bar:SetMinMaxValues(0, 1)
+                self.bar:SetValue(fraction)
+            end
+            Display.PlaceSpark(aura, self, fraction)
         end
 
         local template = ns.DisplayField(aura, "barFormat")
@@ -194,6 +292,8 @@ local PIVOT = {
     UP      = "BOTTOMLEFT",
     HCENTER = "CENTER",
     VCENTER = "CENTER",
+    CIRCLE  = "CENTER",
+    CUSTOM  = "CENTER",
 }
 
 function Display:PivotFor(aura)
@@ -340,12 +440,14 @@ local function RegionFor(aura)
     -- destroyed, so the old one is hidden and forgotten rather than reused into
     -- something it was not built for.
     if frame and frame.kind ~= wanted then
-        frame:Hide()
+        Retire(frame)
         frame = nil
     end
 
     if not frame then
-        frame = (BUILDERS[wanted] or CreateIconRegion)(aura.id)
+        local def = KINDS[wanted]
+        frame = ((def and def.create) or BUILDERS[wanted] or CreateIconRegion)(aura.id)
+        frame.kind = wanted
         frame.auraID = aura.id
         MakeDraggable(frame)
         regions[aura.id] = frame
@@ -374,7 +476,7 @@ function Display:Rebuild()
 
     for id, frame in pairs(regions) do
         if not live[id] then
-            frame:Hide()
+            Retire(frame)
             regions[id] = nil
         end
     end
@@ -391,6 +493,8 @@ end
 -- by one number the way it could when everything was an icon.
 local function RegionExtent(aura)
     local kind = ns.RegionKind(aura)
+    local def = KINDS[kind]
+    if def and def.extent then return def.extent(aura) end
 
     if kind == "text" then
         return ns.DisplayField(aura, "textWidth"),
@@ -459,11 +563,53 @@ local function Measure(group, children)
     return lines, widest, stacked, vertical, growth, spacing
 end
 
+-- A ring: every child's center on a circle round the group's center,
+-- clockwise from `arcStart` degrees off the top, over `arcRange` degrees.
+local function CirclePositions(group, children)
+    local n = #children
+    local widest, spacing = 0, ns.GroupField(group, "spacing")
+    local sizes = {}
+    for i, child in ipairs(children) do
+        local w, h = RegionExtent(child)
+        sizes[i] = { w, h }
+        widest = math.max(widest, w, h)
+    end
+    local radius = tonumber(ns.GroupField(group, "radius")) or 0
+    if radius <= 0 then
+        -- Round enough that they do not overlap.
+        radius = math.max(widest, n * (widest + spacing) / (2 * math.pi))
+    end
+    local start = tonumber(ns.GroupField(group, "arcStart")) or 0
+    local range = tonumber(ns.GroupField(group, "arcRange")) or 360
+    local step
+    if range >= 360 then step = range / math.max(n, 1)
+    else step = n > 1 and range / (n - 1) or 0 end
+    local out = {}
+    for i = 1, n do
+        local angle = math.rad(start + (i - 1) * step)
+        out[i] = { x = radius * math.sin(angle), y = radius * math.cos(angle),
+                   w = sizes[i][1], h = sizes[i][2] }
+    end
+    return out, 2 * radius + widest, 2 * radius + widest
+end
+Display.CirclePositions = CirclePositions
+
+-- What a custom growth function said last time, for measuring the group.
+local customExtent = {}
+
 function Display:GroupExtent(group, children)
     children = children or ns.Children(group.id)
     if #children == 0 then
         local size = ns.DISPLAY_DEFAULTS.size
         return size, size
+    end
+    local growth = ns.GroupField(group, "growth")
+    if growth == "CIRCLE" then
+        local _, w, h = CirclePositions(group, children)
+        return w, h
+    end
+    if growth == "CUSTOM" and customExtent[group.id] then
+        return customExtent[group.id][1], customExtent[group.id][2]
     end
 
     local _, along, across, vertical = Measure(group, children)
@@ -471,17 +617,88 @@ function Display:GroupExtent(group, children)
     return along, across
 end
 
+-- Where a child's state lives: its own, or one clone's of its aura.
+local function EntryState(entry, states)
+    if not states then return nil end
+    if entry.cloneOf then
+        local state = states[entry.cloneOf.id]
+        for _, clone in ipairs(state and state.clones or {}) do
+            if clone.cloneKey == entry.cloneKey then return clone end
+        end
+        return nil
+    end
+    return states[entry.id]
+end
+Display.EntryState = EntryState
+
+-- WeakAuras' custom growth: function(newPositions, activeRegions), filling
+-- newPositions[i] = { x, y } from the group's center. Nil if it cannot run.
+local function CustomPositions(group, children, states)
+    local fn = (not group.untrusted) and ns.Env:Compile(ns.GroupField(group, "growCustom"),
+                                                        tostring(group.name or group.id) .. " growth")
+    if not fn then return nil end
+    local active = {}
+    for i, child in ipairs(children) do
+        local w, h = RegionExtent(child)
+        local state = EntryState(child, states)
+        active[i] = { region = regions[child.id], regionWidth = w, regionHeight = h,
+                      data = child.cloneOf or child, id = (child.cloneOf or child).id,
+                      cloneId = child.cloneKey or "", dataIndex = i, state = state }
+        if active[i].region then active[i].region.state = state end
+    end
+    local positions = {}
+    local ok, err = ns.Env:Call(group, fn, positions, active)
+    if not ok then
+        ns.Env:Report(group, "custom growth", err)
+        return nil
+    end
+    local out, maxX, maxY = {}, 0, 0
+    for i = 1, #children do
+        local pos = positions[i]
+        local x = type(pos) == "table" and tonumber(pos[1] or pos.x) or 0
+        local y = type(pos) == "table" and tonumber(pos[2] or pos.y) or 0
+        local hidden = type(pos) == "table" and pos[3] == false
+        out[i] = { x = x, y = y, w = active[i].regionWidth, h = active[i].regionHeight, hide = hidden }
+        maxX = math.max(maxX, math.abs(x) + out[i].w / 2)
+        maxY = math.max(maxY, math.abs(y) + out[i].h / 2)
+    end
+    return out, 2 * maxX, 2 * maxY
+end
+
 -- Puts every child where Measure said it goes.
-local function Arrange(group, children)
-    local lines, along, across, vertical, growth = Measure(group, children)
+local function Arrange(group, children, states)
+    local groupFrame = regions[group.id]
+    local growth = ns.GroupField(group, "growth")
+
+    -- Round a ring, or wherever the group's own code says.
+    local positions, width, height
+    if growth == "CIRCLE" then
+        positions, width, height = CirclePositions(group, children)
+    elseif growth == "CUSTOM" then
+        positions, width, height = CustomPositions(group, children, states)
+        if positions then customExtent[group.id] = { width, height } end
+    end
+    if positions then
+        for i, child in ipairs(children) do
+            local frame, pos = regions[child.id], positions[i]
+            if frame and pos then
+                Size(frame, pos.w, pos.h)
+                Pin(frame, "CENTER", groupFrame, "CENTER", pos.x, pos.y)
+                if pos.hide then frame:Hide() else frame:Show() end
+            end
+        end
+        return width, height
+    end
+
+    local lines, along, across, vertical
+    lines, along, across, vertical, growth = Measure(group, children)
     local centred = CENTRED[growth]
 
     for _, line in ipairs(lines) do
         for _, item in ipairs(line.items) do
             local frame = regions[item.child.id]
             if frame then
-                frame:SetSize(item.width, item.height)
-                frame:ClearAllPoints()
+                Size(frame, item.width, item.height)
 
                 if centred then
                     -- Measured out from the middle, so the whole thing opens
@@ -490,19 +707,19 @@ local function Arrange(group, children)
                     local acrossPos = line.crossOffset + item.across / 2 - across / 2
 
                     if vertical then
-                        frame:SetPoint("CENTER", acrossPos, -alongPos)
+                        Pin(frame, "CENTER", groupFrame, "CENTER", acrossPos, -alongPos)
                     else
-                        frame:SetPoint("CENTER", alongPos, -acrossPos)
+                        Pin(frame, "CENTER", groupFrame, "CENTER", alongPos, -acrossPos)
                     end
 
                 elseif growth == "LEFT" then
-                    frame:SetPoint("TOPRIGHT", -item.offset, -line.crossOffset)
+                    Pin(frame, "TOPRIGHT", groupFrame, "TOPRIGHT", -item.offset, -line.crossOffset)
                 elseif growth == "UP" then
-                    frame:SetPoint("BOTTOMLEFT", line.crossOffset, item.offset)
+                    Pin(frame, "BOTTOMLEFT", groupFrame, "BOTTOMLEFT", line.crossOffset, item.offset)
                 elseif growth == "DOWN" then
-                    frame:SetPoint("TOPLEFT", line.crossOffset, -item.offset)
+                    Pin(frame, "TOPLEFT", groupFrame, "TOPLEFT", line.crossOffset, -item.offset)
                 else
-                    frame:SetPoint("TOPLEFT", item.offset, -line.crossOffset)
+                    Pin(frame, "TOPLEFT", groupFrame, "TOPLEFT", item.offset, -line.crossOffset)
                 end
 
                 frame:Show()
@@ -514,6 +731,44 @@ local function Arrange(group, children)
     return along, across
 end
 
+-- Clones: a state updater's extra states each take a place in the group, as
+-- an entry that is the aura in every way but its id.
+local cloneEntries = {}
+local function CloneEntry(child, clone)
+    local byKey = cloneEntries[child.id]
+    if not byKey then
+        byKey = {}
+        cloneEntries[child.id] = byKey
+    end
+    local entry = byKey[clone.cloneKey]
+    if not entry then
+        entry = setmetatable({ id = child.id .. "::" .. tostring(clone.cloneKey),
+                               cloneOf = child, cloneKey = clone.cloneKey }, { __index = child })
+        byKey[clone.cloneKey] = entry
+    end
+    return entry
+end
+
+local function ExpandClones(children, states)
+    if not states then return children end
+    local out
+    for i, child in ipairs(children) do
+        local state = (not ns.IsGroup(child)) and states[child.id]
+        local clones = state and state.clones
+        if clones then
+            if not out then
+                out = {}
+                for j = 1, i - 1 do out[j] = children[j] end
+            end
+            out[#out + 1] = child
+            for c = 2, #clones do out[#out + 1] = CloneEntry(child, clones[c]) end
+        elseif out then
+            out[#out + 1] = child
+        end
+    end
+    return out or children
+end
+
 -- A group's children, in the order the group wants them drawn. Only a dynamic
 -- group sorts or filters: a static group's order is its list order, because its
 -- whole promise is that a slot does not move.
@@ -521,7 +776,7 @@ local function OrderedChildren(group, states)
     local children = ns.Children(group.id)
     local dynamic = (group.type == "dynamic")
 
-    if not dynamic then return children end
+    if not dynamic then return ExpandClones(children, states) end
 
     local showing = {}
     for _, child in ipairs(children) do
@@ -532,11 +787,13 @@ local function OrderedChildren(group, states)
             -- Before the first sweep there are no states at all. Treating that
             -- as "nothing is showing" would make a dynamic group flicker empty
             -- on every reload, so an unevaluated child counts as showing.
-            if not states or (state and state.shown) then
+            -- One playing its finish animation keeps its place until it ends.
+            if not states or (state and state.shown) or Display.Finishing(regions[child.id]) then
                 showing[#showing + 1] = child
             end
         end
     end
+    showing = ExpandClones(showing, states)
 
     local sort = ns.GroupField(group, "sort")
     if sort == "name" then
@@ -549,13 +806,40 @@ local function OrderedChildren(group, states)
         -- Soonest to run out first, and anything with no timer after the ones
         -- that have one: a permanent aura has no place in a race.
         table.sort(showing, function(a, b)
-            local sa = states and states[a.id]
-            local sb = states and states[b.id]
+            local sa = EntryState(a, states)
+            local sb = EntryState(b, states)
             local ea = (sa and sa.start and sa.duration) and (sa.start + sa.duration) or math.huge
             local eb = (sb and sb.start and sb.duration) and (sb.start + sb.duration) or math.huge
             if ea == eb then return (a.id or "") < (b.id or "") end
             return ea < eb
         end)
+    elseif sort == "custom" then
+        -- WeakAuras' custom sort: function(a, b), each { region, data, state }.
+        local fn = (not group.untrusted) and ns.Env:Compile(ns.GroupField(group, "sortCustom"),
+                                                            tostring(group.name or group.id) .. " sort")
+        if fn then
+            local failed = false
+            local function Wrap(entry)
+                return { region = regions[entry.id], data = entry.cloneOf or entry,
+                         id = (entry.cloneOf or entry).id, cloneId = entry.cloneKey or "",
+                         state = EntryState(entry, states) }
+            end
+            local before = {}
+            for i, entry in ipairs(showing) do before[i] = entry end
+            pcall(table.sort, showing, function(a, b)
+                if failed then return false end
+                local ok, result = ns.Env:Call(group, fn, Wrap(a), Wrap(b))
+                if not ok then
+                    failed = true
+                    ns.Env:Report(group, "custom sort", result)
+                    return false
+                end
+                return result and true or false
+            end)
+            if failed then
+                for i, entry in ipairs(before) do showing[i] = entry end
+            end
+        end
     end
 
     local limit = ns.GroupField(group, "limit")
@@ -584,6 +868,9 @@ local function LayoutGroup(group, states)
             if not placed[child.id] and regions[child.id] then
                 regions[child.id]:Hide()
             end
+            for _, clone in pairs(Display.ClonesOf(child.id)) do
+                if not placed[clone.regionID] then clone:Hide() end
+            end
         end
     end
 
@@ -593,7 +880,7 @@ local function LayoutGroup(group, states)
         if ns.IsGroup(child) then LayoutGroup(child, states) end
     end
 
-    local width, height = Arrange(group, children)
+    local width, height = Arrange(group, children, states)
     frame:SetSize(math.max(width, 1), math.max(height, 1))
 end
 
@@ -633,10 +920,9 @@ local function PlaceTopLevel(aura)
     ConvertPivot(aura, frame, pivot)
 
     local pos = aura.pos
-    frame:ClearAllPoints()
-    frame:SetPoint(pivot, UIParent, "CENTER",
-                   pos and pos.x or DEFAULT_X,
-                   pos and pos.y or DEFAULT_Y)
+    Pin(frame, pivot, UIParent, "CENTER",
+        pos and pos.x or DEFAULT_X,
+        pos and pos.y or DEFAULT_Y)
     frame:Show()
 end
 
@@ -649,7 +935,7 @@ function Display:Layout(states)
             if ns.IsGroup(aura) then
                 LayoutGroup(aura, states)
             else
-                frame:SetSize(RegionExtent(aura))
+                Size(frame, RegionExtent(aura))
             end
             PlaceTopLevel(aura)
         end
@@ -680,6 +966,7 @@ function Display:ApplyLock()
         if frame then
             frame:EnableMouse(not locked and not ns.IsGroup(aura))
         end
+        for _, clone in pairs(Display.ClonesOf(aura.id)) do clone:EnableMouse(not locked) end
     end
 end
 
@@ -723,15 +1010,69 @@ local function AlphaFor(aura, state)
     end
     return ns.DisplayField(aura, "dimAlpha") / 100
 end
+Display.AlphaFor = AlphaFor
+
+-- A StatusBar filling one of four ways.
+local DIRECTIONS = {
+    RIGHT = { "HORIZONTAL", false }, LEFT = { "HORIZONTAL", true },
+    UP    = { "VERTICAL", false },   DOWN = { "VERTICAL", true },
+}
+function Display.SetDirection(bar, direction)
+    local d = DIRECTIONS[direction] or DIRECTIONS.RIGHT
+    pcall(bar.SetOrientation, bar, d[1])
+    pcall(bar.SetReverseFill, bar, d[2])
+    return d[1] == "VERTICAL", d[2]
+end
+
+-- The bar's length along its fill, for the spark and the ticks.
+function Display.BarLength(aura, kind)
+    if kind == "progress" then
+        local vertical = DIRECTIONS[ns.DisplayField(aura, "progressDirection")]
+        vertical = vertical and vertical[1] == "VERTICAL"
+        return vertical and ns.DisplayField(aura, "height") or ns.DisplayField(aura, "width"), vertical
+    end
+    local d = DIRECTIONS[ns.DisplayField(aura, "barDirection")] or DIRECTIONS.RIGHT
+    local height = ns.DisplayField(aura, "barHeight")
+    if d[1] == "VERTICAL" then return height, true end
+    local width = ns.DisplayField(aura, "barWidth")
+    if ns.DisplayField(aura, "barIcon") then width = width - height - 2 end
+    return math.max(width, 1), false
+end
+
+-- Where along the bar a fraction of it sits, as an offset from the start of
+-- the fill -- LEFT and DOWN fill from the far end.
+function Display.AlongBar(bar, fraction, length, vertical, reverse, texture, thickness, across)
+    local at = fraction * length
+    texture:ClearAllPoints()
+    if vertical then
+        if reverse then texture:SetPoint("CENTER", bar, "TOP", 0, -at)
+        else texture:SetPoint("CENTER", bar, "BOTTOM", 0, at) end
+        texture:SetSize(across, thickness)
+    else
+        if reverse then texture:SetPoint("CENTER", bar, "RIGHT", -at, 0)
+        else texture:SetPoint("CENTER", bar, "LEFT", at, 0) end
+        texture:SetSize(thickness, across)
+    end
+end
+
+function Display.PlaceSpark(aura, frame, fraction)
+    local spark = frame.spark
+    if not spark then return end
+    if not (fraction and ns.DisplayField(aura, "barSpark")) then
+        spark:Hide()
+        return
+    end
+    local length, vertical = Display.BarLength(aura, "bar")
+    local d = DIRECTIONS[ns.DisplayField(aura, "barDirection")] or DIRECTIONS.RIGHT
+    local height = ns.DisplayField(aura, "barHeight")
+    Display.AlongBar(frame.bar, fraction, length, vertical, d[2], spark, 12, height * 2)
+    spark:Show()
+end
 
 local function RefreshText(aura, frame, state)
     frame:SetAlpha(AlphaFor(aura, state))
 
-    local size = ns.DisplayField(aura, "fontSize")
-    local font, _, flags = frame.text:GetFont()
-    if font then pcall(frame.text.SetFont, frame.text, font, size, flags) end
-
-    frame.text:SetTextColor(Colour(aura))
+    StyleText(frame.text, aura, "textFont", "fontSize", "textOutline", "textColour")
     frame.text:SetText(ns.Engine:FormatText(
         ns.DisplayField(aura, "textFormat"), aura, state))
 end
@@ -756,13 +1097,33 @@ local function RefreshBar(aura, frame, state)
     frame.bar:ClearAllPoints()
     frame.bar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     frame.bar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", showIcon and height + 2 or 0, 0)
+    local texture = ns.DisplayField(aura, "barTexture")
+    frame.bar:SetStatusBarTexture((texture and texture ~= "") and texture or "Interface\\Buttons\\WHITE8X8")
     frame.bar:SetStatusBarColor(Colour(aura))
+    Display.SetDirection(frame.bar, ns.DisplayField(aura, "barDirection"))
+
+    frame.background:ClearAllPoints()
+    frame.background:SetAllPoints(frame.bar)
+    local br, bg, bb = Hex(ns.DisplayField(aura, "barBackColour"), "000000")
+    frame.background:SetColorTexture(br, bg, bb, (ns.DisplayField(aura, "barBackAlpha") or 55) / 100)
 
     -- A trigger with no duration is not half way through anything, so the bar
     -- reads full rather than empty: it is on, and that is all it knows.
-    local fraction = ns.Engine:Progress(state)
-    frame.bar:SetValue(fraction or 1)
+    if not (state.live and ns.DrawLive and ns.DrawLive(frame.bar, state.live)) then
+        local fraction = ns.Engine:Progress(state)
+        if fraction and ns.DisplayField(aura, "barInverse") then fraction = 1 - fraction end
+        frame.bar:SetMinMaxValues(0, 1)
+        if not fraction and state.durationObject and type(frame.bar.SetTimerDuration) == "function"
+           and pcall(frame.bar.SetTimerDuration, frame.bar, state.durationObject) then
+            -- In combat a cooldown's times are secret; the client's duration
+            -- object still runs the bar.
+        else
+            frame.bar:SetValue(fraction or 1)
+        end
+        Display.PlaceSpark(aura, frame, fraction)
+    end
 
+    StyleText(frame.text, aura, "barFont", "barFontSize", "barOutline", "barTextColour")
     frame.text:SetText(ns.Engine:FormatText(
         ns.DisplayField(aura, "barFormat"), aura, state))
 
@@ -773,6 +1134,13 @@ end
 
 local function RefreshIcon(aura, frame, state)
     frame.texture:SetTexture(state.icon)
+    -- Zoom crops the art in from the trim every icon gets.
+    local zoom = (tonumber(ns.DisplayField(aura, "iconZoom")) or 0) / 100
+    local inset = math.min(0.07 + zoom * 0.5, 0.45)
+    frame.texture:SetTexCoord(inset, 1 - inset, inset, 1 - inset)
+    pcall(frame.cooldown.SetReverse, frame.cooldown, ns.DisplayField(aura, "cooldownReverse") and true or false)
+    pcall(frame.cooldown.SetDrawEdge, frame.cooldown, ns.DisplayField(aura, "cooldownEdge") and true or false)
+    pcall(frame.cooldown.SetHideCountdownNumbers, frame.cooldown, not ns.DisplayField(aura, "cooldownText"))
 
     local alpha    = ns.DisplayField(aura, "alpha") / 100
     local dimAlpha = ns.DisplayField(aura, "dimAlpha") / 100
@@ -799,8 +1167,17 @@ local function RefreshIcon(aura, frame, state)
         frame.texture:SetDesaturated(wantDesaturated)
     end
 
-    if state.start and state.duration and ns.DisplayField(aura, "swipe") then
+    local swipe = ns.DisplayField(aura, "swipe")
+    if state.start and state.duration and swipe then
         frame.cooldown:SetCooldown(state.start, state.duration)
+    elseif state.durationObject and swipe
+        and type(frame.cooldown.SetCooldownFromDurationObject) == "function" then
+        -- In combat a cooldown's times are secret; the client's duration
+        -- object is the one thing that still draws it correctly.
+        if not pcall(frame.cooldown.SetCooldownFromDurationObject, frame.cooldown,
+                     state.durationObject) then
+            frame.cooldown:Clear()
+        end
     else
         frame.cooldown:Clear()
     end
@@ -815,7 +1192,294 @@ local function RefreshIcon(aura, frame, state)
         frame.count:SetText("")
     end
 
+    -- The text on the icon. Placed a little inside the edge it is pinned to,
+    -- so a corner does not hang off the icon.
+    local overlayFormat = ns.DisplayField(aura, "iconText")
+    if frame.overlay then
+        if overlayFormat and overlayFormat ~= "" then
+            local point = ns.DisplayField(aura, "iconTextPoint")
+            local dx = point:find("LEFT") and 2 or (point:find("RIGHT") and -2 or 0)
+            local dy = point:find("TOP") and -2 or (point:find("BOTTOM") and 2 or 0)
+            frame.overlay:ClearAllPoints()
+            frame.overlay:SetPoint(point, frame, point, dx, dy)
+            StyleText(frame.overlay, aura, "iconTextFont", "iconTextSize",
+                      "iconTextOutline", "iconTextColour")
+            frame.overlay:SetText(ns.Engine:FormatText(overlayFormat, aura, state))
+            frame.overlay:Show()
+        else
+            frame.overlay:SetText("")
+            frame.overlay:Hide()
+        end
+    end
 
+
+end
+
+-------------------------------------------------------------------------------
+-- What a condition changes
+-------------------------------------------------------------------------------
+-- A condition's properties go on after the region has drawn itself, so they
+-- override it while they hold and are gone the sweep after they stop.
+
+-- A glow: a pulsing border. This client has no action-button glow, so it is
+-- made here out of four edges and one animation.
+-- `owner` keeps the glow; `target`, when it is another frame (a unit frame,
+-- an action button), is what it goes round. That one is not made the glow's
+-- parent: a child of a protected frame would make trouble in combat, so the
+-- glow hangs off UIParent and is only anchored there.
+--
+-- Three styles, after LibCustomGlow's: pulse (a border breathing in and out),
+-- pixel (lines running round the edge) and shine (dots running round it).
+local DEFAULT_GLOW = { type = "pulse", r = 1, g = 0.85, b = 0.2, lines = 8, thickness = 2, speed = 0.25 }
+
+function Display.GlowStyle(aura)
+    local r, g, b = Hex(ns.DisplayField(aura, "glowColour"), "ffd933")
+    local lines = math.max(1, math.min(30, tonumber(ns.DisplayField(aura, "glowLines")) or 8))
+    return { type = ns.DisplayField(aura, "glowType") or "pulse", r = r, g = g, b = b,
+             lines = lines, thickness = tonumber(ns.DisplayField(aura, "glowThickness")) or 2,
+             speed = (tonumber(ns.DisplayField(aura, "glowSpeed")) or 25) / 100 }
+end
+
+-- Lines or dots spaced round the glow's edge, `phase` of the way on.
+local function PlaceRunners(glow)
+    local ok, w, h = pcall(glow.GetSize, glow)
+    w, h = ok and ns.SafeNumber(w) or 0, ok and ns.SafeNumber(h) or 0
+    if w <= 0 or h <= 0 then return end
+    local perimeter = 2 * (w + h)
+    local n, th = #glow.runners, glow.thickness
+    local length = glow.dots and th * 2 or perimeter / n * 0.4
+    for i, tex in ipairs(glow.runners) do
+        local d = (((i - 1) / n + glow.phase) % 1) * perimeter
+        local x, y, sw, sh
+        if d < w then
+            x, y, sw, sh = d, 0, math.min(length, w - d), th
+        elseif d < w + h then
+            x, y, sw, sh = w - th, d - w, th, math.min(length, w + h - d)
+        elseif d < 2 * w + h then
+            local run = math.min(length, 2 * w + h - d)
+            x, y, sw, sh = w - (d - w - h) - run, h - th, run, th
+        else
+            local run = math.min(length, perimeter - d)
+            x, y, sw, sh = 0, h - (d - 2 * w - h) - run, th, run
+        end
+        if glow.dots then sw, sh = th * 2, th * 2 end
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPLEFT", glow, "TOPLEFT", x, -y)
+        tex:SetSize(math.max(sw, 1), math.max(sh, 1))
+    end
+end
+
+local function BuildGlow(owner, target, style)
+    local external = target ~= owner
+    local glow = CreateFrame("Frame", nil, external and UIParent or owner)
+    local pad = (style.type == "pulse") and 3 or 1
+    glow:SetPoint("TOPLEFT", target, "TOPLEFT", -pad, pad)
+    glow:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", pad, -pad)
+    if external then
+        local okS, strata = pcall(target.GetFrameStrata, target)
+        if okS and type(strata) == "string" then pcall(glow.SetFrameStrata, glow, strata) end
+    end
+    local okL, level = pcall(target.GetFrameLevel, target)
+    pcall(glow.SetFrameLevel, glow, ((okL and type(level) == "number") and level or 0) + 12)
+    glow.textures = {}
+    glow.style = style.type
+
+    if style.type == "pixel" or style.type == "shine" then
+        glow.runners, glow.phase, glow.dots = {}, 0, style.type == "shine"
+        glow.thickness = math.max(1, style.thickness)
+        for i = 1, style.lines do
+            local t = glow:CreateTexture(nil, "OVERLAY")
+            t:SetColorTexture(1, 1, 1, 1)
+            glow.runners[i] = t
+            glow.textures[#glow.textures + 1] = t
+        end
+        glow:SetScript("OnUpdate", function(self, elapsed)
+            self.phase = (self.phase + (tonumber(elapsed) or 0) * (self.speed or 0.25)) % 1
+            PlaceRunners(self)
+        end)
+        return glow
+    end
+
+    local thick = math.max(1, style.thickness + 1)
+    local function Edge(a, b, horizontal)
+        local t = glow:CreateTexture(nil, "OVERLAY")
+        t:SetColorTexture(1, 1, 1, 1)
+        t:SetPoint(a, glow, a)
+        t:SetPoint(b, glow, b)
+        if horizontal then t:SetHeight(thick) else t:SetWidth(thick) end
+        glow.textures[#glow.textures + 1] = t
+    end
+    Edge("TOPLEFT", "TOPRIGHT", true)
+    Edge("BOTTOMLEFT", "BOTTOMRIGHT", true)
+    Edge("TOPLEFT", "BOTTOMLEFT", false)
+    Edge("TOPRIGHT", "BOTTOMRIGHT", false)
+    local okA, pulse = pcall(glow.CreateAnimationGroup, glow)
+    if okA and pulse then
+        pcall(pulse.SetLooping, pulse, "BOUNCE")
+        local fade = pulse:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1)
+        fade:SetToAlpha(0.25)
+        fade:SetDuration(0.5)
+        glow.pulse = pulse
+    end
+    return glow
+end
+
+local function Glow(owner, on, target, style)
+    if not on then
+        if owner.glow then owner.glow:Hide() end
+        return
+    end
+    target = target or owner
+    style = style or DEFAULT_GLOW
+    local key = style.type .. ":" .. style.lines .. ":" .. style.thickness
+    owner.glows = owner.glows or {}
+    local glow = owner.glows[key]
+    if not glow then
+        glow = BuildGlow(owner, target, style)
+        owner.glows[key] = glow
+    end
+    if owner.glow and owner.glow ~= glow then owner.glow:Hide() end
+    owner.glow = glow
+    -- Color and speed change without a rebuild.
+    for _, t in ipairs(glow.textures) do t:SetVertexColor(style.r, style.g, style.b, 1) end
+    glow.speed = style.speed
+    if not glow:IsShown() then
+        glow:Show()
+        if glow.pulse then pcall(glow.pulse.Play, glow.pulse) end
+    end
+end
+Display.Glow = Glow
+
+-- A region's main color: an icon's or texture's art, a bar's fill, a text's
+-- words. What a condition's color and a color animation set.
+function Display.ColourRegion(frame, kind, r, g, b, a)
+    local def = KINDS[kind]
+    if def and def.colour then return def.colour(frame, r, g, b, a) end
+    if (kind == "icon" or kind == "texture") and frame.texture then
+        frame.texture:SetVertexColor(r, g, b, a or 1)
+    elseif kind == "bar" and frame.bar then
+        frame.bar:SetStatusBarColor(r, g, b, a or 1)
+    elseif kind == "text" and frame.text then
+        frame.text:SetTextColor(r, g, b, a or 1)
+    end
+end
+
+-- Playing its finish animation: still on screen, though no longer shown.
+function Display.Finishing(frame)
+    return frame ~= nil and frame.anim ~= nil and frame.anim.which == "finish"
+end
+
+local function ApplyProps(aura, frame, state, kind)
+    local props = state.props or {}
+    -- Put back what a condition may have changed last time.
+    if frame.propScaled then
+        pcall(frame.SetScale, frame, 1)
+        frame.propScaled = nil
+    end
+    if kind == "icon" and frame.texture then frame.texture:SetVertexColor(1, 1, 1) end
+
+    if not next(props) then return false end
+
+    local visible = (tonumber(frame:GetAlpha()) or 0) > 0
+    if props.alpha ~= nil and visible then
+        pcall(frame.SetAlpha, frame, math.max(0, math.min(1, (tonumber(props.alpha) or 100) / 100)))
+    end
+    local colour = props.color
+    if type(colour) == "table" then
+        local r, g, b = tonumber(colour[1]) or 1, tonumber(colour[2]) or 1, tonumber(colour[3]) or 1
+        Display.ColourRegion(frame, kind, r, g, b, 1)
+    end
+    if props.desaturate ~= nil and kind == "icon" and frame.texture then
+        frame.texture:SetDesaturated(props.desaturate and true or false)
+    end
+    if props.scale ~= nil then
+        local scale = tonumber(props.scale)
+        if scale and scale > 0 then
+            pcall(frame.SetScale, frame, scale)
+            frame.propScaled = true
+        end
+    end
+    if type(props.text) == "string" then
+        local text = ns.Engine:FormatText(props.text, aura, state)
+        local target = (kind == "icon") and frame.overlay or frame.text
+        if target then
+            target:SetText(text)
+            target:Show()
+        end
+    end
+    return props.glow and true or false
+end
+Display.ApplyProps = ApplyProps
+
+-- Draws one region from one state: its shape, what hangs off it, what a
+-- condition changes, its glow and its animation. An aura's own region and
+-- each of its clones go through here.
+local function DrawRegion(aura, frame, state, kind)
+    local def = KINDS[kind]
+    if def and def.refresh then
+        def.refresh(aura, frame, state)
+    elseif kind == "text" then
+        RefreshText(aura, frame, state)
+    elseif kind == "bar" then
+        RefreshBar(aura, frame, state)
+    else
+        RefreshIcon(aura, frame, state)
+    end
+
+    local live = (state.shown and state.loaded) and true or false
+    if ns.SubRegions then ns.SubRegions:Apply(aura, frame, state, kind, live) end
+    local propGlow = ApplyProps(aura, frame, state, kind)
+    local visible = (tonumber(frame:GetAlpha()) or 0) > 0
+    local glowOn = visible and (propGlow or (live and ns.DisplayField(aura, "glow")))
+    Glow(frame, glowOn and true or false, nil, Display.GlowStyle(aura))
+
+    frame.baseAlpha = tonumber(frame:GetAlpha()) or 1
+    frame.animState = state
+    if ns.Animations then ns.Animations:Sync(aura, frame, state, live) end
+end
+Display.DrawRegion = DrawRegion
+
+-- Clone regions, kept per aura so they are reused rather than made again.
+local clonePool = {}
+function Display.ClonesOf(id) return clonePool[id] or {} end
+
+local function CloneFrame(aura, key)
+    local pool = clonePool[aura.id]
+    if not pool then
+        pool = {}
+        clonePool[aura.id] = pool
+    end
+    local wanted = ns.RegionKind(aura)
+    local frame = pool[key]
+    if frame and frame.kind ~= wanted then
+        Retire(frame)
+        frame = nil
+    end
+    if not frame then
+        local def = KINDS[wanted]
+        frame = ((def and def.create) or BUILDERS[wanted] or CreateIconRegion)(aura.id)
+        frame.kind = wanted
+        frame.auraID, frame.cloneKey = aura.id, key
+        frame.regionID = aura.id .. "::" .. tostring(key)
+        MakeDraggable(frame)
+        pool[key] = frame
+    end
+    -- New to the layout (made, or back after a rebuild): it needs placing.
+    local fresh = regions[frame.regionID] ~= frame
+    regions[frame.regionID] = frame
+    frame:SetParent((aura.parent and regions[aura.parent]) or UIParent)
+    frame:EnableMouse(not (ns.profile and ns.profile.locked))
+    return frame, fresh
+end
+
+local function DropClones(aura, keep)
+    for key, frame in pairs(clonePool[aura.id] or {}) do
+        if not (keep and keep[key]) then
+            if regions[frame.regionID] == frame then regions[frame.regionID] = nil end
+            Retire(frame)
+        end
+    end
 end
 
 function Display:Refresh(states)
@@ -845,6 +1509,16 @@ function Display:Refresh(states)
                 local loaded = state.loaded
                 local live = state.shown and loaded
 
+                -- Loading and unloading are moments of their own, for the
+                -- on-load and on-unload actions.
+                if ns.Actions then
+                    if loaded and not frame.wasLoaded then
+                        ns.Actions:Fire(aura, state, "load")
+                    elseif frame.wasLoaded and not loaded then
+                        ns.Actions:Fire(aura, state, "unload")
+                    end
+                end
+
                 if loaded then
                     if frame.wasLoaded then
                         if state.shown and not frame.wasShown then
@@ -853,22 +1527,39 @@ function Display:Refresh(states)
                                 frame.fade:Play()
                             end
                             Display:PlayAction(aura, "onShow")
+                            if ns.Actions then ns.Actions:Fire(aura, state, "show") end
                         elseif frame.wasShown and not state.shown then
                             Display:PlayAction(aura, "onHide")
+                            if ns.Actions then ns.Actions:Fire(aura, state, "hide") end
                         end
                     end
                     frame.wasShown = state.shown
                 end
                 frame.wasLoaded = loaded
+                if ns.Actions then ns.Actions:UpdateGlow(aura, state) end
 
                 local kind = ns.RegionKind(aura)
-                if kind == "text" then
-                    RefreshText(aura, frame, state)
-                elseif kind == "bar" then
-                    RefreshBar(aura, frame, state)
-                else
-                    RefreshIcon(aura, frame, state)
+                DrawRegion(aura, frame, state, kind)
+
+                -- Inside a group, a state updater's other states get a region
+                -- each; a new set of them needs a new layout.
+                local clones = aura.parent and state.clones
+                local keep, signature = nil, ""
+                if clones then
+                    keep = {}
+                    for c = 2, #clones do
+                        local clone = clones[c]
+                        clone.props = state.props
+                        keep[clone.cloneKey] = true
+                        signature = signature .. "|" .. tostring(clone.cloneKey)
+                        local cloneFrame, fresh = CloneFrame(aura, clone.cloneKey)
+                        if fresh then relayout = true end
+                        DrawRegion(aura, cloneFrame, clone, kind)
+                    end
                 end
+                DropClones(aura, keep)
+                if (frame.cloneSignature or "") ~= signature then relayout = true end
+                frame.cloneSignature = signature
 
                 -- A dynamic group's layout is a function of what is showing, so
                 -- a change there is the one thing that has to move icons.

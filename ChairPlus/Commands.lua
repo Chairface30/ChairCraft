@@ -1365,7 +1365,7 @@ function ns.OpenPage(part)
     local w = ns.Num(frame:GetWidth()) or baseWidth
     local h = ns.Num(frame:GetHeight()) or baseHeight
     panel:SetSize(math.max(w, 300), h + EMBED_TOP)
-    pageTitle:SetText("Chaircraft  |cff808080>|r  " .. (part.title or ""))
+    pageTitle:SetText("Chaircraft  |cff808080>|r  " .. (part.pageTitle or part.title or ""))
 
     -- Swap the window for the stand-in in the Escape list, so Escape means
     -- Back while a page is up.
@@ -1385,8 +1385,11 @@ function ns.OpenPage(part)
         return false
     end
     -- Anything the part does on show that re-anchors its window is undone here.
+    -- Pinned by both corners, so a page that resizes the menu (ChairAuras'
+    -- corner grip does) takes the window with it rather than pulling it loose.
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -EMBED_TOP)
+    frame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
     frame:Show()
     return true
 end

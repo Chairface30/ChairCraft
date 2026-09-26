@@ -295,8 +295,34 @@ local function UpdateMouse()
     frame:EnableMouse(mouse)
 end
 
+-- Whether you are the tank, by the role you chose -- not by class or form.
+-- The warning is for everyone else: a tank who is not on top of threat for a
+-- moment (the pull, a taunt swap, a loose mob) was being told to ease off.
+--
+-- The role you have in the group decides when there is one. Otherwise the
+-- roles ticked in the group finder do, so it holds while queued or solo.
+local function Try(fn, ...)
+    if type(fn) ~= "function" then return nil end
+    local ok, a, b, c, d = pcall(fn, ...)
+    if ok then return a, b, c, d end
+    return nil
+end
+
+function ns.PlayerIsTank()
+    local role = Try(_G.UnitGroupRolesAssigned, "player")
+    if role == "TANK" then return true end
+    if role == "HEALER" or role == "DAMAGER" then return false end
+
+    -- Nothing assigned: the roles chosen in the group finder.
+    local list = _G.C_LFGList
+    local roles = list and Try(list.GetRoles)
+    if type(roles) == "table" then return roles.tank and true or false end
+    local _, tank = Try(_G.GetLFGRoles)
+    return tank and true or false
+end
+
 -- Your threat against the warning line. Fires once per climb: it re-arms when
--- you drop well back below the line or change target.
+-- you drop well back below the line or change target. Never for the tank.
 local function Warn(list)
     if not ns.Get("threatWarn") then
         warned = false
@@ -307,7 +333,7 @@ local function Warn(list)
         if entry.isMe then me = entry break end
     end
     local at = Clamp(ns.Get("threatWarnAt"), 50, 130)
-    if not me or me.tanking then
+    if not me or me.tanking or ns.PlayerIsTank() then
         warned = false
         return
     end

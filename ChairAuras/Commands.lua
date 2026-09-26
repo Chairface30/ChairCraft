@@ -50,6 +50,8 @@ local function Describe(aura, index)
 
         if ns.TriggerFieldValue(trigger, "type") == "cooldown" then
             bits[#bits + 1] = "cooldown"
+        elseif ns.TriggerFieldValue(trigger, "type") == "custom" then
+            bits[#bits + 1] = "custom " .. ns.Custom.Kind(trigger)
         else
             bits[#bits + 1] = ns.TriggerFieldValue(trigger, "harmful") and "debuff" or "buff"
             bits[#bits + 1] = "on " .. ns.TriggerFieldValue(trigger, "unit")
@@ -61,6 +63,11 @@ local function Describe(aura, index)
         if ns.TriggerFieldValue(trigger, "mine") then bits[#bits + 1] = "mine-only" end
         if ns.DisplayField(aura, "invert") then bits[#bits + 1] = "inverted" end
         if ns.DisplayField(aura, "hide") then bits[#bits + 1] = "hides" end
+        local count = ns.TriggerCount(aura)
+        if count > 1 then
+            bits[#bits + 1] = "|cff9d9d9d+" .. (count - 1) .. " trigger(s), " .. ns.TriggerMode(aura) .. "|r"
+        end
+        if aura.untrusted then bits[#bits + 1] = "|cffff5555imported code not approved|r" end
     end
 
     if aura.parent then
@@ -257,6 +264,31 @@ local function CmdList()
     end
 end
 
+-- Approve the custom Lua an imported aura carries, after reading it.
+local function CmdTrust(tokens, startAt)
+    local aura = AuraAt(tokens[startAt])
+    if not aura then return end
+    local code = ns.Custom:CodeOf(aura)
+    if not aura.untrusted then
+        ns.Print(tostring(aura.name or aura.id), "has nothing waiting for approval.")
+        return
+    end
+    if (tokens[startAt + 1] or ""):lower() ~= "yes" then
+        ns.Print(tostring(aura.name or aura.id), "carries", #code, "piece(s) of custom Lua:")
+        for _, piece in ipairs(code) do
+            print("  |cffffd100" .. piece[1] .. "|r")
+            for line in tostring(piece[2]):gmatch("[^\n]+") do print("    " .. line) end
+        end
+        ns.Print("read it, then |cffffd100/chair auras trust " .. tokens[startAt]
+            .. " yes|r to let it run.")
+        return
+    end
+    aura.untrusted = nil
+    ns.Engine:Rebuild()
+    ns.RequestUpdate()
+    ns.Print("custom code approved for", tostring(aura.name or aura.id) .. ".")
+end
+
 local function CmdRemove(tokens, startAt)
     local aura, index = AuraAt(tokens[startAt])
     if not aura then return end
@@ -435,6 +467,10 @@ local function CmdHelp()
     ns.Print("      which fill an empty profile when the client loses the file")
     ns.Print("  |cffffd100/chair auras why|r                 what the engine and the display")
     ns.Print("      think of each aura: whether it matched and its stack count")
+    ns.Print("  |cffffd100/chair auras trust <n>|r            read an imported aura's custom Lua,")
+    ns.Print("      then |cffffd100/chair auras trust <n> yes|r to let it run")
+    ns.Print("  |cffffd100/chair auras probe|r               what this client lets auras use:")
+    ns.Print("      custom Lua, health, casts, the combat log and more")
     ns.Print("  |cffffd100/chair auras lock|r / |cffffd100/chair auras status|r")
 end
 
@@ -475,6 +511,19 @@ local function CmdWhy()
                      "shown=" .. tostring(state.shown),
                      "stacks=" .. (state.count == nil and "|cffff5555unreadable|r"
                                    or tostring(state.count)))
+
+            -- Each trigger's own answer, and whether it was read or, in
+            -- combat, carried forward from what was known.
+            local triggerStates = state.triggers or {}
+            if #triggerStates > 1 or state.assumed or state.error then
+                ns.Print("   combine=" .. tostring(ns.TriggerMode(aura))
+                    .. (state.error and (" |cffff5555error: " .. tostring(state.error) .. "|r") or ""))
+            end
+            for i, ts in ipairs(triggerStates) do
+                ns.Print(string.format("   trigger %d: met=%s%s%s", i, tostring(ts.met),
+                    ts.unknown and " |cffffd100(unreadable now)|r" or "",
+                    ts.assumed and " |cffffd100assumed from what was known|r" or ""))
+            end
 
             local wanted = ns.DisplayField(aura, "stacks")
             local drawn = "n/a"
@@ -546,6 +595,10 @@ SlashCmdList["CHAIRAURAS"] = function(message)
         CmdPreset(tokens, 2)
     elseif command == "why" then
         CmdWhy()
+    elseif command == "trust" then
+        CmdTrust(tokens, 2)
+    elseif command == "probe" then
+        ns.Probe:Run()
     elseif command == "status" then
         CmdStatus()
     elseif command == "help" then

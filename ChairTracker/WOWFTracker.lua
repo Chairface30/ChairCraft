@@ -1354,40 +1354,75 @@ local function DirectOpen()
     return ui and type(ui.OpenTradeSkill) == "function" and ui.OpenTradeSkill or nil
 end
 
--- Set a bar up to open `name`'s window, or to open nothing. Secure
--- attributes cannot change in combat, so a change then waits for it to end.
-local pendingPanels = false
 local function SetBarProfession(bar, name)
     local panel = name and PROFESSION_PANELS[name] or nil
     bar.profession = panel and name or nil
-    local click = bar.professionClick
-    if not click then return end
-    local okL, locked = pcall(_G.InCombatLockdown)
-    if okL and locked then
-        pendingPanels = true
-        return
-    end
-    if panel and not DirectOpen() then
-        click:SetAttribute("type", "spell")
-        click:SetAttribute("spell", panel[1])
-        click:Show()
-    else
-        click:SetAttribute("type", nil)
-        click:SetAttribute("spell", nil)
-        click:Hide()
-    end
 end
 
-do
+local function Locked()
+    local ok, locked = pcall(_G.InCombatLockdown)
+    return ok and locked and true or false
+end
+
+-- The secure button that casts a profession's spell. One of them, never
+-- attached to a bar: a bar with a secure frame attached becomes a protected
+-- frame, and the tracker resizing its bars in combat was then blocked
+-- (ADDON_ACTION_BLOCKED on StatusBar:SetSize, 2026-09-26). So it lives on
+-- UIParent, and is moved over a profession bar while the mouse is on that
+-- bar, out of combat, placed by the bar's position rather than anchored to
+-- it. It goes when the mouse leaves.
+local professionButton
+local function ProfessionButton()
+    if professionButton then return professionButton end
+    local ok, button = pcall(CreateFrame, "Button", "WOWFTrackerProfessionButton", UIParent,
+        "SecureActionButtonTemplate")
+    if not ok or not button then return nil end
+    pcall(button.RegisterForClicks, button, "LeftButtonUp", "LeftButtonDown")
+    button:SetScript("OnEnter", function(self)
+        local bar = self.bar
+        if not bar or not bar.tipTitle then return end
+        GameTooltip:SetOwner(bar, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(bar.tipTitle, 1, 0.82, 0)
+        if bar.tipProgress then GameTooltip:AddLine(bar.tipProgress, 1, 1, 1) end
+        GameTooltip:AddLine("Click to open " .. tostring(bar.profession) .. ".", 0.6, 0.6, 0.6)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        GameTooltip_Hide()
+        if not Locked() then self:Hide() end
+    end)
+    button:Hide()
     local regen = CreateFrame("Frame")
     regen:RegisterEvent("PLAYER_REGEN_ENABLED")
     regen:SetScript("OnEvent", function()
-        if pendingPanels then
-            pendingPanels = false
-            if WOWFTrackerNS.UpdateReputation then WOWFTrackerNS.UpdateReputation() end
-        end
+        if button:IsShown() and not button:IsMouseOver() then button:Hide() end
     end)
+    professionButton = button
+    WOWFTrackerNS.professionButton = button
+    return button
 end
+
+-- Lay the button over `bar`, set to open its profession.
+local function OfferProfession(bar)
+    if not bar.profession or DirectOpen() or Locked() then return end
+    local panel = PROFESSION_PANELS[bar.profession]
+    local button = ProfessionButton()
+    if not (panel and button) then return end
+    local left, bottom, width, height = bar:GetRect()
+    left, bottom, width, height = tonumber(left), tonumber(bottom), tonumber(width), tonumber(height)
+    if not (left and bottom and width and height) then return end
+    local scale = (tonumber(bar:GetEffectiveScale()) or 1) / (tonumber(UIParent:GetEffectiveScale()) or 1)
+    button:ClearAllPoints()
+    button:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left * scale, bottom * scale)
+    button:SetSize(width * scale, height * scale)
+    pcall(button.SetFrameStrata, button, bar:GetFrameStrata())
+    pcall(button.SetFrameLevel, button, (tonumber(bar:GetFrameLevel()) or 1) + 10)
+    button:SetAttribute("type", "spell")
+    button:SetAttribute("spell", panel[1])
+    button.bar = bar
+    button:Show()
+end
+WOWFTrackerNS.OfferProfession = OfferProfession
 
 ----------------------------------------------------------------------
 -- Bar pool
@@ -1420,6 +1455,9 @@ local function CreateBar(index)
 
     bar:EnableMouse(true)
     bar:SetScript("OnEnter", function(self)
+        -- A profession opens through the secure button, laid over this bar
+        -- while the mouse is on it (see OfferProfession).
+        OfferProfession(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 
         -- Header line
@@ -1454,17 +1492,6 @@ local function CreateBar(index)
         if open and panel then pcall(open, panel[2]) end
     end)
 
-    -- And with one, through a secure button laid over the bar. It shows the
-    -- bar's own tooltip, so covering the bar costs nothing.
-    local okC, click = pcall(CreateFrame, "Button", nil, bar, "SecureActionButtonTemplate")
-    if okC and click then
-        click:SetAllPoints(bar)
-        pcall(click.RegisterForClicks, click, "LeftButtonUp", "LeftButtonDown")
-        click:SetScript("OnEnter", function() local f = bar:GetScript("OnEnter") if f then f(bar) end end)
-        click:SetScript("OnLeave", GameTooltip_Hide)
-        click:Hide()
-        bar.professionClick = click
-    end
 
     -- Standing tick marks (shown in total-to-Exalted mode)
     -- 3 ticks: Neutral/Friendly, Friendly/Honored, Honored/Revered
