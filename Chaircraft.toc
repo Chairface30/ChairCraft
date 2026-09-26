@@ -3,7 +3,7 @@
 ## Notes: ChairPlus, ChairAuras, ChairSnack and ChairTracker in one addon, under one menu. Type /chair.
 ## Author: Chairface
 ## IconTexture: Interface\AddOns\Chaircraft\ChairSnack\minimap
-## Version: 1.0.2
+## Version: 1.1.0
 ## SavedVariables: ChairPlusDB, ChairAurasDB, SnapSnackDB, WOWFTrackerAccountDB
 ## SavedVariablesPerCharacter: WOWFTrackerDB
 

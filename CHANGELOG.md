@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased: ChairAuras toward WeakAuras (phases 1 to 9)
+## 1.1.0: ChairAuras toward WeakAuras
 
 - **More load conditions** (phase 9), grouped on the Load tab. Lists are typed with commas.
   - You: character name (or Name-Realm), realm, guild, faction, effective level, have a pet, flagged for PvP.

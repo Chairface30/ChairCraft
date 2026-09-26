@@ -101,12 +101,23 @@ Chaircraft also publishes its own launcher, so other bar addons can show a chair
 - Drag the character panel, bags, bank, auction house, professions, quest log, spellbook, talents, mail and other Blizzard windows by their headers. Their positions are remembered.
 - Copy settings from another character.
 
-## ChairAuras: buff, debuff and cooldown tracking
+## ChairAuras: buff, debuff and cooldown tracking (*Beta*)
 
-- Icons and bars for the auras and cooldowns you care about, with load conditions: class, zone, combat and more.
-- Groups, sounds, and presets.
-- Share an aura as a line of text with **Export** and **Import**.
-- Auras are account-wide.
+Built to work like WeakAuras, as far as WoW Forever allows:
+
+- **Triggers:** several per aura, combined with all, any or custom Lua.
+  - Buffs, debuffs and cooldowns.
+  - 22 built-in types: usable, range, casts, items, forms, threat, player status, chat and more.
+  - Custom Lua triggers in WeakAuras' own shapes: status, event and state updater.
+- **Displays:** icons, text, bars, textures, progress textures and models.
+  - Extra texts written with WeakAuras' text codes.
+  - Borders, backgrounds, glows and ticks.
+  - Static and dynamic groups that grow in a line, a grid, a circle, or by custom code.
+- **Conditions, actions and animations**, as on WeakAuras' tabs.
+- **Load conditions:** class, race, zone, combat, group, role, instance, gear, encounter and more.
+- **In combat,** this client hides aura data from addons. ChairAuras carries what it knew before the fight and draws cooldowns through the client's own duration objects.
+- Custom Lua runs in a WeakAuras-style sandbox. Imported code waits for your approval.
+- Share an aura as a line of text with **Export** and **Import**. Auras are account-wide.
 
 ## ChairSnack: consumables at hand
 
