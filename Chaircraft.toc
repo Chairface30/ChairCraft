@@ -1,0 +1,75 @@
+## Interface: 16001, 16000, 11509, 11508, 20506
+## Title: Chaircraft
+## Notes: ChairPlus, ChairAuras, ChairSnack and ChairTracker in one addon, under one menu. Type /chair.
+## Author: Chairface
+## IconTexture: Interface\AddOns\Chaircraft\ChairSnack\minimap
+## Version: 1.0
+## SavedVariables: ChairPlusDB, ChairAurasDB, SnapSnackDB, WOWFTrackerAccountDB
+## SavedVariablesPerCharacter: WOWFTrackerDB
+
+# The SavedVariables names above are deliberately NOT renamed to match the
+# display names. They are what the client keys the saved file by: renaming them
+# drops the data.
+
+# Shared libraries, for other addons' data feeds on the OSD. Each one checks
+# its version with LibStub, so another addon's copy of the same library is fine.
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+
+# Must load first: it creates the per-addon tables every file below reaches for.
+Suite\Namespace.lua
+
+# ChairPlus. Order unchanged from the standalone addon.
+ChairPlus\Core.lua
+ChairPlus\Config.lua
+ChairPlus\OSD.lua
+ChairPlus\StatusBars.lua
+ChairPlus\Quests.lua
+ChairPlus\Gossip.lua
+ChairPlus\Vendor.lua
+ChairPlus\Loot.lua
+ChairPlus\FlightData.lua
+ChairPlus\Flight.lua
+ChairPlus\Camera.lua
+ChairPlus\Arrow.lua
+ChairPlus\Threat.lua
+ChairPlus\Social.lua
+ChairPlus\Invite.lua
+ChairPlus\LFG.lua
+ChairPlus\Movers.lua
+ChairPlus\Commands.lua
+
+# ChairAuras. Order unchanged from the standalone addon.
+ChairAuras\Core.lua
+ChairAuras\Presets.lua
+ChairAuras\Database.lua
+ChairAuras\Load.lua
+ChairAuras\Engine.lua
+ChairAuras\Display.lua
+ChairAuras\Icons.lua
+ChairAuras\Share.lua
+ChairAuras\Sounds.lua
+ChairAuras\Config.lua
+ChairAuras\Commands.lua
+
+# ChairSnack (was SnapSnack). Order unchanged from the standalone addon.
+ChairSnack\Core.lua
+ChairSnack\Database.lua
+ChairSnack\ItemData.lua
+ChairSnack\Items.lua
+ChairSnack\AutoBar.lua
+ChairSnack\BuffFood.lua
+ChairSnack\Grid.lua
+ChairSnack\Config.lua
+ChairSnack\Bootstrap.lua
+
+# ChairTracker (was WOW Forever Tracker). Order unchanged.
+ChairTracker\Config.lua
+ChairTracker\WOWFTracker.lua
+ChairTracker\Options.lua
+
+# Must load last: it captures every part's slash handler before replacing them
+# all with /chair, so every file above must already have registered.
+Suite\Hub.lua
+
