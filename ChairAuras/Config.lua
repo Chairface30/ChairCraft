@@ -3387,6 +3387,9 @@ local function BuildLoadFields()
     }
 
     for _, condition in ipairs(ns.Load.CONDITIONS) do
+        if condition.section then
+            fields[#fields + 1] = { kind = "header", label = condition.section }
+        end
         local key = condition.key
         local available = ns.Load:Available(condition)
         local tip = condition.tip

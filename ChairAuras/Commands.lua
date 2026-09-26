@@ -469,6 +469,7 @@ local function CmdHelp()
     ns.Print("      think of each aura: whether it matched and its stack count")
     ns.Print("  |cffffd100/chair auras trust <n>|r            read an imported aura's custom Lua,")
     ns.Print("      then |cffffd100/chair auras trust <n> yes|r to let it run")
+    ns.Print("  |cffffd100/chair auras where|r               the map and instance IDs where you stand")
     ns.Print("  |cffffd100/chair auras probe|r               what this client lets auras use:")
     ns.Print("      custom Lua, health, casts, the combat log and more")
     ns.Print("  |cffffd100/chair auras lock|r / |cffffd100/chair auras status|r")
@@ -599,6 +600,11 @@ SlashCmdList["CHAIRAURAS"] = function(message)
         CmdTrust(tokens, 2)
     elseif command == "probe" then
         ns.Probe:Run()
+    elseif command == "where" then
+        -- The IDs the Zone or instance ID load condition matches.
+        local mapID, instanceID = ns.Load:WhereAmI()
+        local function Show(v) return (v == ns.Load.UNKNOWN or v == nil) and "unknown" or tostring(v) end
+        ns.Print("map ID " .. Show(mapID) .. ", instance ID " .. Show(instanceID) .. ".")
     elseif command == "status" then
         CmdStatus()
     elseif command == "help" then

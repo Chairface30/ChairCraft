@@ -256,6 +256,11 @@ local EVENTS = {
     "PLAYER_DEAD",
     "PLAYER_ALIVE",
     "PLAYER_UNGHOST",
+    "PLAYER_EQUIPMENT_CHANGED",
+    "PARTY_LEADER_CHANGED",
+    "PLAYER_GUILD_UPDATE",
+    "PLAYER_FLAGS_CHANGED",
+    "PLAYER_ROLES_ASSIGNED",
 }
 
 local eventFrame = CreateFrame("Frame")

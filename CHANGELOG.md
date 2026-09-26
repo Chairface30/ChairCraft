@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased: ChairAuras toward WeakAuras (phases 1 to 8)
+## Unreleased: ChairAuras toward WeakAuras (phases 1 to 9)
+
+- **More load conditions** (phase 9), grouped on the Load tab. Lists are typed with commas.
+  - You: character name (or Name-Realm), realm, guild, faction, effective level, have a pet, flagged for PvP.
+  - Group: group size (solo counts as 1), group leader, group role, raid role (main tank, main assist).
+  - Where: instance type, instance size, difficulty, zone or instance ID. `/chair auras where` shows the IDs where you stand.
+  - Gear: item equipped, item not equipped (by name or ID), item type equipped (Shields, Daggers...).
+  - Spells: spell not known.
+  - Encounter: in a boss encounter, and which encounter IDs.
+  - As before, a condition this client cannot answer never hides an aura.
 
 - **Animations** (phase 8), on a new Animations tab, in WeakAuras' own shape:
   - **Start** plays as an aura comes up, **main** loops while it shows, **finish** plays as it goes. Nothing animates at login or after a reload.

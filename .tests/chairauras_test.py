@@ -3982,5 +3982,84 @@ check("a ring's radius is offered once a group grows in a circle",
       ev("FIND_WIDGET('radius', 'slider', 'display').host:IsShown()") is True
       and ev("FIND_WIDGET('growCustom', 'code', 'display').host:IsShown()") is False)
 
+
+# --- phase 9: load conditions ---------------------------------------------------------
+print("-- phase 9: load conditions")
+L = boot("""
+function GetGuildInfo() return GUILD end
+function UnitFactionGroup() return "Horde", "Horde" end
+function UnitEffectiveLevel() return 55 end
+function GetNumGroupMembers() return MEMBERS end
+function UnitIsGroupLeader() return LEADER end
+function UnitGroupRolesAssigned() return ROLE end
+function UnitIsPVP() return false end
+function IsInInstance() return INSTANCE_KIND ~= "none", INSTANCE_KIND end
+function GetInstanceInfo() return "Molten Core", INSTANCE_KIND, 9, "40 Player", 40, 0, false, 409 end
+C_Map = { GetBestMapForUnit = function() return 1429 end }
+EQUIPPED = { [19019] = true, ["Thunderfury"] = true }
+function IsEquippedItem(item) return EQUIPPED[item] == true end
+function IsEquippedItemType(kind) return kind == "Shields" end
+function IsSpellKnown(id) return id == 774 end
+GUILD, MEMBERS, LEADER, ROLE, INSTANCE_KIND = "Chair Club", 0, false, "NONE", "none"
+local function A(id, load) return { id = id, triggers = { { trigger = { spellID = 774 } } }, load = load } end
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    A("name", { playerName = "Someone, tester" }),
+    A("nameRealm", { playerName = "Tester-Testrealm" }),
+    A("otherName", { playerName = "Someone" }),
+    A("guild", { guild = "chair club" }),
+    A("faction", { faction = { Alliance = true } }),
+    A("elevel", { effectiveLevel = { max = 50 } }),
+    A("gsize", { groupSize = { min = 2 } }),
+    A("leader", { groupLeader = true }),
+    A("tank", { role = { TANK = true } }),
+    A("raidinst", { instanceType = { raid = true } }),
+    A("big", { instanceSize = { min = 40 } }),
+    A("zone", { zoneID = "1429" }),
+    A("mc", { zoneID = "409" }),
+    A("tf", { equipped = "Thunderfury" }),
+    A("notTf", { notEquipped = "19019" }),
+    A("shield", { itemType = "Shields" }),
+    A("noRejuv", { spellNotKnown = "774" }),
+    A("boss", { encounter = true }),
+    A("rag", { encounterID = "672" }),
+} } } }
+""")
+ev = L.eval
+L.execute("ns.Engine:UpdateAll()")
+loaded = lambda i: ev("ns.Engine.states['%s'].loaded" % i)
+check("by character name, in a list", loaded("name") is True and loaded("otherName") is False)
+check("or as Name-Realm", loaded("nameRealm") is True)
+check("by guild, whatever the case", loaded("guild") is True)
+check("by faction", loaded("faction") is False)
+check("by effective level", loaded("elevel") is False)
+check("solo is a group of one", loaded("gsize") is False)
+check("group leader and role", loaded("leader") is False and loaded("tank") is False)
+check("by instance type and size, outside one", loaded("raidinst") is False and loaded("big") is True)
+check("by map ID or instance ID", loaded("zone") is True and loaded("mc") is True)
+check("by what you wear, by name or ID",
+      loaded("tf") is True and loaded("notTf") is False and loaded("shield") is True)
+check("by a spell you do not know", loaded("noRejuv") is False)
+check("not in a boss fight", loaded("boss") is False and loaded("rag") is False)
+L.execute("MEMBERS, LEADER, ROLE, INSTANCE_KIND = 5, true, 'TANK', 'raid'"
+          " FireEvent('ENCOUNTER_START', 672) ns.Engine:UpdateAll()")
+check("the group ones follow the group",
+      loaded("gsize") is True and loaded("leader") is True and loaded("tank") is True)
+check("and the instance ones the instance", loaded("raidinst") is True)
+check("a boss fight loads its auras, and only that boss's",
+      loaded("boss") is True and loaded("rag") is True)
+L.execute("FireEvent('ENCOUNTER_END', 672) ns.Engine:UpdateAll()")
+check("until it ends", loaded("boss") is False)
+
+L.execute("ns.Config:Open(); ns.Config:Select('name'); ns.Config:SetTab('load')")
+check("the Load tab has a heading for each new section",
+      ev("(function() local n = 0 for _, f in ipairs(ns.Config.__loadFields) do"
+         " if f.kind == 'header' and (f.label == 'You' or f.label == 'Group' or f.label == 'Where'"
+         " or f.label == 'Gear' or f.label == 'Spells' or f.label == 'Encounter') then n = n + 1 end end"
+         " return n end)()") == 6)
+L.execute("PRINTED = {} SlashCmdList['CHAIRAURAS']('where')")
+check("/chair auras where says the IDs to use",
+      "1429" in " ".join(str(v) for v in (ev("PRINTED") or {}).values())
+      and "409" in " ".join(str(v) for v in (ev("PRINTED") or {}).values()))
+
 print("ALL OK" if not failures else "%d FAILED" % len(failures))
 sys.exit(1 if failures else 0)

@@ -293,6 +293,318 @@ local CONDITIONS = {
 }
 Load.CONDITIONS = CONDITIONS
 
+-------------------------------------------------------------------------------
+-- Phase 9: the rest of WeakAuras' load options this client can answer
+-------------------------------------------------------------------------------
+-- Lists are typed with commas, matched without regard to case: "Chair, Face"
+-- loads on either character. `section` starts a new heading on the Load tab.
+
+-- Lowered for matching, unless `keepCase`: item names go to the client as
+-- typed.
+local function List(text, keepCase)
+    local out = {}
+    for part in tostring(text or ""):gmatch("[^,]+") do
+        part = part:match("^%s*(.-)%s*$")
+        if part ~= "" then out[#out + 1] = keepCase and part or part:lower() end
+    end
+    return out
+end
+Load.List = List
+
+local function InList(text, ...)
+    local wanted = List(text)
+    if #wanted == 0 then return true end
+    for i = 1, select("#", ...) do
+        local have = select(i, ...)
+        if have ~= nil and have ~= UNKNOWN then
+            have = tostring(have):lower()
+            for _, one in ipairs(wanted) do
+                if one == have then return true end
+            end
+        end
+    end
+    return false
+end
+
+-- A toggle whose reading is one boolean in ctx.
+local function Toggle(key, label, read, tip, section)
+    return {
+        key = key, kind = "toggle", label = label, tip = tip, section = section,
+        read = function(ctx) ctx[key] = read() end,
+        test = function(value, ctx)
+            if ctx[key] == UNKNOWN then return true end
+            return ctx[key] == value
+        end,
+    }
+end
+
+-- A range over one number in ctx.
+local function Range(key, label, read, tip, section)
+    return {
+        key = key, kind = "range", label = label, tip = tip, section = section,
+        read = function(ctx) ctx[key] = read() end,
+        test = function(value, ctx)
+            local n = ctx[key]
+            if n == UNKNOWN or not n then return true end
+            if value.min and n < value.min then return false end
+            if value.max and n > value.max then return false end
+            return true
+        end,
+    }
+end
+
+-- A set over one text in ctx; nothing ticked means any.
+local function Set(key, label, values, read, tip, section)
+    return {
+        key = key, kind = "set", label = label, tip = tip, section = section,
+        values = values,
+        read = function(ctx) ctx[key] = read() end,
+        test = function(value, ctx)
+            if not next(value) then return true end
+            local have = ctx[key]
+            if have == UNKNOWN or have == nil then return true end
+            return value[have] and true or false
+        end,
+    }
+end
+
+local function Fixed(list)
+    return function()
+        local out = {}
+        for i, entry in ipairs(list) do out[i] = { value = entry[1], text = entry[2] } end
+        return out
+    end
+end
+
+-- Boss encounters, heard rather than asked: the client says when one starts
+-- and ends. A client without the events cannot say at all.
+local encounter = { active = false, id = nil, heard = false }
+Load.__encounter = encounter
+do
+    local frame = CreateFrame("Frame")
+    local okStart = pcall(frame.RegisterEvent, frame, "ENCOUNTER_START")
+    local okEnd = pcall(frame.RegisterEvent, frame, "ENCOUNTER_END")
+    encounter.heard = okStart and okEnd
+    frame:SetScript("OnEvent", function(_, event, id)
+        if event == "ENCOUNTER_START" then
+            encounter.active, encounter.id = true, ns.SafeNumber(id)
+        else
+            encounter.active, encounter.id = false, nil
+        end
+        if ns.RequestUpdate then ns.RequestUpdate() end
+    end)
+end
+
+local function Instance(index)
+    local info = { pcall(_G.GetInstanceInfo) }
+    if type(_G.GetInstanceInfo) ~= "function" or not info[1] then return UNKNOWN end
+    return info[index + 1]
+end
+
+local MORE = {
+    -- You
+    {
+        key = "playerName", kind = "text", label = "Character name", section = "You",
+        tip = "One or more names, split by commas. Name-Realm works too.",
+        read = function(ctx)
+            ctx.playerName = ReadText(_G.UnitName, "player")
+            ctx.realm = ReadText(_G.GetRealmName)
+        end,
+        test = function(value, ctx)
+            local name, realm = ctx.playerName, ctx.realm
+            if name == UNKNOWN or not name then return true end
+            local full = (realm and realm ~= UNKNOWN) and (name .. "-" .. realm:gsub("%s", "")) or nil
+            return InList(value, name, full)
+        end,
+    },
+    {
+        key = "realm", kind = "text", label = "Realm",
+        tip = "One or more realms, split by commas.",
+        test = function(value, ctx)
+            if ctx.realm == UNKNOWN or not ctx.realm then return true end
+            return InList(value, ctx.realm)
+        end,
+    },
+    {
+        key = "guild", kind = "text", label = "Guild",
+        tip = "One or more guild names, split by commas.",
+        read = function(ctx) ctx.guild = ReadText(_G.GetGuildInfo, "player") end,
+        test = function(value, ctx)
+            if ctx.guild == UNKNOWN then return true end
+            return InList(value, ctx.guild)
+        end,
+    },
+    Set("faction", "Faction", Fixed({ { "Alliance", "Alliance" }, { "Horde", "Horde" } }),
+        function() return ReadText(_G.UnitFactionGroup, "player") end),
+    Range("effectiveLevel", "Effective level", function()
+        local level = ReadNumber(_G.UnitEffectiveLevel, "player")
+        if level == UNKNOWN or not level then level = ReadNumber(_G.UnitLevel, "player") end
+        return level
+    end, "Your level as scaled, where a zone scales it; otherwise your level."),
+    Toggle("hasPet", "Have a pet", function() return ReadBool(_G.UnitExists, "pet") end),
+    Toggle("pvp", "Flagged for PvP", function() return ReadBool(_G.UnitIsPVP, "player") end),
+
+    -- Group
+    Range("groupSize", "Group size", function()
+        local members = ReadNumber(_G.GetNumGroupMembers)
+        if members == UNKNOWN then return UNKNOWN end
+        return math.max(members or 0, 1)
+    end, "How many are in your group, you included; 1 is solo.", "Group"),
+    Toggle("groupLeader", "Group leader", function() return ReadBool(_G.UnitIsGroupLeader, "player") end),
+    Set("role", "Group role", Fixed({ { "TANK", "Tank" }, { "HEALER", "Healer" },
+        { "DAMAGER", "Damage" }, { "NONE", "None" } }),
+        function() return ReadText(_G.UnitGroupRolesAssigned, "player") end,
+        "The role you have in the group."),
+    Set("raidRole", "Raid role", Fixed({ { "MAINTANK", "Main tank" }, { "MAINASSIST", "Main assist" },
+        { "NONE", "None" } }),
+        function()
+            local fn = _G.GetPartyAssignment
+            if type(fn) ~= "function" then return UNKNOWN end
+            if Read(fn, "MAINTANK", "player") == true then return "MAINTANK" end
+            if Read(fn, "MAINASSIST", "player") == true then return "MAINASSIST" end
+            return "NONE"
+        end),
+
+    -- Where
+    Set("instanceType", "Instance type", Fixed({ { "none", "Not in one" }, { "party", "Dungeon" },
+        { "raid", "Raid" }, { "pvp", "Battleground" }, { "arena", "Arena" } }),
+        function()
+            local fn = _G.IsInInstance
+            if type(fn) ~= "function" then return UNKNOWN end
+            local ok, _, kind = pcall(fn)
+            return ok and ns.SafeText(kind) or UNKNOWN
+        end, nil, "Where"),
+    Range("instanceSize", "Instance size", function()
+        local size = Instance(5)
+        if size == UNKNOWN then return UNKNOWN end
+        return ns.SafeNumber(size)
+    end, "The most players the instance takes: 5, 10, 20, 40."),
+    {
+        key = "difficulty", kind = "text", label = "Difficulty",
+        tip = "The instance difficulty's name, or part of it: Normal, Heroic...",
+        read = function(ctx)
+            local name = Instance(4)
+            ctx.difficulty = (name == UNKNOWN) and UNKNOWN or ns.SafeText(name)
+        end,
+        test = function(value, ctx)
+            if ctx.difficulty == UNKNOWN then return true end
+            local needle = value:lower()
+            return ((ctx.difficulty or ""):lower()):find(needle, 1, true) ~= nil
+        end,
+    },
+    {
+        key = "zoneID", kind = "text", label = "Zone or instance ID",
+        tip = "Map IDs or instance IDs, split by commas. /chair auras where shows yours.",
+        read = function(ctx)
+            local map = _G.C_Map
+            ctx.mapID = (map and type(map.GetBestMapForUnit) == "function")
+                        and ReadNumber(map.GetBestMapForUnit, "player") or UNKNOWN
+            local instanceID = Instance(8)
+            ctx.instanceID = (instanceID == UNKNOWN) and UNKNOWN or ns.SafeNumber(instanceID)
+        end,
+        test = function(value, ctx)
+            if ctx.mapID == UNKNOWN and ctx.instanceID == UNKNOWN then return true end
+            return InList(value, ctx.mapID, ctx.instanceID)
+        end,
+    },
+
+    -- Gear
+    {
+        key = "equipped", kind = "text", label = "Item equipped", section = "Gear",
+        tip = "Item names or IDs, split by commas. Loads while you wear any one of them.",
+        test = function(value)
+            local items = List(value, true)
+            if #items == 0 then return true end
+            if type(_G.IsEquippedItem) ~= "function" then return true end
+            for _, item in ipairs(items) do
+                if Read(_G.IsEquippedItem, tonumber(item) or item) == true then return true end
+            end
+            return false
+        end,
+        available = function() return type(_G.IsEquippedItem) == "function" end,
+    },
+    {
+        key = "notEquipped", kind = "text", label = "Item not equipped",
+        tip = "Item names or IDs, split by commas. Loads while you wear none of them.",
+        test = function(value)
+            local items = List(value, true)
+            if #items == 0 or type(_G.IsEquippedItem) ~= "function" then return true end
+            for _, item in ipairs(items) do
+                if Read(_G.IsEquippedItem, tonumber(item) or item) == true then return false end
+            end
+            return true
+        end,
+        available = function() return type(_G.IsEquippedItem) == "function" end,
+    },
+    {
+        key = "itemType", kind = "text", label = "Item type equipped",
+        tip = "Item types as the game names them, split by commas: Shields, Daggers, "
+           .. "Two-Handed Swords...",
+        test = function(value)
+            local fn = _G.IsEquippedItemType
+            if type(fn) ~= "function" then return true end
+            local any = false
+            for part in tostring(value):gmatch("[^,]+") do
+                part = part:match("^%s*(.-)%s*$")
+                if part ~= "" then
+                    any = true
+                    if Read(fn, part) == true then return true end
+                end
+            end
+            return not any
+        end,
+        available = function() return type(_G.IsEquippedItemType) == "function" end,
+    },
+
+    -- Spells
+    {
+        key = "spellNotKnown", kind = "text", label = "Spell not known", section = "Spells",
+        tip = "A spell name or ID. Loads only while your spellbook lacks it.",
+        test = function(value)
+            if value == "" then return true end
+            local spellID = ns.ResolveSpell(value)
+            if not spellID then return true end
+            local known = ReadBool(_G.IsSpellKnown, spellID)
+            if known == UNKNOWN then known = ReadBool(_G.IsPlayerSpell, spellID) end
+            if known == UNKNOWN then return true end
+            return not known
+        end,
+    },
+
+    -- Encounters
+    {
+        key = "encounter", kind = "toggle", label = "In a boss encounter", section = "Encounter",
+        tip = "While a boss fight the client announces is on.",
+        read = function(ctx)
+            if encounter.heard then ctx.encounter = encounter.active else ctx.encounter = UNKNOWN end
+        end,
+        test = function(value, ctx)
+            if ctx.encounter == UNKNOWN then return true end
+            return ctx.encounter == value
+        end,
+    },
+    {
+        key = "encounterID", kind = "text", label = "Encounter ID",
+        tip = "Encounter IDs, split by commas: loads only during those fights.",
+        test = function(value)
+            if not encounter.heard then return true end
+            if not encounter.active then return false end
+            return InList(value, encounter.id)
+        end,
+        available = function() return encounter.heard end,
+    },
+}
+for _, condition in ipairs(MORE) do CONDITIONS[#CONDITIONS + 1] = condition end
+
+-- Where you are, as the IDs the Zone or instance ID condition matches.
+function Load:WhereAmI()
+    local ctx = {}
+    for _, condition in ipairs(CONDITIONS) do
+        if condition.key == "zoneID" then condition.read(ctx) end
+    end
+    return ctx.mapID, ctx.instanceID
+end
+
 -- Defaults, in the shape the compactor wants: a condition left alone is absent
 -- from the file entirely, so this is only what "absent" means to a reader.
 local LOAD_DEFAULTS = {}
