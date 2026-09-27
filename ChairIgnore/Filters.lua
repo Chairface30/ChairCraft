@@ -393,13 +393,21 @@ local function Judge(event, message, sender, lineID, channelIndex, channelName)
     end
     if ns.Key(full) == ns.Key(ns.FullName(ns.Text(UnitName and UnitName("player")))) then return false end
     local kind = KINDS[event]
-    local isChannel = event == "CHAT_MSG_CHANNEL"
-    local name = isChannel and ChannelName(channelName) or nil
+    -- Where it was said, as a filter's channel list names it: a numbered
+    -- channel by its name, and Say and Yell as themselves.
+    local where
+    if event == "CHAT_MSG_CHANNEL" then
+        where = ChannelName(channelName)
+    elseif event == "CHAT_MSG_SAY" then
+        where = "say"
+    elseif event == "CHAT_MSG_YELL" then
+        where = "yell"
+    end
     -- A filter that names its own channels works in those channels only,
     -- whatever the Options tab says; the rest go where the Options allow.
     local function Applies(entry)
         if entry.channels then
-            return (isChannel and name and entry.channels[name]) and true or false
+            return (where and entry.channels[where]) and true or false
         end
         return kind ~= nil and ns.Get(kind) == true
     end

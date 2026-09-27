@@ -441,17 +441,28 @@ function TICK(i, on)
     row._scripts.OnClick(row)
 end
 """)
-check("a checkbox for each channel you are in, with its number",
-      ev("PAGE.channelRows[1].channel") == "General" and ev("PAGE.channelRows[2].channel") == "Trade"
-      and "(2)" in str(ev("PAGE.channelRows[2].label:GetText()")))
-check("none ticked: everywhere", ev("PAGE.channelRows[1]:GetChecked()") is False and ev("NS.Filters()[1].channels") is None)
+check("Say and Yell come first, always",
+      ev("PAGE.channelRows[1].channel") == "Say" and ev("PAGE.channelRows[2].channel") == "Yell")
 rt.execute("TICK(2, true)")
+check("ticking Yell keeps a filter to yell", ev("NS.Filters()[1].channels") == "Yell"
+      and ev("CHAT('CHAT_MSG_YELL', SPAM, 'Gold Seller-X')") is True
+      and ev("CHAT('CHAT_MSG_SAY', SPAM, 'Gold Seller-X')") is False
+      and ev("CHAT_IN(2, 'Trade - City', SPAM, 'Gold Seller-X')") is False)
+rt.execute("TICK(1, true)")
+check("and Say with it", ev("NS.Filters()[1].channels") == "Say, Yell"
+      and ev("CHAT('CHAT_MSG_SAY', SPAM, 'Gold Seller-X')") is True)
+rt.execute("TICK(1, false) TICK(2, false)")
+check("a checkbox for each channel you are in, with its number",
+      ev("PAGE.channelRows[3].channel") == "General" and ev("PAGE.channelRows[4].channel") == "Trade"
+      and "(2)" in str(ev("PAGE.channelRows[4].label:GetText()")))
+check("none ticked: everywhere", ev("PAGE.channelRows[3]:GetChecked()") is False and ev("NS.Filters()[1].channels") is None)
+rt.execute("TICK(4, true)")
 check("ticking one applies at once, by name", ev("NS.Filters()[1].channels") == "Trade")
 check("and the list names it after the filter",
       "(Trade)" in str(ev("PAGE.rows[1].cols[2]:GetText()")))
 check("and the filter now works there only", ev("CHAT_IN(2, 'Trade - City', SPAM, 'Gold Seller-X')") is True
       and ev("CHAT_IN(1, 'General - Elwynn Forest', SPAM, 'Gold Seller-X')") is False)
-rt.execute("TICK(1, true)")
+rt.execute("TICK(3, true)")
 check("a second tick adds it", ev("NS.Filters()[1].channels") == "General, Trade")
 rt.execute("""
 -- Another character, in other channels, with Trade now as channel 4.
@@ -460,12 +471,12 @@ NS.Filters()[1].channels = "General, Trade, GuildRecruitment"
 PAGE.FillChannels()
 """)
 check("it follows the name when the number changes",
-      ev("PAGE.channelRows[2].channel") == "Trade" and ev("PAGE.channelRows[2]:GetChecked()") is True
-      and "(4)" in str(ev("PAGE.channelRows[2].label:GetText()")))
+      ev("PAGE.channelRows[4].channel") == "Trade" and ev("PAGE.channelRows[4]:GetChecked()") is True
+      and "(4)" in str(ev("PAGE.channelRows[4].label:GetText()")))
 check("a channel this character is not in stays listed, ticked",
-      ev("PAGE.channelRows[3].channel") == "GuildRecruitment" and ev("PAGE.channelRows[3]:GetChecked()") is True
-      and "not joined here" in str(ev("PAGE.channelRows[3].label:GetText()")))
-rt.execute("TICK(3, false) TICK(1, false) TICK(2, false)")
+      ev("PAGE.channelRows[5].channel") == "GuildRecruitment" and ev("PAGE.channelRows[5]:GetChecked()") is True
+      and "not joined here" in str(ev("PAGE.channelRows[5].label:GetText()")))
+rt.execute("TICK(5, false) TICK(3, false) TICK(4, false)")
 check("unticking them all goes back to everywhere", ev("NS.Filters()[1].channels") is None)
 rt.execute("""
 GetChannelList = function() return 1, "General", false, 2, "Trade", false, 5, "LookingForGroup", false end
@@ -473,11 +484,11 @@ for _, f in ipairs(FRAMES) do
     if f._scripts.OnEvent then f._scripts.OnEvent(f, "CHANNEL_UI_UPDATE") end
 end
 """)
-check("joining a channel adds its checkbox", ev("PAGE.channelRows[3].channel") == "LookingForGroup"
-      and ev("PAGE.channelRows[3]:IsShown()") is True)
+check("joining a channel adds its checkbox", ev("PAGE.channelRows[5].channel") == "LookingForGroup"
+      and ev("PAGE.channelRows[5]:IsShown()") is True)
 rt.execute("GetChannelList = function() return end PAGE.FillChannels()")
-check("in no channels, it says so", ev("PAGE.noChannels:IsShown()") is True
-      and ev("PAGE.channelRows[1]:IsShown()") is False)
+check("in no channels, it says so, with Say and Yell still there", ev("PAGE.noChannels:IsShown()") is True
+      and ev("PAGE.channelRows[3]:IsShown()") is False and ev("PAGE.channelRows[1]:IsShown()") is True)
 
 print("\nLong filters wrap and scroll")
 rt, ev = fresh()
@@ -492,6 +503,12 @@ rawset(BOX.measure, "GetStringHeight", function(self)
 end)
 """)
 check("the lines of words wrap", ev("PAGE.lineBoxes[1].measure ~= nil") is True)
+rt.execute("""
+GetChannelList = function() return 1, "General", false, 2, "Trade", false, 3, "LocalDefense", false end
+PAGE.FillChannels()
+""")
+check("Say, Yell and three channels fit side by side without scrolling",
+      ev("PAGE.channelCount") == 3 and ev("PAGE.scrollBar:IsShown()") is False)
 check("a short line stays one line, with no scrollbar",
       ev("BOX.grownTo") == 22 and ev("PAGE.scrollBar:IsShown()") is False)
 rt.execute("BOX:SetText(string.rep('cheapest, ', 12)) BOX._scripts.OnTextChanged(BOX)")

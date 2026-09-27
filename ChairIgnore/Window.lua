@@ -11,7 +11,7 @@ local ns = Chaircraft.ChairIgnore
 
 -- Wide enough for the Players tab's top row (boxes, Add and New) with the
 -- same 16px margin on the right as on the left.
-local WIDTH, HEIGHT = 660, 500
+local WIDTH, HEIGHT = 660, 520
 local ROW_H = 20
 local PLAYER_ROWS = 12
 local FILTER_ROWS = 12
@@ -536,15 +536,15 @@ local function BuildFilters(page)
     -- Ticked ones override the Options tab. A channel the filter has that
     -- this character is not in is still listed, ticked, so it can be taken
     -- off. Each tick applies at once.
-    local channelsLabel = Label(edit, "Only in these channels (none ticked: everywhere)")
+    local channelsLabel = Label(edit, "Only in these (none ticked: everywhere)")
     channelsLabel:SetPoint("TOPLEFT", page.squeeze, "BOTTOMLEFT", 4, -8)
     local list = CreateFrame("Frame", nil, edit)
     list:SetSize(330, 22)
     list:SetPoint("TOPLEFT", channelsLabel, "BOTTOMLEFT", -4, -2)
     page.channelList = list
     page.channelRows = {}
-    page.noChannels = Label(list, "You are in no channels right now.", "GameFontDisableSmall")
-    page.noChannels:SetPoint("TOPLEFT", 6, -4)
+    page.noChannels = Label(list, "(and no numbered channels right now)", "GameFontDisableSmall")
+    page.noChannels:SetPoint("TOPLEFT", 6, -26)
 
     local function Ticked(filter)
         local set = {}
@@ -567,7 +567,10 @@ local function BuildFilters(page)
     function page.FillChannels()
         local filter = filters.selected
         local ticked = Ticked(filter)
-        local shown, seen = {}, {}
+        -- Say and Yell first, always there; then the channels you are in.
+        local shown, seen = {}, { say = true, yell = true }
+        shown[1] = { name = "Say", label = "Say" }
+        shown[2] = { name = "Yell", label = "Yell" }
         for _, channel in ipairs(ns.JoinedChannels()) do
             local key = channel.name:lower()
             if not seen[key] then
@@ -591,7 +594,9 @@ local function BuildFilters(page)
                     if checked then set[row.channel:lower()] = row.channel else set[row.channel:lower()] = nil end
                     SetTicked(f, set)
                 end)
-                row:SetPoint("TOPLEFT", 0, -(i - 1) * 22)
+                -- Two columns, so Say, Yell and the usual channels fit
+                -- without the editor having to scroll.
+                row:SetPoint("TOPLEFT", ((i - 1) % 2) * 165, -math.floor((i - 1) / 2) * 22)
                 page.channelRows[i] = row
             end
             row.channel = entry.name
@@ -605,9 +610,10 @@ local function BuildFilters(page)
             page.channelRows[i].label:Hide()
             page.channelRows[i].channel = nil
         end
-        page.noChannels:SetShown(#shown == 0)
-        page.channelCount = #shown
-        list:SetHeight(math.max(1, #shown) * 22)
+        page.noChannels:SetShown(#shown <= 2)
+        -- Rows of two, plus the line saying there are no numbered channels.
+        page.channelCount = math.ceil(#shown / 2) + ((#shown <= 2) and 1 or 0)
+        list:SetHeight(page.channelCount * 22)
         UpdateScroll()
     end
 

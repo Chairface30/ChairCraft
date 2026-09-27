@@ -13,7 +13,7 @@
   - `/chair cooldowns` lists them; `/chair cooldowns probe` prints the next casts' spell IDs and what the game says about their cooldowns.
 
 - **ChairIgnore filters take a `*` wildcard:** anything, of any length. `<*>` is any guild tag, and `g*ld` catches "g.0.ld". A word that is nothing but `*` is ignored.
-- **A ChairIgnore filter can be kept to channels you tick:** the editor lists a checkbox for every channel you are in, read from the game as you join and leave them. None ticked, it works everywhere the Options tab allows; ticked channels override the Options tab for that filter. Channels are kept by name, never number, since numbers change with the order they were joined; one a filter has that this character is not in stays listed, ticked. The filter list shows a filter's channels after its name, and shared filters keep them.
+- **A ChairIgnore filter can be kept to channels you tick:** the editor lists Say, Yell, and a checkbox for every channel you are in, read from the game as you join and leave them. None ticked, it works everywhere the Options tab allows; ticked channels override the Options tab for that filter. Channels are kept by name, never number, since numbers change with the order they were joined; one a filter has that this character is not in stays listed, ticked. The filter list shows a filter's channels after its name, and shared filters keep them.
 - **Long filter lines wrap:** a line of words grows its box as it gets longer, and the filter editor scrolls to fit.
 
 **Changed**
