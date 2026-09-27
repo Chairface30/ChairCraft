@@ -202,7 +202,7 @@ print("\nShipped off")
 rt, ev = fresh(on=False)
 check("ChairIgnore is off out of the box", ev("NS.Get('enabled')") is False)
 check("the starter filters are there, every one off",
-      ev("#NS.Filters()") == 5 and all(ev(f"NS.Filters()[{i}].enabled") is False for i in range(1, 6)))
+      ev("#NS.Filters()") == 6 and all(ev(f"NS.Filters()[{i}].enabled") is False for i in range(1, 7)))
 check("off, a listed player's chat is left alone",
       ev("(NS.Add('Spammer Test'))") is not None and ev("CHAT('CHAT_MSG_SAY', 'hi', 'Spammer Test-HomeRealm')") is False)
 check("off, nothing is put on the game's list", ev("#GAME") == 0)
@@ -335,7 +335,7 @@ check("a word that is all symbols is matched as it is",
 print("\nStarter filters are shipped once")
 rt, ev = fresh()
 rt.execute("NS.DeleteFilter(NS.Filters()[4]) NS.InitFilters(ChairIgnoreDB)")
-check("one you delete stays deleted", ev("#NS.Filters()") == 4)
+check("one you delete stays deleted", ev("#NS.Filters()") == 5)
 
 print("\nThe hidden messages log")
 rt, ev = fresh()
@@ -524,6 +524,21 @@ check("and a long line is saved whole", ev("#NS.Filters()[1].lines[2]") == 120)
 rt.execute("PAGE.scrollBar:SetValue(20) PAGE.rows[2]._scripts.OnClick(PAGE.rows[2])")
 check("choosing another filter starts back at the top", ev("PAGE.scrollBar:GetValue()") == 0)
 
+print("\nThe Politics starter filter")
+rt, ev = fresh()
+rt.execute("for _, f in ipairs(NS.Filters()) do if f.name == 'Politics' then POLITICS = f end end")
+check("it ships, switched off", ev("POLITICS ~= nil and POLITICS.enabled == false") is True)
+def hides(text):
+    rt.globals().MSG = text
+    return rt.eval("NS.MatchFilter(MSG, POLITICS) ~= nil")
+for text in ("Trump rally tonight", "vote for biden", "saw it on Fox News", "the GOP again",
+             "Roe v Wade", "t r u m p", "gaza ceasefire", "Brexit ruined it"):
+    check("hides: " + text, hides(text))
+for text in ("anyone have a trumpet?", "we advance on the left side", "victory!", "history quest",
+             "I woke up late", "back in the capital city", "party up for deadmines", "vote kick him",
+             "the auction house tax is awful", "left or right at the fork?", "our guild president said"):
+    check("lets through: " + text, not hides(text))
+
 print("\nSharing filters")
 def with_libs(rt):
     for lib in ("Libs/LibStub/LibStub.lua", "Libs/LibDeflate/LibDeflate.lua", "Libs/LibSerialize/LibSerialize.lua"):
@@ -539,7 +554,7 @@ shared = ev("SHARED")
 check("a filter exports as one line of text", isinstance(shared, str) and shared.startswith("!CI:1!")
       and "\n" not in shared, str(shared)[:40])
 rt.execute("IMPORTED = NS.ImportFilter(SHARED)")
-check("and imports back as a new filter", ev("#NS.Filters()") == 6 and ev("IMPORTED.name") == "Gold selling (2)")
+check("and imports back as a new filter", ev("#NS.Filters()") == 7 and ev("IMPORTED.name") == "Gold selling (2)")
 check("with its words and squeeze setting",
       ev("IMPORTED.lines[1]") == ev("NS.Filters()[1].lines[1]") and ev("IMPORTED.squeeze") is True)
 check("but switched off, with nothing counted", ev("IMPORTED.enabled") is False and ev("IMPORTED.blocked") == 0)

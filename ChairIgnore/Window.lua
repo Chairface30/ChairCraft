@@ -519,7 +519,7 @@ local function BuildFilters(page)
     for i = 1, LINES do
         local label = Label(edit, i == 1 and "Has any of" or "and any of")
         label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
-        local box = GrowingBox(edit, 330, 400, function() UpdateScroll() end)
+        local box = GrowingBox(edit, 330, 2000, function() UpdateScroll() end)
         box:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
         box:SetScript("OnEnterPressed", SaveFilter)
         page.lineBoxes[i] = box

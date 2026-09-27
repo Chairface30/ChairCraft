@@ -53,6 +53,14 @@ local STARTERS = {
         id = "linkjoke", name = "Crude link jokes",
         lines = { '"anal"', "{link}" },
     },
+    {
+        -- Every term in quotes, so it is only ever a word on its own:
+        -- "trump" is not "trumpet", "vance" not "advance", "tory" not
+        -- "victory". Words that are everyday or game chat too (party, vote,
+        -- war, tax, left, right, president, inflation, woke) are left out.
+        id = "politics", name = "Politics",
+        lines = { '"democrat", "democrats", "democratic party", "republican", "republicans", "gop", "dnc", "rnc", "maga", "liberal", "liberals", "libtard", "libtards", "leftist", "leftists", "left wing", "right wing", "far left", "far right", "conservatives", "neocon", "neocons", "wokeness", "wokeism", "antifa", "blm", "proud boys", "qanon", "deep state", "trump", "biden", "obama", "kamala", "hillary", "pelosi", "aoc", "bernie", "desantis", "vance", "rfk", "newsom", "mcconnell", "schumer", "putin", "zelensky", "netanyahu", "xi jinping", "boris johnson", "starmer", "farage", "trudeau", "congress", "congressman", "congresswoman", "senate", "senator", "supreme court", "scotus", "potus", "white house", "capitol", "impeach", "impeachment", "filibuster", "electoral", "ballot", "ballots", "midterms", "presidential", "abortion", "pro life", "pro choice", "roe v wade", "gun control", "second amendment", "immigration", "illegals", "border wall", "deportation", "deportations", "socialism", "socialist", "communism", "communist", "marxist", "fascism", "fascist", "nazi", "nazis", "authoritarian", "tariff", "tariffs", "brexit", "tory", "tories", "labour party", "ukraine", "russia", "gaza", "palestine", "israel", "hamas", "idf", "zionist", "zionism", "cnn", "fox news", "msnbc", "fake news"' },
+    },
 }
 
 local function Copy(filter)
@@ -530,7 +538,7 @@ function ns.ImportFilter(text)
     -- Only plain text comes in, and not too much of it.
     local lines = {}
     for i = 1, math.min(#data.lines, 6) do
-        if type(data.lines[i]) == "string" then lines[#lines + 1] = data.lines[i]:sub(1, 400) end
+        if type(data.lines[i]) == "string" then lines[#lines + 1] = data.lines[i]:sub(1, 2000) end
     end
     if #lines == 0 then return nil, "the filter has no words" end
     local name = type(data.name) == "string" and data.name:sub(1, 60) or ""
