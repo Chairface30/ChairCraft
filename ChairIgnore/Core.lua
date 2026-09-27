@@ -9,10 +9,13 @@
 -- filter (Filters.lua), which reads this list, not the game's.
 --
 -- Saved:
---   ChairIgnoreDB       account: the players, the chat filters
---   ChairIgnoreCharDB   this character: the switches, and which names this
---                       character's game list held last time it was read
---                       (how a name you unignored is told from one never added)
+--   ChairIgnoreDB       account: everything -- the players, the chat filters
+--                       and every switch. ChairIgnore is set up once and is the
+--                       same on every character.
+--   ChairIgnoreCharDB   this character: only which names its own game list
+--                       held last time it was read (how a name you unignored
+--                       is told from one never added), since each character
+--                       has a game list of its own
 
 local suiteName, Chaircraft = ...
 local ns = Chaircraft.ChairIgnore
@@ -38,6 +41,17 @@ function ns.Text(value)
     return nil
 end
 
+-- A number that is safe to compare, or nil when the client keeps it secret.
+function ns.Num(value)
+    if type(value) ~= "number" then return nil end
+    local ok, plain = pcall(function()
+        local n = tonumber(string.format("%.14g", value))
+        if not (n and (n >= 0 or n < 0)) then return nil end
+        return n
+    end)
+    return ok and plain or nil
+end
+
 local PREFIX = "|cff9d7cffChairIgnore|r:"
 function ns.Print(...)
     local parts = { PREFIX }
@@ -56,8 +70,9 @@ ns.Now = Now
 -------------------------------------------------------------------------------
 -- Settings
 -------------------------------------------------------------------------------
--- Per character, like the rest of Chaircraft, and all off out of the box. The
--- master switch covers everything: sync, chat, filters and the menu entry.
+-- Account-wide, unlike the rest of Chaircraft: one ignore list wants one set
+-- of switches. All off out of the box; the master switch covers everything:
+-- sync, picking up the game's own ignores, chat hiding and filters.
 
 ns.DEFAULTS = {
     enabled        = false,
@@ -73,16 +88,16 @@ ns.DEFAULTS = {
 }
 
 function ns.Get(key)
-    local char = _G.ChairIgnoreCharDB
-    local settings = type(char) == "table" and char.settings or nil
-    if settings and settings[key] ~= nil then return settings[key] end
+    local db = _G.ChairIgnoreDB
+    local settings = type(db) == "table" and db.settings or nil
+    if type(settings) == "table" and settings[key] ~= nil then return settings[key] end
     return ns.DEFAULTS[key]
 end
 
 function ns.Set(key, value)
-    if type(_G.ChairIgnoreCharDB) ~= "table" then return end
-    _G.ChairIgnoreCharDB.settings = _G.ChairIgnoreCharDB.settings or {}
-    _G.ChairIgnoreCharDB.settings[key] = value
+    if type(_G.ChairIgnoreDB) ~= "table" then return end
+    _G.ChairIgnoreDB.settings = type(_G.ChairIgnoreDB.settings) == "table" and _G.ChairIgnoreDB.settings or {}
+    _G.ChairIgnoreDB.settings[key] = value
     if ns.OnSettingChanged then ns.OnSettingChanged(key, value) end
 end
 
@@ -571,9 +586,18 @@ local function InitDB()
     if type(_G.ChairIgnoreDB) ~= "table" then _G.ChairIgnoreDB = {} end
     local db = _G.ChairIgnoreDB
     db.players = type(db.players) == "table" and db.players or {}
+    db.settings = type(db.settings) == "table" and db.settings or {}
     if type(_G.ChairIgnoreCharDB) ~= "table" then _G.ChairIgnoreCharDB = {} end
     local char = _G.ChairIgnoreCharDB
-    char.settings = type(char.settings) == "table" and char.settings or {}
+    -- Up to 1.5.0 the switches were kept per character. The first character
+    -- in after that brings its own to the account, so nobody finds
+    -- ChairIgnore switched back off; any other character's are then retired.
+    if type(char.settings) == "table" then
+        if next(db.settings) == nil then
+            for key, value in pairs(char.settings) do db.settings[key] = value end
+        end
+        char.settings = nil
+    end
     if ns.InitFilters then ns.InitFilters(db) end
 end
 ns.InitDB = InitDB

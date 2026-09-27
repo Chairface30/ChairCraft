@@ -162,6 +162,18 @@ local function Words(line, squeeze)
     return out
 end
 
+-- A filter's own channels ("Trade, LookingForGroup, 5") as a set of
+-- lowercase names and numbers, or nil for "everywhere the Options allow".
+local function ChannelSet(text)
+    local set, any = {}, false
+    for name in tostring(text or ""):gmatch("[^,]+") do
+        name = name:match("^%s*(.-)%s*$"):lower()
+        if name ~= "" then set[name], any = true, true end
+    end
+    return any and set or nil
+end
+ns.ChannelSet = ChannelSet
+
 -- Filters turned into word lists, redone whenever one changes.
 local compiled = {}
 function ns.CompileFilters()
@@ -174,7 +186,8 @@ function ns.CompileFilters()
                 if #words > 0 then lines[#lines + 1] = words end
             end
             if #lines > 0 then
-                compiled[#compiled + 1] = { filter = filter, lines = lines, squeeze = filter.squeeze }
+                compiled[#compiled + 1] = { filter = filter, lines = lines, squeeze = filter.squeeze,
+                                            channels = ChannelSet(filter.channels) }
             end
         end
     end
@@ -202,8 +215,9 @@ local function LineMatches(words, lower, squeezed)
 end
 
 -- The first enabled filter a message matches, or nil. `only` tries just that
--- one filter, switched on or not: the editor's test box.
-function ns.MatchFilter(message, only)
+-- one filter, switched on or not: the editor's test box. `applies`, when
+-- given, says whether a filter works where the message was said.
+function ns.MatchFilter(message, only, applies)
     local text = ns.Text(message)
     if not text then return nil end
     local lower = text:lower()
@@ -219,6 +233,7 @@ function ns.MatchFilter(message, only)
         if #lines > 0 then list[1] = { filter = only, lines = lines, squeeze = only.squeeze } end
     end
     for _, entry in ipairs(list) do
+      if not applies or applies(entry) then
         if entry.squeeze and not squeezedText then squeezedText = Squeeze(lower) end
         local all = true
         for _, words in ipairs(entry.lines) do
@@ -228,6 +243,7 @@ function ns.MatchFilter(message, only)
             end
         end
         if all then return entry.filter end
+      end
     end
     return nil
 end
@@ -339,16 +355,35 @@ end
 local lastLine, lastVerdict
 
 -- Returns true to hide.
-local function Judge(event, message, sender, lineID)
+-- A channel as the filters name it: "Trade - City" is "trade", and its
+-- number ("2") works too.
+local function ChannelNames(channelIndex, channelName)
+    local name = ns.Text(channelName)
+    name = name and (name:match("^(.-)%s+%-%s+") or name):lower() or nil
+    local number = ns.Num(channelIndex)
+    return name, number and tostring(math.floor(number)) or nil
+end
+
+local function Judge(event, message, sender, lineID, channelIndex, channelName)
     local full = ns.FullName(sender)
     if not full then return false end
     if ns.Get("hideListed") and ns.Players()[ns.Key(full)] then
         return true, "listed"
     end
-    local kind = KINDS[event]
-    if not (kind and ns.Get(kind)) then return false end
     if ns.Key(full) == ns.Key(ns.FullName(ns.Text(UnitName and UnitName("player")))) then return false end
-    local filter = ns.MatchFilter(message)
+    local kind = KINDS[event]
+    local isChannel = event == "CHAT_MSG_CHANNEL"
+    local name, number
+    if isChannel then name, number = ChannelNames(channelIndex, channelName) end
+    -- A filter that names its own channels works in those channels only,
+    -- whatever the Options tab says; the rest go where the Options allow.
+    local function Applies(entry)
+        if entry.channels then
+            return isChannel and ((name and entry.channels[name]) or (number and entry.channels[number])) and true or false
+        end
+        return kind ~= nil and ns.Get(kind) == true
+    end
+    local filter = ns.MatchFilter(message, nil, Applies)
     if filter and not IsSpared(full) then return true, filter end
     return false
 end
@@ -360,7 +395,8 @@ function ns.ChatFilter(_, event, message, sender, ...)
     local lineID = select(9, ...)
     local okSame, same = pcall(function() return lineID ~= nil and lineID == lastLine end)
     if okSame and same then return lastVerdict end
-    local ok, hide, why = pcall(Judge, event, message, sender, lineID)
+    local channelIndex, channelName = select(6, ...)
+    local ok, hide, why = pcall(Judge, event, message, sender, lineID, channelIndex, channelName)
     hide = ok and hide == true
     if hide then
         if why == "listed" then
@@ -443,7 +479,8 @@ function ns.ExportFilter(filter)
     for _, line in ipairs(filter.lines or {}) do lines[#lines + 1] = tostring(line) end
     local ok, text = pcall(function()
         local packed = serialize:Serialize({ v = 1, name = tostring(filter.name or ""),
-                                             lines = lines, squeeze = filter.squeeze and true or nil })
+                                             lines = lines, squeeze = filter.squeeze and true or nil,
+                                             channels = filter.channels })
         return SHARE_PREFIX .. deflate:EncodeForPrint(deflate:CompressDeflate(packed, { level = 9 }))
     end)
     if not ok then return nil, "could not be written" end
@@ -480,7 +517,9 @@ function ns.ImportFilter(text)
         name = base .. " (" .. n .. ")"
     end
 
+    local channels = type(data.channels) == "string" and data.channels:sub(1, 200) or nil
     local filter = { name = name, lines = lines, squeeze = data.squeeze == true or nil,
+                     channels = (channels and channels:match("%S")) and channels or nil,
                      enabled = false, blocked = 0 }
     local list = ns.Filters()
     list[#list + 1] = filter

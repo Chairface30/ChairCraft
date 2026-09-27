@@ -199,6 +199,29 @@ check("off, a listed player's chat is left alone",
       ev("(NS.Add('Spammer Test'))") is not None and ev("CHAT('CHAT_MSG_SAY', 'hi', 'Spammer Test-HomeRealm')") is False)
 check("off, nothing is put on the game's list", ev("#GAME") == 0)
 
+print("\nAccount-wide")
+rt, ev = fresh(on=False)
+rt.execute("NS.Set('enabled', true) NS.Set('keepLog', true)")
+check("switches are kept for the account", ev("ChairIgnoreDB.settings.enabled") is True)
+rt.execute("ChairIgnoreCharDB = {}")  # another character logs in
+check("so another character finds them as they were", ev("NS.Get('enabled')") is True and ev("NS.Get('keepLog')") is True)
+
+# Up to 1.5.0 they were per character: the first one in brings its own.
+rt, ev = fresh("""
+ChairIgnoreDB = { players = {} }
+ChairIgnoreCharDB = { settings = { enabled = true, spareFriends = false }, gameListRead = true }
+""", on=False)
+check("a character's old switches come with it to the account",
+      ev("NS.Get('enabled')") is True and ev("NS.Get('spareFriends')") is False)
+check("and are retired from the character", ev("ChairIgnoreCharDB.settings") is None
+      and ev("ChairIgnoreCharDB.gameListRead") is True)
+rt, ev = fresh("""
+ChairIgnoreDB = { players = {}, settings = { enabled = true } }
+ChairIgnoreCharDB = { settings = { enabled = false } }
+""", on=False)
+check("a second character's leftovers do not undo them",
+      ev("NS.Get('enabled')") is True and ev("ChairIgnoreCharDB.settings") is None)
+
 print("\nNames")
 rt, ev = fresh()
 for given, want in [("chairface chippendale", "Chairface Chippendale-HomeRealm"),
@@ -366,6 +389,53 @@ check("the test box reports a wildcard miss by its line",
                 rt.execute("F = { lines = { '<*>', 'recruit' } }"),
                 ev("NS.MissingLine(MSG, F)"))[2])() == 2)
 
+print("\nA filter's own channels")
+rt, ev = fresh()
+rt.execute("""
+function CHAT_IN(number, name, message, sender)
+    for _, fn in ipairs(CHAT_FILTERS.CHAT_MSG_CHANNEL or {}) do
+        if fn(nil, "CHAT_MSG_CHANNEL", message, sender, "", number .. ". " .. name, "", "", 0,
+              number, name, 0, math.random(1, 1e9)) then return true end
+    end
+    return false
+end
+local f = NS.Filters()[1]
+f.enabled = true f.channels = "Trade"
+NS.CompileFilters()
+""")
+spam = "cheapest gold here"
+rt.globals().SPAM = spam
+check("a filter set to Trade hides it in Trade",
+      ev("CHAT_IN(2, 'Trade - City', SPAM, 'Gold Seller-X')") is True)
+check("but not in General", ev("CHAT_IN(1, 'General - Elwynn Forest', SPAM, 'Gold Seller-X')") is False)
+check("nor in say", ev("CHAT('CHAT_MSG_SAY', SPAM, 'Gold Seller-X')") is False)
+rt.execute("NS.Filters()[1].channels = '2' NS.CompileFilters()")
+check("a channel's number works too", ev("CHAT_IN(2, 'Trade - City', SPAM, 'Gold Seller-X')") is True
+      and ev("CHAT_IN(5, 'LookingForGroup', SPAM, 'Gold Seller-X')") is False)
+rt.execute("NS.Filters()[1].channels = 'trade, lookingforgroup' NS.CompileFilters() NS.Set('filterPublic', false)")
+check("naming a channel overrides the Options tab", ev("CHAT_IN(5, 'LookingForGroup', SPAM, 'Gold Seller-X')") is True)
+rt.execute("NS.Filters()[1].channels = nil NS.CompileFilters()")
+check("left blank, it follows the Options tab again",
+      ev("CHAT_IN(2, 'Trade - City', SPAM, 'Gold Seller-X')") is False)
+rt.execute("NS.Set('filterPublic', true)")
+check("and works in every channel once the Options allow",
+      ev("CHAT_IN(1, 'General - Elwynn Forest', SPAM, 'Gold Seller-X')") is True)
+
+rt.execute("""
+GetChannelList = function() return 1, "General", false, 2, "Trade", false end
+NS.ShowWindow() ChairIgnoreWindow.tabs.filters._scripts.OnClick()
+local page = ChairIgnoreWindow.pages.filters
+page.rows[1]._scripts.OnClick(page.rows[1])
+page.channels:SetText("  Trade  ")
+page.save._scripts.OnClick()
+""")
+check("the editor saves a filter's channels", ev("NS.Filters()[1].channels") == "Trade")
+check("shows which channels you are in", "2 Trade" in str(ev("ChairIgnoreWindow.pages.filters.joined:GetText()")))
+check("and the list names them after the filter",
+      "(Trade)" in str(ev("ChairIgnoreWindow.pages.filters.rows[1].cols[2]:GetText()")))
+rt.execute("ChairIgnoreWindow.pages.filters.channels:SetText('') ChairIgnoreWindow.pages.filters.save._scripts.OnClick()")
+check("clearing the box goes back to everywhere", ev("NS.Filters()[1].channels") is None)
+
 print("\nSharing filters")
 def with_libs(rt):
     for lib in ("Libs/LibStub/LibStub.lua", "Libs/LibDeflate/LibDeflate.lua", "Libs/LibSerialize/LibSerialize.lua"):
@@ -394,6 +464,8 @@ check("text that is not a filter is refused, not an error",
 check("a damaged filter is refused",
       ev("select(2, NS.ImportFilter('!CI:1!notreallyafilter'))") == "the text is damaged")
 check("nothing is exported without a filter picked", ev("select(2, NS.ExportFilter(nil))") == "pick a filter first")
+rt.execute("NS.Filters()[2].channels = 'Trade' TRADE_ONLY = NS.ImportFilter(NS.ExportFilter(NS.Filters()[2]))")
+check("a shared filter keeps its channels", ev("TRADE_ONLY.channels") == "Trade")
 
 print("\nSmarter filter words")
 rt, ev = fresh()

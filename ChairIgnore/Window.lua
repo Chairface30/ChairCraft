@@ -11,7 +11,7 @@ local ns = Chaircraft.ChairIgnore
 
 -- Wide enough for the Players tab's top row (boxes, Add and New) with the
 -- same 16px margin on the right as on the left.
-local WIDTH, HEIGHT = 660, 450
+local WIDTH, HEIGHT = 660, 500
 local ROW_H = 20
 local PLAYER_ROWS = 12
 local FILTER_ROWS = 12
@@ -286,6 +286,24 @@ end
 -- Filters
 -------------------------------------------------------------------------------
 
+-- "You're in: 1 General, 2 Trade, 5 LookingForGroup", for the channels box.
+function ns.JoinedChannelsText()
+    local get = _G.GetChannelList
+    local names = {}
+    if type(get) == "function" then
+        local results = { pcall(get) }
+        if results[1] then
+            -- Triples: number, name, disabled.
+            for i = 2, #results, 3 do
+                local number, name = ns.Num(results[i]), ns.Text(results[i + 1])
+                if number and name then names[#names + 1] = math.floor(number) .. " " .. name end
+            end
+        end
+    end
+    if #names == 0 then return "Channel names or numbers, separated by commas." end
+    return "You're in: " .. table.concat(names, ", ")
+end
+
 local filters = { offset = 0 }
 local LINES = 3
 
@@ -303,6 +321,8 @@ local function SelectFilter(filter)
         page.lineBoxes[i]:SetText(filter and filter.lines and filter.lines[i] or "")
     end
     page.squeeze:SetChecked(filter and filter.squeeze and true or false)
+    page.channels:SetText(filter and filter.channels or "")
+    page.joined:SetText(ns.JoinedChannelsText())
     page.result:SetText("")
     ns.RefreshWindow()
 end
@@ -319,6 +339,9 @@ local function SaveFilter()
         if text:match("%S") then filter.lines[#filter.lines + 1] = text end
     end
     filter.squeeze = page.squeeze:GetChecked() and true or nil
+    local channels = page.channels:GetText():match("^%s*(.-)%s*$")
+    filter.channels = (channels ~= "") and channels or nil
+    page.channels:ClearFocus()
     ns.CompileFilters()
     for _, box in ipairs(page.lineBoxes) do box:ClearFocus() end
     page.nameBox:ClearFocus()
@@ -402,7 +425,7 @@ local function BuildFilters(page)
 
     -- The editor, to the right of the list.
     local edit = CreateFrame("Frame", nil, page)
-    edit:SetSize(340, 330)
+    edit:SetSize(340, 390)
     edit:SetPoint("TOPLEFT", head, "TOPRIGHT", 20, 0)
     page.editor = edit
 
@@ -434,8 +457,19 @@ local function BuildFilters(page)
     page.squeeze = Check(edit, "Ignore spaces and symbols (\"g.o l d\" counts as \"gold\")")
     page.squeeze:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -4, -8)
 
+    -- Where it works: blank for everywhere the Options tab allows, or the
+    -- channels it is for (names or numbers), which override the Options tab.
+    local channelsLabel = Label(edit, "Only in these channels (blank: everywhere)")
+    channelsLabel:SetPoint("TOPLEFT", page.squeeze, "BOTTOMLEFT", 4, -8)
+    page.channels = Box(edit, 330, 200)
+    page.channels:SetPoint("TOPLEFT", channelsLabel, "BOTTOMLEFT", 0, -4)
+    page.channels:SetScript("OnEnterPressed", SaveFilter)
+    page.joined = Label(edit, "", "GameFontDisableSmall")
+    page.joined:SetPoint("TOPLEFT", page.channels, "BOTTOMLEFT", 0, -3)
+    page.joined:SetWidth(330)
+
     page.save = Button(edit, 70, "Save", SaveFilter)
-    page.save:SetPoint("TOPLEFT", page.squeeze, "BOTTOMLEFT", 4, -8)
+    page.save:SetPoint("TOPLEFT", page.joined, "BOTTOMLEFT", 0, -8)
 
     local tryLabel = Label(edit, "Try a message")
     tryLabel:SetPoint("TOPLEFT", page.save, "BOTTOMLEFT", 0, -12)
@@ -472,7 +506,8 @@ local function RefreshFilters(page)
         if filter then
             row.toggle:SetChecked(filter.enabled and true or false)
             row.cols[1]:SetText("")
-            row.cols[2]:SetText(filter.name or "")
+            row.cols[2]:SetText((filter.name or "")
+                .. (filter.channels and ("|cff808080 (" .. filter.channels .. ")|r") or ""))
             row.cols[3]:SetText(tostring(filter.blocked or 0))
             row.selected:SetShown(filter == filters.selected)
             row:Show()
@@ -599,7 +634,7 @@ local OPTIONS = {
     { key = "hideListed", text = "Hide chat from everyone on the list, past the 50 too" },
     -- No switch for the filters as a whole: each one on the Chat filters
     -- tab has its own, and ships off. These say where they apply.
-    { header = "Chat filters you switch on apply:" },
+    { header = "Chat filters apply here, unless one names its own channels:" },
     { key = "filterPublic", text = "in trade, general and other channels", sub = true },
     { key = "filterSayYell", text = "in say, yell and emotes", sub = true },
     { key = "filterWhisper", text = "in whispers", sub = true },

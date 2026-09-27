@@ -13,8 +13,10 @@
   - `/chair cooldowns` lists them; `/chair cooldowns probe` prints the next casts' spell IDs and what the game says about their cooldowns.
 
 - **ChairIgnore filters take a `*` wildcard:** anything, of any length. `<*>` is any guild tag, and `g*ld` catches "g.0.ld". A word that is nothing but `*` is ignored.
+- **A ChairIgnore filter can be kept to channels you name** ("Trade, LookingForGroup", or their numbers). Left blank, it works everywhere the Options tab allows; naming channels overrides the Options tab for that filter. The editor lists the channels you are in, the list shows a filter's channels after its name, and shared filters keep them.
 
 **Changed**
+- **ChairIgnore is account-wide:** its switches are set once and are the same on every character, like its list and filters. The first character to log in brings its switches along.
 - **What's new** has a **Don't show after updates** box (also on the General page).
 - **Quick setup and What's new** take the menu's place while they are up, and hand it back on the same page when they close.
 
