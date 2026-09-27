@@ -15,7 +15,7 @@ WOWFTracker_Defaults = {
     frameAlpha  = 1.0,
     locked      = false,
     showHeader  = true,
-    windowVisible = true,
+    windowVisible = false,   -- a new install starts with the window off
 
     -- Sorting: "name_asc", "name_desc", "standing_asc", "standing_desc", "progress", "category", "custom"
     sortMode    = "name_asc",
