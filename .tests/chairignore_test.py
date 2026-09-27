@@ -539,6 +539,26 @@ for text in ("anyone have a trumpet?", "we advance on the left side", "victory!"
              "the auction house tax is awful", "left or right at the fork?", "our guild president said"):
     check("lets through: " + text, not hides(text))
 
+print("\nCase never matters")
+rt, ev = fresh()
+def matches(lines, text):
+    rt.globals().MSG = text
+    rt.execute("F = { lines = {} }")
+    for i, l in enumerate(lines, 1):
+        rt.globals().LINE = l
+        rt.execute("F.lines[%d] = LINE" % i)
+    return rt.eval("NS.MatchFilter(MSG, F) ~= nil")
+check("a word typed in capitals matches it in lowercase", matches(["CHEAP GOLD"], "selling cheap gold"))
+check("and a lowercase word matches it in capitals", matches(["cheap gold"], "SELLING CHEAP GOLD"))
+check("in mixed case either side", matches(["ChEaP"], "cHeAp"))
+check("a quoted word, any case", matches(['"TRUMP"'], "trump rally") and matches(['"trump"'], "TRUMP RALLY"))
+check("a wildcard, any case", matches(["<*> RECRUITING"], "<Pals> recruiting"))
+check("{LINK} in capitals still means any link", matches(["{LINK}"], "look |cff|Hitem:1|h[Sword]|h|r"))
+check("accented capitals too", matches(["élection"], "ÉLECTION demain") and matches(["ÜBER"], "über alles"))
+check("and Cyrillic", matches(["золото"], "ДЕШЁВОЕ ЗОЛОТО") and matches(["ДЕШЁВОЕ"], "дешёвое золото"))
+check("the players list ignores case", ev("(NS.Add('Sewer Urchin')) ~= nil") is True
+      and ev("NS.IsListed('SEWER URCHIN')") is True and ev("NS.IsListed('sewer urchin-homerealm')") is True)
+
 print("\nSharing filters")
 def with_libs(rt):
     for lib in ("Libs/LibStub/LibStub.lua", "Libs/LibDeflate/LibDeflate.lua", "Libs/LibSerialize/LibSerialize.lua"):

@@ -153,7 +153,7 @@ end
 local function Words(line, squeeze)
     local out = {}
     for word in tostring(line or ""):gmatch("[^,]+") do
-        word = word:match("^%s*(.-)%s*$"):lower()
+        word = ns.Lower(word:match("^%s*(.-)%s*$"))
         local quoted = word:match('^"(.+)"$')
         if word == "{link}" then
             out[#out + 1] = { link = true }
@@ -176,7 +176,7 @@ end
 local function ChannelSet(text)
     local set, any = {}, false
     for name in tostring(text or ""):gmatch("[^,]+") do
-        name = name:match("^%s*(.-)%s*$"):lower()
+        name = ns.Lower(name:match("^%s*(.-)%s*$"))
         if name ~= "" then
             any = true
             if not name:match("^%d+$") then set[name] = true end
@@ -252,7 +252,7 @@ end
 function ns.MatchFilter(message, only, applies)
     local text = ns.Text(message)
     if not text then return nil end
-    local lower = text:lower()
+    local lower = ns.Lower(text)
     local squeezedText
     local list = compiled
     if only then
@@ -285,7 +285,7 @@ end
 function ns.MissingLine(message, filter)
     local text = ns.Text(message)
     if not text then return 1 end
-    local lower = text:lower()
+    local lower = ns.Lower(text)
     local squeezed = filter.squeeze and Squeeze(lower) or nil
     local number = 0
     for _, line in ipairs(filter.lines or {}) do
@@ -390,7 +390,7 @@ local lastLine, lastVerdict
 -- A channel as the filters name it: "Trade - City" is "trade".
 local function ChannelName(channelName)
     local name = ns.Text(channelName)
-    return name and (name:match("^(.-)%s+%-%s+") or name):lower() or nil
+    return name and ns.Lower(name:match("^(.-)%s+%-%s+") or name) or nil
 end
 
 local function Judge(event, message, sender, lineID, channelIndex, channelName)

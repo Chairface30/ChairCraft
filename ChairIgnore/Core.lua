@@ -52,6 +52,30 @@ function ns.Num(value)
     return ok and plain or nil
 end
 
+-- Lowercase for comparing, beyond A-Z: string.lower only knows plain
+-- letters, so "ÉLECTION" would never meet "élection". This also folds the
+-- accented Latin capitals (À-Þ) and Cyrillic (А-Я, Ё), both two bytes in
+-- UTF-8.
+function ns.Lower(text)
+    -- A-Z by hand: string.lower follows the process locale, and under a
+    -- single-byte code page it "lowercases" the first byte of a UTF-8
+    -- letter too, which breaks it.
+    text = tostring(text or ""):gsub("[A-Z]", function(c) return string.char(c:byte() + 32) end)
+    -- À-Þ (C3 80-9E, not × at C3 97) -> à-þ (C3 A0-BE)
+    text = text:gsub("\195([\128-\158])", function(b)
+        if b == "\151" then return "\195" .. b end
+        return "\195" .. string.char(b:byte() + 32)
+    end)
+    -- А-П (D0 90-9F) -> а-п (D0 B0-BF); Р-Я (D0 A0-AF) -> р-я (D1 80-8F); Ё -> ё
+    text = text:gsub("\208([\144-\175])", function(b)
+        local n = b:byte()
+        if n <= 159 then return "\208" .. string.char(n + 32) end
+        return "\209" .. string.char(n - 32)
+    end)
+    text = text:gsub("\208\129", "\209\145")
+    return text
+end
+
 local PREFIX = "|cff9d7cffChairIgnore|r:"
 function ns.Print(...)
     local parts = { PREFIX }
@@ -160,7 +184,7 @@ end
 
 -- The lookup key: case-blind.
 local function Key(full)
-    return full and full:lower() or nil
+    return full and ns.Lower(full) or nil
 end
 ns.Key = Key
 

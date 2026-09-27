@@ -15,6 +15,7 @@
 - **ChairIgnore filters take a `*` wildcard:** anything, of any length. `<*>` is any guild tag, and `g*ld` catches "g.0.ld". A word that is nothing but `*` is ignored.
 - **A ChairIgnore filter can be kept to channels you tick:** the editor lists Say, Yell, and a checkbox for every channel you are in, read from the game as you join and leave them. None ticked, it works everywhere the Options tab allows; ticked channels override the Options tab for that filter. Channels are kept by name, never number, since numbers change with the order they were joined; one a filter has that this character is not in stays listed, ticked. The filter list shows a filter's channels after its name, and shared filters keep them.
 - **A Politics starter filter** (off): 109 party, politician, election, issue and news-outlet terms, each as a whole word, so "trumpet", "advance" and "victory" are left alone, and words that are everyday game chat too (party, vote, war, tax, left, right, woke) are left out. A filter line now holds up to 2,000 characters.
+- **Filters ignore case in every language:** accented letters (É, Ü) and Cyrillic now match whatever their case, as plain letters always did.
 - **Long filter lines wrap:** a line of words grows its box as it gets longer, and the filter editor scrolls to fit.
 
 **Changed**

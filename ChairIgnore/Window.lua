@@ -550,7 +550,7 @@ local function BuildFilters(page)
         local set = {}
         for name in tostring(filter and filter.channels or ""):gmatch("[^,]+") do
             name = name:match("^%s*(.-)%s*$")
-            if name ~= "" and not name:match("^%d+$") then set[name:lower()] = name end
+            if name ~= "" and not name:match("^%d+$") then set[ns.Lower(name)] = name end
         end
         return set
     end
@@ -558,7 +558,7 @@ local function BuildFilters(page)
     local function SetTicked(filter, set)
         local names = {}
         for _, name in pairs(set) do names[#names + 1] = name end
-        table.sort(names, function(a, b) return a:lower() < b:lower() end)
+        table.sort(names, function(a, b) return ns.Lower(a) < ns.Lower(b) end)
         filter.channels = (#names > 0) and table.concat(names, ", ") or nil
         ns.CompileFilters()
         ns.RefreshWindow()
@@ -572,7 +572,7 @@ local function BuildFilters(page)
         shown[1] = { name = "Say", label = "Say" }
         shown[2] = { name = "Yell", label = "Yell" }
         for _, channel in ipairs(ns.JoinedChannels()) do
-            local key = channel.name:lower()
+            local key = ns.Lower(channel.name)
             if not seen[key] then
                 seen[key] = true
                 shown[#shown + 1] = { name = channel.name, label = channel.name .. " |cff808080(" .. channel.number .. ")|r" }
@@ -591,7 +591,7 @@ local function BuildFilters(page)
                     local f = filters.selected
                     if not (f and row.channel) then return end
                     local set = Ticked(f)
-                    if checked then set[row.channel:lower()] = row.channel else set[row.channel:lower()] = nil end
+                    if checked then set[ns.Lower(row.channel)] = row.channel else set[ns.Lower(row.channel)] = nil end
                     SetTicked(f, set)
                 end)
                 -- Two columns, so Say, Yell and the usual channels fit
@@ -601,7 +601,7 @@ local function BuildFilters(page)
             end
             row.channel = entry.name
             row.label:SetText(entry.label)
-            row:SetChecked(ticked[entry.name:lower()] ~= nil)
+            row:SetChecked(ticked[ns.Lower(entry.name)] ~= nil)
             row:Show()
             row.label:Show()
         end
