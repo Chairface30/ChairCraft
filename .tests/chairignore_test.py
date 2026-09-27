@@ -55,6 +55,14 @@ local function Mock()
             elseif k == "IsShown" then return obj._shown == true
             elseif k == "HasFocus" then return false
             elseif k == "SetEnabled" then obj._enabled = a and true or false
+            elseif k == "SetMinMaxValues" then obj._min, obj._max = a, select(2, ...)
+            elseif k == "GetMinMaxValues" then return obj._min or 0, obj._max or 0
+            elseif k == "SetValue" then
+                -- As a slider does: kept inside its range, then OnValueChanged.
+                local v = math.max(obj._min or 0, math.min(obj._max or a, a))
+                obj._value = v
+                if obj._scripts.OnValueChanged then obj._scripts.OnValueChanged(obj, v) end
+            elseif k == "GetValue" then return obj._value or 0
             elseif k:match("^Create") then return Mock()
             end
         end
@@ -410,8 +418,8 @@ check("a filter set to Trade hides it in Trade",
 check("but not in General", ev("CHAT_IN(1, 'General - Elwynn Forest', SPAM, 'Gold Seller-X')") is False)
 check("nor in say", ev("CHAT('CHAT_MSG_SAY', SPAM, 'Gold Seller-X')") is False)
 rt.execute("NS.Filters()[1].channels = '2' NS.CompileFilters()")
-check("a channel's number works too", ev("CHAT_IN(2, 'Trade - City', SPAM, 'Gold Seller-X')") is True
-      and ev("CHAT_IN(5, 'LookingForGroup', SPAM, 'Gold Seller-X')") is False)
+check("a bare number is never matched: numbers differ by character",
+      ev("CHAT_IN(2, 'Trade - City', SPAM, 'Gold Seller-X')") is False)
 rt.execute("NS.Filters()[1].channels = 'trade, lookingforgroup' NS.CompileFilters() NS.Set('filterPublic', false)")
 check("naming a channel overrides the Options tab", ev("CHAT_IN(5, 'LookingForGroup', SPAM, 'Gold Seller-X')") is True)
 rt.execute("NS.Filters()[1].channels = nil NS.CompileFilters()")
@@ -422,19 +430,82 @@ check("and works in every channel once the Options allow",
       ev("CHAT_IN(1, 'General - Elwynn Forest', SPAM, 'Gold Seller-X')") is True)
 
 rt.execute("""
+NS.Filters()[1].channels = nil NS.CompileFilters()
 GetChannelList = function() return 1, "General", false, 2, "Trade", false end
 NS.ShowWindow() ChairIgnoreWindow.tabs.filters._scripts.OnClick()
-local page = ChairIgnoreWindow.pages.filters
-page.rows[1]._scripts.OnClick(page.rows[1])
-page.channels:SetText("  Trade  ")
-page.save._scripts.OnClick()
+PAGE = ChairIgnoreWindow.pages.filters
+PAGE.rows[1]._scripts.OnClick(PAGE.rows[1])
+function TICK(i, on)
+    local row = PAGE.channelRows[i]
+    row:SetChecked(on)
+    row._scripts.OnClick(row)
+end
 """)
-check("the editor saves a filter's channels", ev("NS.Filters()[1].channels") == "Trade")
-check("shows which channels you are in", "2 Trade" in str(ev("ChairIgnoreWindow.pages.filters.joined:GetText()")))
-check("and the list names them after the filter",
-      "(Trade)" in str(ev("ChairIgnoreWindow.pages.filters.rows[1].cols[2]:GetText()")))
-rt.execute("ChairIgnoreWindow.pages.filters.channels:SetText('') ChairIgnoreWindow.pages.filters.save._scripts.OnClick()")
-check("clearing the box goes back to everywhere", ev("NS.Filters()[1].channels") is None)
+check("a checkbox for each channel you are in, with its number",
+      ev("PAGE.channelRows[1].channel") == "General" and ev("PAGE.channelRows[2].channel") == "Trade"
+      and "(2)" in str(ev("PAGE.channelRows[2].label:GetText()")))
+check("none ticked: everywhere", ev("PAGE.channelRows[1]:GetChecked()") is False and ev("NS.Filters()[1].channels") is None)
+rt.execute("TICK(2, true)")
+check("ticking one applies at once, by name", ev("NS.Filters()[1].channels") == "Trade")
+check("and the list names it after the filter",
+      "(Trade)" in str(ev("PAGE.rows[1].cols[2]:GetText()")))
+check("and the filter now works there only", ev("CHAT_IN(2, 'Trade - City', SPAM, 'Gold Seller-X')") is True
+      and ev("CHAT_IN(1, 'General - Elwynn Forest', SPAM, 'Gold Seller-X')") is False)
+rt.execute("TICK(1, true)")
+check("a second tick adds it", ev("NS.Filters()[1].channels") == "General, Trade")
+rt.execute("""
+-- Another character, in other channels, with Trade now as channel 4.
+GetChannelList = function() return 1, "General", false, 4, "Trade", false end
+NS.Filters()[1].channels = "General, Trade, GuildRecruitment"
+PAGE.FillChannels()
+""")
+check("it follows the name when the number changes",
+      ev("PAGE.channelRows[2].channel") == "Trade" and ev("PAGE.channelRows[2]:GetChecked()") is True
+      and "(4)" in str(ev("PAGE.channelRows[2].label:GetText()")))
+check("a channel this character is not in stays listed, ticked",
+      ev("PAGE.channelRows[3].channel") == "GuildRecruitment" and ev("PAGE.channelRows[3]:GetChecked()") is True
+      and "not joined here" in str(ev("PAGE.channelRows[3].label:GetText()")))
+rt.execute("TICK(3, false) TICK(1, false) TICK(2, false)")
+check("unticking them all goes back to everywhere", ev("NS.Filters()[1].channels") is None)
+rt.execute("""
+GetChannelList = function() return 1, "General", false, 2, "Trade", false, 5, "LookingForGroup", false end
+for _, f in ipairs(FRAMES) do
+    if f._scripts.OnEvent then f._scripts.OnEvent(f, "CHANNEL_UI_UPDATE") end
+end
+""")
+check("joining a channel adds its checkbox", ev("PAGE.channelRows[3].channel") == "LookingForGroup"
+      and ev("PAGE.channelRows[3]:IsShown()") is True)
+rt.execute("GetChannelList = function() return end PAGE.FillChannels()")
+check("in no channels, it says so", ev("PAGE.noChannels:IsShown()") is True
+      and ev("PAGE.channelRows[1]:IsShown()") is False)
+
+print("\nLong filters wrap and scroll")
+rt, ev = fresh()
+rt.execute("""
+NS.ShowWindow() ChairIgnoreWindow.tabs.filters._scripts.OnClick()
+PAGE = ChairIgnoreWindow.pages.filters
+PAGE.rows[1]._scripts.OnClick(PAGE.rows[1])
+BOX = PAGE.lineBoxes[2]
+-- The client measures wrapped text; here a long line measures four lines tall.
+rawset(BOX.measure, "GetStringHeight", function(self)
+    return #(rawget(self, "_text") or "") > 60 and 56 or 14
+end)
+""")
+check("the lines of words wrap", ev("PAGE.lineBoxes[1].measure ~= nil") is True)
+check("a short line stays one line, with no scrollbar",
+      ev("BOX.grownTo") == 22 and ev("PAGE.scrollBar:IsShown()") is False)
+rt.execute("BOX:SetText(string.rep('cheapest, ', 12)) BOX._scripts.OnTextChanged(BOX)")
+check("a long one grows its box a line at a time", ev("BOX.grownTo") == 64, ev("BOX.grownTo"))
+check("and the editor scrolls to fit it", ev("PAGE.scrollMax") > 0 and ev("PAGE.scrollBar:IsShown()") is True)
+rt.execute("BOX:SetText('cheap') BOX._scripts.OnTextChanged(BOX)")
+check("shortened again, it shrinks and the scrollbar goes",
+      ev("BOX.grownTo") == 22 and ev("PAGE.scrollBar:IsShown()") is False)
+rt.execute("BOX:SetText('gold,\\nsilver') BOX._scripts.OnTextChanged(BOX)")
+check("a line break typed in it becomes a space", ev("BOX:GetText()") == "gold, silver")
+rt.execute("BOX:SetText(string.rep('cheapest, ', 12)) BOX._scripts.OnTextChanged(BOX) PAGE.save._scripts.OnClick()")
+check("and a long line is saved whole", ev("#NS.Filters()[1].lines[2]") == 120)
+rt.execute("PAGE.scrollBar:SetValue(20) PAGE.rows[2]._scripts.OnClick(PAGE.rows[2])")
+check("choosing another filter starts back at the top", ev("PAGE.scrollBar:GetValue()") == 0)
 
 print("\nSharing filters")
 def with_libs(rt):
@@ -466,6 +537,8 @@ check("a damaged filter is refused",
 check("nothing is exported without a filter picked", ev("select(2, NS.ExportFilter(nil))") == "pick a filter first")
 rt.execute("NS.Filters()[2].channels = 'Trade' TRADE_ONLY = NS.ImportFilter(NS.ExportFilter(NS.Filters()[2]))")
 check("a shared filter keeps its channels", ev("TRADE_ONLY.channels") == "Trade")
+rt.execute("NS.Filters()[2].channels = 'Trade, 5' MIXED = NS.ImportFilter(NS.ExportFilter(NS.Filters()[2]))")
+check("but not channel numbers, which were the sender's", ev("MIXED.channels") == "Trade")
 
 print("\nSmarter filter words")
 rt, ev = fresh()

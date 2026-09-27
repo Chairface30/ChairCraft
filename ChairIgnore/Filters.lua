@@ -162,17 +162,41 @@ local function Words(line, squeeze)
     return out
 end
 
--- A filter's own channels ("Trade, LookingForGroup, 5") as a set of
--- lowercase names and numbers, or nil for "everywhere the Options allow".
+-- A filter's own channels ("Trade, LookingForGroup") as a set of lowercase
+-- names, or nil for "everywhere the Options allow". Only names: a channel's
+-- number depends on the order it was joined, and differs between characters.
 local function ChannelSet(text)
     local set, any = {}, false
     for name in tostring(text or ""):gmatch("[^,]+") do
         name = name:match("^%s*(.-)%s*$"):lower()
-        if name ~= "" then set[name], any = true, true end
+        if name ~= "" then
+            any = true
+            if not name:match("^%d+$") then set[name] = true end
+        end
     end
+    -- Only a blank box means everywhere. A list left with nothing usable in
+    -- it (numbers only) works nowhere, rather than everywhere by accident.
     return any and set or nil
 end
 ns.ChannelSet = ChannelSet
+
+-- The channels this character is in: { { number = 2, name = "Trade" } ... }.
+-- "Trade - City" is "Trade", as the filters name it.
+function ns.JoinedChannels()
+    local out = {}
+    local get = _G.GetChannelList
+    if type(get) ~= "function" then return out end
+    local results = { pcall(get) }
+    if not results[1] then return out end
+    -- Triples: number, name, disabled.
+    for i = 2, #results, 3 do
+        local number, name = ns.Num(results[i]), ns.Text(results[i + 1])
+        if number and name then
+            out[#out + 1] = { number = math.floor(number), name = name:match("^(.-)%s+%-%s+") or name }
+        end
+    end
+    return out
+end
 
 -- Filters turned into word lists, redone whenever one changes.
 local compiled = {}
@@ -355,13 +379,10 @@ end
 local lastLine, lastVerdict
 
 -- Returns true to hide.
--- A channel as the filters name it: "Trade - City" is "trade", and its
--- number ("2") works too.
-local function ChannelNames(channelIndex, channelName)
+-- A channel as the filters name it: "Trade - City" is "trade".
+local function ChannelName(channelName)
     local name = ns.Text(channelName)
-    name = name and (name:match("^(.-)%s+%-%s+") or name):lower() or nil
-    local number = ns.Num(channelIndex)
-    return name, number and tostring(math.floor(number)) or nil
+    return name and (name:match("^(.-)%s+%-%s+") or name):lower() or nil
 end
 
 local function Judge(event, message, sender, lineID, channelIndex, channelName)
@@ -373,13 +394,12 @@ local function Judge(event, message, sender, lineID, channelIndex, channelName)
     if ns.Key(full) == ns.Key(ns.FullName(ns.Text(UnitName and UnitName("player")))) then return false end
     local kind = KINDS[event]
     local isChannel = event == "CHAT_MSG_CHANNEL"
-    local name, number
-    if isChannel then name, number = ChannelNames(channelIndex, channelName) end
+    local name = isChannel and ChannelName(channelName) or nil
     -- A filter that names its own channels works in those channels only,
     -- whatever the Options tab says; the rest go where the Options allow.
     local function Applies(entry)
         if entry.channels then
-            return isChannel and ((name and entry.channels[name]) or (number and entry.channels[number])) and true or false
+            return (isChannel and name and entry.channels[name]) and true or false
         end
         return kind ~= nil and ns.Get(kind) == true
     end
@@ -517,7 +537,15 @@ function ns.ImportFilter(text)
         name = base .. " (" .. n .. ")"
     end
 
-    local channels = type(data.channels) == "string" and data.channels:sub(1, 200) or nil
+    local channels
+    if type(data.channels) == "string" then
+        local names = {}
+        for entry in data.channels:sub(1, 200):gmatch("[^,]+") do
+            entry = entry:match("^%s*(.-)%s*$")
+            if entry ~= "" and not entry:match("^%d+$") then names[#names + 1] = entry end
+        end
+        channels = table.concat(names, ", ")
+    end
     local filter = { name = name, lines = lines, squeeze = data.squeeze == true or nil,
                      channels = (channels and channels:match("%S")) and channels or nil,
                      enabled = false, blocked = 0 }

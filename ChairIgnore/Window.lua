@@ -83,6 +83,45 @@ local function Box(parent, width, maxLetters)
     return box
 end
 
+-- A box that wraps its text and grows a line at a time as it gets longer,
+-- for the filter's lines of words. It is still one line of words: Enter
+-- saves (the caller's OnEnterPressed), and a line break is turned back into
+-- a space. `onGrow` runs whenever its height changes.
+local function GrowingBox(parent, width, maxLetters, onGrow)
+    local box = Box(parent, width, maxLetters)
+    box:SetMultiLine(true)
+    box:SetTextInsets(6, 6, 4, 4)
+    -- Measured on a copy of the text, the same width and font. Kept shown
+    -- (see-through): a hidden font string may not report its height.
+    local measure = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    measure:SetWidth(width - 12)
+    measure:SetWordWrap(true)
+    measure:SetAlpha(0)
+    measure:SetPoint("TOPLEFT", box, "TOPLEFT", 6, -4)
+    box.measure = measure
+    box.grownTo = 22
+    function box:Grow()
+        measure:SetText((self:GetText() or ""):gsub("[\r\n]", " ") .. " ")
+        local measured = measure:GetStringHeight()
+        local h = tonumber(measured) or 0
+        local height = math.max(22, math.ceil(h) + 8)
+        if height ~= self.grownTo then
+            self.grownTo = height
+            self:SetHeight(height)
+            if onGrow then onGrow() end
+        end
+    end
+    box:SetScript("OnTextChanged", function(self)
+        local text = self:GetText() or ""
+        if text:find("[\r\n]") then
+            self:SetText((text:gsub("[\r\n]+", " ")))
+            return
+        end
+        self:Grow()
+    end)
+    return box
+end
+
 local function Label(parent, text, font)
     local fs = parent:CreateFontString(nil, "ARTWORK", font or "GameFontNormalSmall")
     fs:SetText(text or "")
@@ -286,23 +325,7 @@ end
 -- Filters
 -------------------------------------------------------------------------------
 
--- "You're in: 1 General, 2 Trade, 5 LookingForGroup", for the channels box.
-function ns.JoinedChannelsText()
-    local get = _G.GetChannelList
-    local names = {}
-    if type(get) == "function" then
-        local results = { pcall(get) }
-        if results[1] then
-            -- Triples: number, name, disabled.
-            for i = 2, #results, 3 do
-                local number, name = ns.Num(results[i]), ns.Text(results[i + 1])
-                if number and name then names[#names + 1] = math.floor(number) .. " " .. name end
-            end
-        end
-    end
-    if #names == 0 then return "Channel names or numbers, separated by commas." end
-    return "You're in: " .. table.concat(names, ", ")
-end
+
 
 local filters = { offset = 0 }
 local LINES = 3
@@ -321,8 +344,10 @@ local function SelectFilter(filter)
         page.lineBoxes[i]:SetText(filter and filter.lines and filter.lines[i] or "")
     end
     page.squeeze:SetChecked(filter and filter.squeeze and true or false)
-    page.channels:SetText(filter and filter.channels or "")
-    page.joined:SetText(ns.JoinedChannelsText())
+    for _, box in ipairs(page.lineBoxes) do box:Grow() end
+    page.FillChannels()
+    page.scrollBar:SetValue(0)
+    page.UpdateScroll()
     page.result:SetText("")
     ns.RefreshWindow()
 end
@@ -335,13 +360,10 @@ local function SaveFilter()
     filter.name = (name ~= "" and name) or "Unnamed filter"
     filter.lines = {}
     for i = 1, LINES do
-        local text = page.lineBoxes[i]:GetText()
+        local text = page.lineBoxes[i]:GetText():gsub("[\r\n]+", " ")
         if text:match("%S") then filter.lines[#filter.lines + 1] = text end
     end
     filter.squeeze = page.squeeze:GetChecked() and true or nil
-    local channels = page.channels:GetText():match("^%s*(.-)%s*$")
-    filter.channels = (channels ~= "") and channels or nil
-    page.channels:ClearFocus()
     ns.CompileFilters()
     for _, box in ipairs(page.lineBoxes) do box:ClearFocus() end
     page.nameBox:ClearFocus()
@@ -423,11 +445,61 @@ local function BuildFilters(page)
     end)
     page.import:SetPoint("LEFT", page.export, "RIGHT", 6, 0)
 
-    -- The editor, to the right of the list.
-    local edit = CreateFrame("Frame", nil, page)
-    edit:SetSize(340, 390)
-    edit:SetPoint("TOPLEFT", head, "TOPRIGHT", 20, 0)
-    page.editor = edit
+    -- The editor, to the right of the list. It scrolls: the boxes for the
+    -- lines of words grow as a filter gets long, and push the rest down.
+    local EDITOR_H = 390
+    local scroll = CreateFrame("ScrollFrame", nil, page)
+    scroll:SetPoint("TOPLEFT", head, "TOPRIGHT", 20, 0)
+    scroll:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -14, 0)
+    local edit = CreateFrame("Frame", nil, scroll)
+    edit:SetSize(340, EDITOR_H)
+    scroll:SetScrollChild(edit)
+    page.editor = scroll
+    page.editorContent = edit
+
+    local bar = CreateFrame("Slider", nil, page)
+    bar:SetOrientation("VERTICAL")
+    bar:SetWidth(8)
+    bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 4, 0)
+    bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 4, 0)
+    local track = bar:CreateTexture(nil, "BACKGROUND")
+    track:SetAllPoints()
+    track:SetColorTexture(1, 1, 1, 0.06)
+    local thumb = bar:CreateTexture(nil, "OVERLAY")
+    thumb:SetColorTexture(0.45, 0.35, 0.7, 0.9)
+    thumb:SetSize(8, 36)
+    bar:SetThumbTexture(thumb)
+    bar:SetMinMaxValues(0, 0)
+    bar:SetValueStep(1)
+    bar:SetValue(0)
+    bar:Hide()
+    bar:SetScript("OnValueChanged", function(_, value) scroll:SetVerticalScroll(value) end)
+    page.scrollBar = bar
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", function(_, delta)
+        local low, high = bar:GetMinMaxValues()
+        local value = math.max(low or 0, math.min(high or 0, (bar:GetValue() or 0) - delta * 30))
+        bar:SetValue(value)
+    end)
+
+    -- The editor's full height: its fixed parts, plus whatever the growing
+    -- boxes have grown. The bar shows only when that is more than fits.
+    local growing = {}
+    local function UpdateScroll()
+        local extra = 0
+        for _, box in ipairs(growing) do extra = extra + (box.grownTo - 22) end
+        extra = extra + math.max(0, (page.channelCount or 1) - 2) * 22
+        local total = EDITOR_H + extra
+        edit:SetHeight(total)
+        local shownHeight = scroll:GetHeight()
+        local visible = tonumber(shownHeight) or (HEIGHT - 96)
+        local max = math.max(0, total - visible)
+        bar:SetMinMaxValues(0, max)
+        if (bar:GetValue() or 0) > max then bar:SetValue(max) end
+        bar:SetShown(max > 0 and scroll:IsShown())
+        page.scrollMax = max
+    end
+    page.UpdateScroll = UpdateScroll
 
     local nameLabel = Label(edit, "Name")
     nameLabel:SetPoint("TOPLEFT", 0, 0)
@@ -447,29 +519,100 @@ local function BuildFilters(page)
     for i = 1, LINES do
         local label = Label(edit, i == 1 and "Has any of" or "and any of")
         label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
-        local box = Box(edit, 330, 400)
+        local box = GrowingBox(edit, 330, 400, function() UpdateScroll() end)
         box:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
         box:SetScript("OnEnterPressed", SaveFilter)
         page.lineBoxes[i] = box
+        growing[#growing + 1] = box
         anchor = box
     end
 
     page.squeeze = Check(edit, "Ignore spaces and symbols (\"g.o l d\" counts as \"gold\")")
     page.squeeze:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -4, -8)
 
-    -- Where it works: blank for everywhere the Options tab allows, or the
-    -- channels it is for (names or numbers), which override the Options tab.
-    local channelsLabel = Label(edit, "Only in these channels (blank: everywhere)")
+    -- Where it works: a checkbox for each channel you are in, read from the
+    -- game each time (numbers change with the order channels are joined, so
+    -- only names are kept). None ticked: everywhere the Options tab allows.
+    -- Ticked ones override the Options tab. A channel the filter has that
+    -- this character is not in is still listed, ticked, so it can be taken
+    -- off. Each tick applies at once.
+    local channelsLabel = Label(edit, "Only in these channels (none ticked: everywhere)")
     channelsLabel:SetPoint("TOPLEFT", page.squeeze, "BOTTOMLEFT", 4, -8)
-    page.channels = Box(edit, 330, 200)
-    page.channels:SetPoint("TOPLEFT", channelsLabel, "BOTTOMLEFT", 0, -4)
-    page.channels:SetScript("OnEnterPressed", SaveFilter)
-    page.joined = Label(edit, "", "GameFontDisableSmall")
-    page.joined:SetPoint("TOPLEFT", page.channels, "BOTTOMLEFT", 0, -3)
-    page.joined:SetWidth(330)
+    local list = CreateFrame("Frame", nil, edit)
+    list:SetSize(330, 22)
+    list:SetPoint("TOPLEFT", channelsLabel, "BOTTOMLEFT", -4, -2)
+    page.channelList = list
+    page.channelRows = {}
+    page.noChannels = Label(list, "You are in no channels right now.", "GameFontDisableSmall")
+    page.noChannels:SetPoint("TOPLEFT", 6, -4)
+
+    local function Ticked(filter)
+        local set = {}
+        for name in tostring(filter and filter.channels or ""):gmatch("[^,]+") do
+            name = name:match("^%s*(.-)%s*$")
+            if name ~= "" and not name:match("^%d+$") then set[name:lower()] = name end
+        end
+        return set
+    end
+
+    local function SetTicked(filter, set)
+        local names = {}
+        for _, name in pairs(set) do names[#names + 1] = name end
+        table.sort(names, function(a, b) return a:lower() < b:lower() end)
+        filter.channels = (#names > 0) and table.concat(names, ", ") or nil
+        ns.CompileFilters()
+        ns.RefreshWindow()
+    end
+
+    function page.FillChannels()
+        local filter = filters.selected
+        local ticked = Ticked(filter)
+        local shown, seen = {}, {}
+        for _, channel in ipairs(ns.JoinedChannels()) do
+            local key = channel.name:lower()
+            if not seen[key] then
+                seen[key] = true
+                shown[#shown + 1] = { name = channel.name, label = channel.name .. " |cff808080(" .. channel.number .. ")|r" }
+            end
+        end
+        for key, name in pairs(ticked) do
+            if not seen[key] then
+                seen[key] = true
+                shown[#shown + 1] = { name = name, label = name .. " |cff808080(not joined here)|r" }
+            end
+        end
+        for i, entry in ipairs(shown) do
+            local row = page.channelRows[i]
+            if not row then
+                row = Check(list, "", function(checked)
+                    local f = filters.selected
+                    if not (f and row.channel) then return end
+                    local set = Ticked(f)
+                    if checked then set[row.channel:lower()] = row.channel else set[row.channel:lower()] = nil end
+                    SetTicked(f, set)
+                end)
+                row:SetPoint("TOPLEFT", 0, -(i - 1) * 22)
+                page.channelRows[i] = row
+            end
+            row.channel = entry.name
+            row.label:SetText(entry.label)
+            row:SetChecked(ticked[entry.name:lower()] ~= nil)
+            row:Show()
+            row.label:Show()
+        end
+        for i = #shown + 1, #page.channelRows do
+            page.channelRows[i]:Hide()
+            page.channelRows[i].label:Hide()
+            page.channelRows[i].channel = nil
+        end
+        page.noChannels:SetShown(#shown == 0)
+        page.channelCount = #shown
+        list:SetHeight(math.max(1, #shown) * 22)
+        UpdateScroll()
+    end
 
     page.save = Button(edit, 70, "Save", SaveFilter)
-    page.save:SetPoint("TOPLEFT", page.joined, "BOTTOMLEFT", 0, -8)
+    page.save:SetPoint("TOPLEFT", list, "BOTTOMLEFT", 4, -8)
 
     local tryLabel = Label(edit, "Try a message")
     tryLabel:SetPoint("TOPLEFT", page.save, "BOTTOMLEFT", 0, -12)
@@ -518,6 +661,7 @@ local function RefreshFilters(page)
     local has = filters.selected ~= nil
     page.editor:SetShown(has)
     page.none:SetShown(not has)
+    page.UpdateScroll()
     page.delete:SetEnabled(has)
     page.reset:SetEnabled(has)
     page.export:SetEnabled(has)
@@ -868,6 +1012,16 @@ function ns.OnIgnoredNormally(full)
     queue[#queue + 1] = full
     ShowNext()
 end
+
+-- The channel checkboxes follow the channels you are in.
+local channelWatch = CreateFrame("Frame")
+channelWatch:RegisterEvent("CHANNEL_UI_UPDATE")
+channelWatch:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")
+channelWatch:SetScript("OnEvent", function()
+    if window and window:IsShown() and filters.selected and window.pages.filters.FillChannels then
+        pcall(window.pages.filters.FillChannels)
+    end
+end)
 
 function ns.GetWindow()
     return Build()
