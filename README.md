@@ -12,27 +12,28 @@ Everything ships **switched off**. Nothing changes about your game until you tur
 
 ## The on-screen display (OSD)
 
-One slim, draggable line of information. Each item has its own switch. Add up to 30 dividers between items, and set the text size, scale and background.
+One slim, draggable line of information. Each item has its own switch. Add up to 30 dividers between items, and set the text size, scale, background and its opacity. Set a width past which items wrap onto a second line.
 
 To change the order, drag items in the list on the menu's OSD page, or drag them left and right on the display itself while that page is open. A gold line shows where an item will land.
 
-Nearly every item is interactive. **Hover** for detail and **click** to act:
+Nearly every item is interactive. **Hover** for detail and **click** to act. Some items do something else on a **right-click**:
 
 | Item | Shows | Hover | Click |
 |---|---|---|---|
-| Money | Gold, silver, copper | Gold made or lost this session | Opens your bags |
+| Money | Gold, silver, copper | Gold made or lost this session | Opens your bags; right-click lists every character's gold |
 | Free bag slots | General slots free (or free/total) | Every bag's free space | Opens your bags |
 | Profession bags | Their slots, counted separately | Every bag's free space | Opens your bags |
-| Durability | Your most worn piece, colored | Every piece, worst first | Opens your character |
+| Durability | Your most worn piece, colored | Every piece, worst first, and the repair cost | Opens your character; right-click says it in chat |
 | Ammo | What is left in the ammo slot | Ammo name and count | Opens your character |
 | Soul shards | Shards carried (warlocks) | | Opens your bags |
 | Coordinates | Your position on the zone map | | Opens the map |
 | Zone name | Zone and subzone | Territory (friendly, contested...) and coordinates | Opens the map |
-| XP and rested | Percent, XP/total, or both | XP to level, rested amount | |
+| XP and rested | Percent, XP/total, or both (hidden at the level cap) | XP to level, rested amount | |
+| Watched reputation | The faction you watch and how far through its standing | Standing and what is left to the next | Opens the reputation window |
 | My threat on target | Your threat, colored as it climbs | Whether you are tanking | |
-| Clock | Local or realm time, 12 or 24 hour | Both times | Opens the clock |
+| Clock | Local or realm time, 12 or 24 hour | Both times | Opens the clock; right-click switches 12 and 24 hour |
 | Alarm | The in-game alarm and its message | | Opens the clock to set it |
-| ChairTracker | Your reputation window, dropped down on hover | | |
+| ChairTracker | Your reputation and skills window, dropped down on hover | | |
 | Frame rate and latency | fps and ms, colored when high | Home and world latency, the ten heaviest addons by memory | Frees unused addon memory |
 | Session time | Time since you logged in (survives /reload) | When you logged in | |
 | Gold per hour | Your rate, green up and red down, on its own counter | Time counted and gold made | Restarts the count |
@@ -87,11 +88,17 @@ Chaircraft also publishes its own launcher, so other bar addons can show a chair
 - A large arrow pointing at the quest you selected or your map pin.
 - Several styles, colors (by direction or custom), distance and quest name, size and opacity.
 
+**Tooltips, mail and small automations**
+- Sell prices on item tooltips, and item and spell IDs.
+- An **Open all** button on the mailbox that takes every letter's gold and items. It skips cash-on-delivery and GM mail, and stops when your bags are full.
+- Release in battlegrounds, skip cinematics, and dismount or stand up when an action needs it.
+
 **Threat meter**
 - Everyone's threat on your target as bars.
 - Shows by group (solo, party, raid) and place (world, dungeons, raids, battlegrounds).
 - Click-through options, class colors, pets.
 - A warning, with optional sound, before you pull aggro.
+- **Nameplate colors by aggro:** you have it, it is changing hands, a non-tank has it, or another tank has it, each in a color you pick.
 
 **And more**
 - Faster auto loot.
@@ -99,7 +106,7 @@ Chaircraft also publishes its own launcher, so other bar addons can show a chair
 - Player filters (class, role, level) in the group finder.
 - Hide the game's XP bar and status bar 2.
 - Drag the character panel, bags, bank, auction house, professions, quest log, spellbook, talents, mail and other Blizzard windows by their headers. Their positions are remembered.
-- Copy settings from another character.
+- On the **General** page: the minimap icon, copying settings from another character, and **backing up every setting** as one line of text to keep or paste onto another character.
 
 ## ChairAuras: buff, debuff and cooldown tracking (*Beta*)
 
@@ -117,7 +124,9 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 - **Load conditions:** class, race, zone, combat, group, role, instance, gear, encounter and more.
 - **In combat,** this client hides aura data from addons. ChairAuras carries what it knew before the fight and draws cooldowns through the client's own duration objects.
 - Custom Lua runs in a WeakAuras-style sandbox. Imported code waits for your approval.
+- **Custom options** (`aura_env.config`) and **templates** made from your own spellbook.
 - Share an aura as a line of text with **Export** and **Import**. Auras are account-wide.
+- Libraries included: LibDeflate (zlib license) and LibSerialize (MIT).
 
 ## ChairSnack: consumables at hand
 
@@ -125,9 +134,9 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 - Automatic bars pick your best food and water, buff food, hearthstone-style recalls, pet food and ammo.
 - A keybind mode, and a minimap button.
 
-## ChairTracker: reputation
+## ChairTracker: reputation and skills
 
-- A compact, draggable reputation tracker with colored progress bars, sorting and auto-hide.
+- A compact, draggable tracker for reputations and skills (weapon skills, Defense, professions and secondary skills) with colored progress bars, sorting and auto-hide. Skills are read at their real rank without opening the Skills window.
 - It can dock into the OSD and drop down when hovered.
 
 ---

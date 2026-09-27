@@ -76,30 +76,32 @@ local function IsItemAccountBound(itemID)
     return false
 end
 
--- True if the quest in the progress window wants something back that should be
--- a deliberate decision: a currency, a crafting reagent, or an account-bound
--- item. Reads the progress frames rather than any quest data, because that is
--- the only place the required-item list is exposed at this point.
+-- True if the quest being handed in wants something back that should be a
+-- deliberate decision: a currency, a crafting reagent, or an account-bound
+-- item. Read from the quest API. It used to be read off Blizzard's progress
+-- frames, which meant hiding them between conversations -- Blizzard's code
+-- run from ours (changed 2026-09-26).
+--
+-- An item the client has not loaded yet counts as precious: "not known to be
+-- a reagent" is not "known not to be one", and this is the side of the
+-- question that cannot be undone.
 local function QuestRequiresSomethingPrecious()
-    for i = 1, 6 do
-        local progItem = _G["QuestProgressItem" .. i]
-        if progItem and progItem:IsShown() and progItem.type == "required" then
-            if progItem.objectType == "currency" then
-                return true
-            elseif progItem.objectType == "item" then
-                local name, _, _, _, _, itemID = Call("GetQuestItemInfo", "required", i)
-                if name and itemID then
-                    local getInfo = ns.GetItemInfo
-                    if type(getInfo) == "function" then
-                        local ok, r = pcall(function()
-                            return select(17, getInfo(itemID))
-                        end)
-                        if ok and r then return true end
-                    end
-                    if IsItemAccountBound(itemID) then return true end
-                end
-            end
-        end
+    local currencies = ns.Num(Call("GetNumQuestCurrencies")) or 0
+    if currencies > 0 then return true end
+    local count = ns.Num(Call("GetNumQuestItems")) or 0
+    for i = 1, count do
+        local name, _, _, _, _, itemID = Call("GetQuestItemInfo", "required", i)
+        itemID = ns.Num(itemID)
+        if not (name and itemID) then return true end
+        local getInfo = ns.GetItemInfo
+        if type(getInfo) ~= "function" then return true end
+        local ok, loaded, reagent = pcall(function()
+            local info = { getInfo(itemID) }
+            return info[1] ~= nil, info[17]
+        end)
+        if not ok or not loaded then return true end
+        if reagent then return true end
+        if IsItemAccountBound(itemID) then return true end
     end
     return false
 end
@@ -154,6 +156,9 @@ local function OnQuestDetail()
     end
 
     if IsNpcBlocked("Accept") then return end
+    -- The same list gossip selection honors, for a quest offered straight
+    -- to the detail window.
+    if IsQuestBlocked(ns.Num(Call("GetQuestID"))) then return end
 
     if Call("QuestGetAutoAccept") then
         -- The client already took this one; all that is left is the window.
@@ -241,17 +246,6 @@ local function OnGossipOrGreeting(event)
 end
 
 local function OnEvent(_, event, arg1)
-    -- Progress frames are reused between NPCs and are not cleared by the
-    -- client, so a stale "required item" row from the last conversation would
-    -- otherwise keep blocking turn-ins at the next one.
-    if event == "QUEST_FINISHED" then
-        for i = 1, 6 do
-            local progItem = _G["QuestProgressItem" .. i]
-            if progItem and progItem:IsShown() then progItem:Hide() end
-        end
-        return
-    end
-
     -- The manual override. Holding shift stops everything here without needing
     -- to open an options panel mid-conversation, which is the only practical
     -- way to take one quest by hand.
@@ -305,7 +299,7 @@ end
 
 local EVENTS = {
     "QUEST_DETAIL", "QUEST_ACCEPT_CONFIRM", "QUEST_PROGRESS", "QUEST_COMPLETE",
-    "QUEST_GREETING", "QUEST_AUTOCOMPLETE", "GOSSIP_SHOW", "QUEST_FINISHED",
+    "QUEST_GREETING", "QUEST_AUTOCOMPLETE", "GOSSIP_SHOW",
 }
 
 ns.RegisterModule("quests", {

@@ -16,9 +16,10 @@ local ns = Chaircraft.ChairAuras
 -- meant wrapping every chat window, and on this client that wrapper met secret
 -- chat text and dropped lines from chat. The export string does the same job.
 --
--- Nothing here depends on a library. LibDeflate is what everyone uses to make
--- these strings short and it is not installed on this client, so the strings
--- are longer than WeakAuras' and that is the whole difference.
+-- Since 1.2 the strings go out as !CA:3!: LibSerialize, then LibDeflate,
+-- both embedded in Libs, which makes them far shorter. CA1: strings, which
+-- needed no library, still import. WeakAuras' own strings are not read
+-- (removed 2026-09-26, at the owner's call).
 
 local Share = {}
 ns.Share = Share
@@ -160,6 +161,8 @@ local function Encode(text)
     return table.concat(out)
 end
 
+Share.__Encode = Encode
+
 local DECODE = {}
 for index = 1, #B64 do DECODE[B64:sub(index, index)] = index - 1 end
 
@@ -216,9 +219,32 @@ local function Bundle(aura)
     }
 end
 
+-- The compressed pipeline, when its libraries are here.
+local function Lib(name)
+    local stub = _G.LibStub
+    if not stub then return nil end
+    local ok, lib = pcall(stub.GetLibrary, stub, name, true)
+    return ok and lib or nil
+end
+
+local function Libraries()
+    local serialize, deflate = Lib("LibSerialize"), Lib("LibDeflate")
+    if serialize and deflate then return serialize, deflate end
+    return nil
+end
+
 function Share:Export(aura)
     if not aura then return nil end
-    local ok, text = pcall(Serialise, Bundle(aura))
+    local bundle = Bundle(aura)
+    local serialize, deflate = Libraries()
+    if serialize then
+        local ok, text = pcall(function()
+            local packed = serialize:SerializeEx({ errorOnUnserializableType = false }, bundle)
+            return "!CA:3!" .. deflate:EncodeForPrint(deflate:CompressDeflate(packed, { level = 9 }))
+        end)
+        if ok and text then return text end
+    end
+    local ok, text = pcall(Serialise, bundle)
     if not ok then return nil end
     return PREFIX .. ":" .. Encode(text)
 end
@@ -233,6 +259,20 @@ function Share:Peek(text)
     if type(text) ~= "string" then return nil, "nothing pasted" end
 
     text = text:gsub("%s", "")
+
+    if text:match("^!CA:3!") then
+        local serialize, deflate = Libraries()
+        if not serialize then return nil, "this copy is missing LibSerialize or LibDeflate" end
+        local decoded = deflate:DecodeForPrint(text:sub(7))
+        local raw = decoded and deflate:DecompressDeflate(decoded)
+        if not raw then return nil, "the string is damaged" end
+        local ok, bundle = serialize:Deserialize(raw)
+        if not ok or type(bundle) ~= "table" or type(bundle.auras) ~= "table" or not bundle.auras[1] then
+            return nil, "the string is damaged"
+        end
+        return bundle
+    end
+
     local prefix, body = text:match("^(%w+):(.*)$")
     if prefix ~= PREFIX then
         return nil, "that is not a ChairAuras string"
@@ -291,5 +331,6 @@ function Share:Import(text)
 
     ns.Engine:Rebuild()
     ns.RequestUpdate()
+
     return added
 end

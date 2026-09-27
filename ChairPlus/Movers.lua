@@ -72,6 +72,12 @@ local TARGETS = {
     -- parent is made movable -- the tabs ride inside it.
     { name = "LFGParentFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
     { name = "PVEFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
+    -- The guild window. Which one opens depends on the build: the guild and
+    -- communities window (CommunitiesFrame, Blizzard_Communities) or an older
+    -- GuildFrame. Whichever is here gets the handle; the other costs nothing.
+    { name = "CommunitiesFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
+    { name = "GuildFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
+    { name = "GuildBankFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
 }
 
 -- Names, for the menu and the reset message.
@@ -80,6 +86,7 @@ for _, target in ipairs(TARGETS) do ns.MOVER_NAMES[#ns.MOVER_NAMES + 1] = target
 
 local prepared = {}
 local pending = {}
+local layoutHooked = {}
 
 -- Per character, like every other ChairPlus setting (see Config.lua).
 local function Store()
@@ -162,8 +169,16 @@ local function Prepare(target)
     if frame.HookScript then
         pcall(frame.HookScript, frame, "OnShow", function() Apply(name) end)
     end
-    if type(_G[target.layout]) == "function" then
-        hooksecurefunc(target.layout, function() Apply(name) end)
+    -- One hook per layout function, however many windows it lays out: it
+    -- used to be one per window, thirty hooks on the same function.
+    local layout = target.layout
+    if type(_G[layout]) == "function" and not layoutHooked[layout] then
+        layoutHooked[layout] = true
+        hooksecurefunc(layout, function()
+            for _, other in ipairs(TARGETS) do
+                if prepared[other.name] and other.layout == layout then Apply(other.name) end
+            end
+        end)
     end
     Apply(name)
 end
@@ -180,7 +195,8 @@ local driver = CreateFrame("Frame")
 -- registering an unknown one throws, which would stop this file loading and
 -- leave every window unmovable. So each is tried on its own.
 for _, event in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_REGEN_ENABLED",
-        "BANKFRAME_OPENED", "AUCTION_HOUSE_SHOW", "TRADE_SKILL_SHOW", "CRAFT_SHOW" }) do
+        "BANKFRAME_OPENED", "AUCTION_HOUSE_SHOW", "TRADE_SKILL_SHOW", "CRAFT_SHOW",
+        "GUILDBANKFRAME_OPENED" }) do
     pcall(driver.RegisterEvent, driver, event)
 end
 driver:SetScript("OnEvent", function(_, event)
@@ -191,7 +207,8 @@ driver:SetScript("OnEvent", function(_, event)
     PrepareAll()
 end)
 
-for _, opener in ipairs({ "ToggleCharacter", "ToggleAllBags", "OpenAllBags", "ToggleBackpack" }) do
+for _, opener in ipairs({ "ToggleCharacter", "ToggleAllBags", "OpenAllBags", "ToggleBackpack",
+                          "ToggleGuildFrame", "ToggleCommunitiesFrame" }) do
     if type(_G[opener]) == "function" then
         hooksecurefunc(opener, PrepareAll)
     end

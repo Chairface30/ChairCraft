@@ -328,10 +328,18 @@ local function Slider(parent, label, low, high, step, onChange)
     if highText then highText:SetText(high) end
 
     slider.prefix = label
+    slider.step = step
     slider:SetScript("OnValueChanged", function(self, value)
-        value = math.floor(value + 0.5)
+        -- To the step: whole numbers, or tenths for a custom option that
+        -- steps by 0.1.
+        local by = tonumber(self.step) or 1
+        if by >= 1 then
+            value = math.floor(value + 0.5)
+        else
+            value = math.floor(value / by + 0.5) * by
+        end
         if self.labelText then
-            self.labelText:SetText(self.prefix .. ": " .. value)
+            self.labelText:SetText(self.prefix .. ": " .. tostring(value))
         end
         if not self.settingProgrammatically then onChange(value) end
     end)
@@ -429,13 +437,39 @@ local TYPE_TAG = {
     dynamic = "|cff40c4ff[dynamic]|r ",
 }
 
+-- Several auras at once: ctrl-click adds one to the selection. The one open
+-- in the editor is always part of it.
+local multi = {}
+function Config.__multi() return multi end
+
 local function TreeOrder()
     local order = {}
 
+    -- The search box: what matches, and the groups it sits in.
+    local keep
+    local query = (Config.search or ""):lower()
+    if query ~= "" then
+        keep = {}
+        for _, aura in ipairs(ns.GetAuras()) do
+            local label = ns.Engine:Describe(aura)
+            local text = (tostring(label or "") .. " " .. tostring(aura.name or "")):lower()
+            if text:find(query, 1, true) then
+                local cursor, seen = aura, {}
+                while cursor and not seen[cursor.id] do
+                    seen[cursor.id] = true
+                    keep[cursor.id] = true
+                    cursor = cursor.parent and ns.FindAura(cursor.parent)
+                end
+            end
+        end
+    end
+
     local function Walk(parentID, depth)
         for _, aura in ipairs(ns.Children(parentID)) do
-            order[#order + 1] = { aura = aura, depth = depth }
-            if ns.IsGroup(aura) then Walk(aura.id, depth + 1) end
+            if not keep or keep[aura.id] then
+                order[#order + 1] = { aura = aura, depth = depth }
+                if ns.IsGroup(aura) then Walk(aura.id, depth + 1) end
+            end
         end
     end
 
@@ -502,7 +536,17 @@ local function CreateRow(index)
             end
         elseif target and target ~= dragged then
             local onto = ns.FindAura(target)
-            if aura and onto and ns.MoveAura(aura, onto, where) then
+            local moving = Config:SelectedList()
+            if multi[dragged] and #moving > 1 and onto and not multi[target] then
+                -- In list order; "after" goes last first so they keep it.
+                local moved = false
+                local from, to, step = 1, #moving, 1
+                if where == "after" then from, to, step = #moving, 1, -1 end
+                for i = from, to, step do
+                    if ns.MoveAura(moving[i], onto, where) then moved = true end
+                end
+                if moved then Commit(true) return end
+            elseif aura and onto and ns.MoveAura(aura, onto, where) then
                 selectedID = dragged
                 Commit(true)
                 return
@@ -513,6 +557,14 @@ local function CreateRow(index)
     end)
 
     row:SetScript("OnClick", function(self)
+        local ctrl = type(IsControlKeyDown) == "function" and IsControlKeyDown()
+        if ctrl and selectedID and self.auraID ~= selectedID then
+            multi[selectedID] = true
+            multi[self.auraID] = (not multi[self.auraID]) or nil
+            Config:Refresh()
+            return
+        end
+        wipe(multi)
         Config:Select(self.auraID)
     end)
 
@@ -557,7 +609,7 @@ local function RefreshTree()
         end
 
         row.text:SetText((TYPE_TAG[aura.type or "icon"] or "") .. label .. suffix)
-        row.selection:SetShown(aura.id == selectedID)
+        row.selection:SetShown(aura.id == selectedID or multi[aura.id] == true)
         row:Show()
     end
 
@@ -944,6 +996,8 @@ local function BuildField(pane, field)
         box:SetFontObject("ChatFontNormal")
         box:SetWidth(PANE_W - 36)
         box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        box:SetScript("OnTabPressed", function(self) self:Insert("    ") end)
+        box:SetScript("OnTextChanged", function(_, byUser) if byUser then widget.ran = nil end end)
         scroll:SetScrollChild(box)
         back:EnableMouse(true)
         back:SetScript("OnMouseDown", function() box:SetFocus() end)
@@ -957,9 +1011,38 @@ local function BuildField(pane, field)
         local save = Button(host, "Save", 50, function() box:ClearFocus() Save() end)
         save:SetPoint("TOPLEFT", back, "BOTTOMLEFT", 0, -4)
         widget.save = save
+        -- Run: compile it and call it once, in the sandbox, with no arguments,
+        -- and say what came back -- the quickest way to see a typo.
+        local run = Button(host, "Run", 50, function()
+            local aura = Current()
+            if not aura then return end
+            box:ClearFocus()
+            local source = box:GetText()
+            if aura.untrusted then
+                widget.ran = "|cffff5555imported code: approve it first|r"
+            else
+                local fn, err = ns.Env:Compile(source, field.label or "code")
+                if not fn then
+                    widget.ran = "|cffff5555" .. tostring(err) .. "|r"
+                else
+                    local ok, a, b, c = ns.Env:Call(aura, fn)
+                    if ok then
+                        local parts = {}
+                        for _, value in ipairs({ a, b, c }) do parts[#parts + 1] = ns.SafeText(tostring(value)) or "?" end
+                        widget.ran = "|cff66dd66ran|r" .. (#parts > 0 and (": returned " .. table.concat(parts, ", ")) or "")
+                    else
+                        widget.ran = "|cffff5555" .. tostring(a) .. "|r"
+                    end
+                end
+            end
+            widget.status:SetText(widget.ran)
+        end)
+        run:SetPoint("LEFT", save, "RIGHT", 4, 0)
+        widget.run = run
+        Tooltip(run, "Run", "Runs it once now, with no arguments, and says what it returned or where it failed.")
         local status = Text(host, "", "GameFontDisableSmall")
-        status:SetPoint("LEFT", save, "RIGHT", 8, 0)
-        status:SetWidth(PANE_W - 90)
+        status:SetPoint("LEFT", run, "RIGHT", 8, 0)
+        status:SetWidth(PANE_W - 140)
         status:SetJustifyH("LEFT")
         widget.status = status
 
@@ -971,6 +1054,8 @@ local function BuildField(pane, field)
             local err = field.error and field.error(aura)
             if err then
                 self.status:SetText("|cffff5555" .. tostring(err) .. "|r")
+            elseif self.ran then
+                self.status:SetText(self.ran)
             else
                 self.status:SetText(field.hint or "")
             end
@@ -978,6 +1063,7 @@ local function BuildField(pane, field)
         function widget:SetEnabled(enabled)
             self.box:SetEnabled(enabled)
             self.save:SetEnabled(enabled)
+            self.run:SetEnabled(enabled)
             self.box:SetTextColor(enabled and 1 or 0.5, enabled and 1 or 0.5, enabled and 1 or 0.5)
             self.label:SetTextColor(enabled and 1 or 0.4, enabled and 0.82 or 0.4, enabled and 0 or 0.4)
         end
@@ -1372,6 +1458,201 @@ local function BuildField(pane, field)
             self.label:SetTextColor(enabled and 1 or 0.4, enabled and 0.82 or 0.4, enabled and 0 or 0.4)
         end
 
+    elseif field.kind == "authoroptions" then
+        -- An aura's custom options (WeakAuras' author options), as the user
+        -- sets them: one control each, drawn afresh for whichever aura is
+        -- open, since every aura has its own list.
+        host:SetHeight(24)
+        widget.rows = {}
+        widget.empty = Text(host, field.empty or "", "GameFontDisableSmall")
+        widget.empty:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -4)
+        widget.empty:SetWidth(PANE_W - 20)
+        widget.empty:SetJustifyH("LEFT")
+
+        local function Row(i, kind)
+            local row = widget.rows[i]
+            if row and row.kind == kind then return row end
+            if row then row.frame:Hide() end
+            row = { kind = kind, height = 24 }
+            local frame = CreateFrame("Frame", nil, host)
+            frame:SetSize(PANE_W, 24)
+            row.frame = frame
+            local function Set(value)
+                local aura = Current()
+                if aura and row.path then field.set(aura, row.path, value) end
+            end
+            if kind == "toggle" then
+                row.check = CheckBox(frame, "", function(checked) Set(checked) end)
+                row.check:SetPoint("LEFT", frame, "LEFT", 0, 0)
+                row.label = row.check.label
+            elseif kind == "range" then
+                row.height = 42
+                row.slider = Slider(frame, "", 0, 100, 1, function(value) Set(value) end)
+                row.slider:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -12)
+            elseif kind == "select" then
+                row.height = 44
+                row.label = Text(frame, "", "GameFontNormalSmall")
+                row.label:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+                local holder = CreateFrame("Frame", nil, frame)
+                holder:SetSize(PANE_W, 22)
+                holder:SetPoint("TOPLEFT", row.label, "BOTTOMLEFT", 2, -4)
+                row.values = {}
+                row.dropdown = Dropdown(holder, 200, row.values, function(value) Set(value) end)
+            elseif kind == "multiselect" then
+                row.label = Text(frame, "", "GameFontNormalSmall")
+                row.label:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+                row.checks = {}
+            elseif kind == "color" then
+                row.label = Text(frame, "", "GameFontNormalSmall")
+                row.label:SetPoint("LEFT", frame, "LEFT", 0, 0)
+                local swatch = CreateFrame("Button", nil, frame)
+                swatch:SetSize(20, 20)
+                swatch:SetPoint("LEFT", row.label, "RIGHT", 8, 0)
+                local edge = swatch:CreateTexture(nil, "BACKGROUND")
+                edge:SetAllPoints()
+                edge:SetColorTexture(0.8, 0.8, 0.8, 1)
+                row.fill = swatch:CreateTexture(nil, "ARTWORK")
+                row.fill:SetPoint("TOPLEFT", 2, -2)
+                row.fill:SetPoint("BOTTOMRIGHT", -2, 2)
+                row.swatch = swatch
+                swatch:SetScript("OnClick", function()
+                    local c = type(row.value) == "table" and row.value or { 1, 1, 1, 1 }
+                    local function Byte(v) return math.floor((tonumber(v) or 1) * 255 + 0.5) end
+                    PickColour(string.format("%02x%02x%02x", Byte(c[1]), Byte(c[2]), Byte(c[3])), function(hex)
+                        Set({ (tonumber(hex:sub(1, 2), 16) or 255) / 255, (tonumber(hex:sub(3, 4), 16) or 255) / 255,
+                              (tonumber(hex:sub(5, 6), 16) or 255) / 255, tonumber(c[4]) or 1 })
+                    end)
+                end)
+            elseif kind == "header" or kind == "description" or kind == "space" then
+                row.label = Text(frame, "", kind == "header" and "GameFontNormal" or "GameFontHighlightSmall")
+                row.label:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, kind == "header" and -6 or 0)
+                row.label:SetWidth(PANE_W - 20)
+                row.label:SetJustifyH("LEFT")
+            else
+                -- input, number, media, and anything unknown: a text box.
+                row.height = 44
+                row.label = Text(frame, "", "GameFontNormalSmall")
+                row.label:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+                row.box = EditBox(frame, 240, function(text)
+                    if row.kind == "number" then Set(tonumber(text)) else Set(text) end
+                end, true)
+                row.box:SetPoint("TOPLEFT", row.label, "BOTTOMLEFT", 4, -4)
+            end
+            widget.rows[i] = row
+            return row
+        end
+
+        local function Fill(row, option, value)
+            row.option, row.value = option, value
+            local name = tostring(option.name or option.key or "")
+            local kind = row.kind
+            if kind == "toggle" then
+                row.check:SetChecked(value and true or false)
+                row.label:SetText(name)
+            elseif kind == "range" then
+                local low, high = tonumber(option.min) or 0, tonumber(option.max) or 100
+                row.slider:SetMinMaxValues(low, high)
+                row.slider.step = tonumber(option.step) or 1
+                row.slider:SetValueStep(row.slider.step)
+                row.slider.prefix = name
+                row.slider:SetDisplayValue(tonumber(value) or low)
+            elseif kind == "select" then
+                wipe(row.values)
+                for index, text in ipairs(type(option.values) == "table" and option.values or {}) do
+                    row.values[index] = { text = tostring(text), value = index }
+                end
+                row.label:SetText(name)
+                row.dropdown:SetValue(value)
+            elseif kind == "multiselect" then
+                row.label:SetText(name)
+                local list = type(option.values) == "table" and option.values or {}
+                for index, text in ipairs(list) do
+                    local check = row.checks[index]
+                    if not check then
+                        check = CheckBox(row.frame, "", function(checked)
+                            local current = {}
+                            for k, v in pairs(type(row.value) == "table" and row.value or {}) do current[k] = v end
+                            current[index] = checked and true or false
+                            local aura = Current()
+                            if aura and row.path then field.set(aura, row.path, current) end
+                        end)
+                        row.checks[index] = check
+                    end
+                    check:ClearAllPoints()
+                    check:SetPoint("TOPLEFT", row.frame, "TOPLEFT", ((index - 1) % 3) * 140,
+                                   -16 - math.floor((index - 1) / 3) * 24)
+                    check.label:SetText(tostring(text))
+                    check:SetChecked(type(value) == "table" and value[index] and true or false)
+                    check:Show()
+                    check.label:Show()
+                end
+                for index = #list + 1, #row.checks do
+                    row.checks[index]:Hide()
+                    row.checks[index].label:Hide()
+                end
+                row.height = 20 + math.ceil(#list / 3) * 24
+            elseif kind == "color" then
+                row.label:SetText(name)
+                local c = type(value) == "table" and value or { 1, 1, 1, 1 }
+                row.fill:SetColorTexture(tonumber(c[1]) or 1, tonumber(c[2]) or 1, tonumber(c[3]) or 1, 1)
+            elseif kind == "header" then
+                row.label:SetText(tostring(option.text or option.name or ""))
+            elseif kind == "description" then
+                row.label:SetText(tostring(option.text or ""))
+                local ok, h = pcall(row.label.GetStringHeight, row.label)
+                row.height = math.max(16, ((ok and type(h) == "number") and h or 12) + 4)
+            elseif kind == "space" then
+                row.label:SetText("")
+                row.height = 12
+            else
+                row.label:SetText(name)
+                if not row.box:HasFocus() then row.box:SetText(value ~= nil and tostring(value) or "") end
+            end
+            row.frame:SetHeight(row.height)
+        end
+
+        function widget:Read(aura)
+            local list = {}
+            local function Walk(options, path, config)
+                for _, option in ipairs(type(options) == "table" and options or {}) do
+                    local here = {}
+                    for i, key in ipairs(path) do here[i] = key end
+                    if option.type == "group" then
+                        list[#list + 1] = { option = { type = "header", text = option.name or option.key } }
+                        if option.groupType == "array" then
+                            list[#list + 1] = { option = { type = "description",
+                                text = "A list of entries: its values are kept, but edited in code for now." } }
+                        else
+                            here[#here + 1] = option.key
+                            Walk(option.subOptions, here, type(config) == "table" and config[option.key] or nil)
+                        end
+                    elseif option.type == "header" or option.type == "description" or option.type == "space" then
+                        list[#list + 1] = { option = option }
+                    else
+                        here[#here + 1] = option.key
+                        local value = type(config) == "table" and config[option.key] or nil
+                        if value == nil then value = option.default end
+                        list[#list + 1] = { option = option, path = here, value = value }
+                    end
+                end
+            end
+            Walk(aura.authorOptions, {}, aura.config)
+            local y = 0
+            for i, entry in ipairs(list) do
+                local row = Row(i, entry.option.type or "input")
+                row.path = entry.path
+                Fill(row, entry.option, entry.value)
+                row.frame:ClearAllPoints()
+                row.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
+                row.frame:Show()
+                y = y + row.height + 4
+            end
+            for i = #list + 1, #self.rows do self.rows[i].frame:Hide() end
+            self.empty:SetShown(#list == 0)
+            host:SetHeight(math.max(y, 24))
+        end
+        function widget:SetEnabled() end
+
     elseif field.kind == "note" then
         local text = Text(host, field.text or "", "GameFontHighlightSmall")
         text:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
@@ -1420,13 +1701,13 @@ local function BuildPane(parent, fields)
             if field.visible then shown = field.visible(aura) and true or false end
             widget.host:SetShown(shown)
             if shown then
-                widget.host:ClearAllPoints()
-                widget.host:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
-                y = y + (widget.host:GetHeight() or 24) + FIELD_GAP
                 local enabled = true
                 if field.enabled then enabled = field.enabled(aura) and true or false end
                 widget:SetEnabled(enabled)
                 widget:Read(aura)
+                widget.host:ClearAllPoints()
+                widget.host:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
+                y = y + (widget.host:GetHeight() or 24) + FIELD_GAP
             end
         end
         self.contentHeight = y
@@ -1634,10 +1915,16 @@ local TRIGGER_FIELDS = {
     },
     {
         kind = "choice", label = "On", key = "unit", width = 78,
+        tip = "Party, Raid and Boss look at everyone in them (Party includes you); "
+           .. "Group is whichever of party or raid you are in.",
         values = { { text = "You", value = "player" },
                    { text = "Target", value = "target" },
                    { text = "Focus", value = "focus" },
-                   { text = "Pet", value = "pet" } },
+                   { text = "Pet", value = "pet" },
+                   { text = "Party", value = "party" },
+                   { text = "Raid", value = "raid" },
+                   { text = "Group", value = "group" },
+                   { text = "Boss", value = "boss" } },
         enabled = IsAura,
         get = function(aura) return ns.TriggerField(aura, "unit", currentTrigger) end,
         set = function(aura, value)
@@ -1675,6 +1962,51 @@ local TRIGGER_FIELDS = {
         get = function(aura) return ns.TriggerField(aura, "stacks", currentTrigger) end,
         set = function(aura, value)
             TriggerOf(aura).stacks = (value > 0) and value or nil
+            Commit(false)
+        end,
+    },
+    {
+        kind = "text", label = "Also match", key = "also", width = 280,
+        tip = "More auras that count as this one: names or spell IDs, split by commas. "
+           .. "Handy for a buff with several ranks or several foods.",
+        enabled = IsAura,
+        get = function(aura) return ns.Trigger(aura, currentTrigger).also or "" end,
+        set = function(aura, text)
+            TriggerOf(aura).also = text ~= "" and text or nil
+            Commit(false)
+        end,
+    },
+    {
+        kind = "choice", label = "How many matches", key = "matchOp", width = 60,
+        tip = "Left at zero below, one match is enough. Otherwise: how many matching "
+           .. "auras there must be, across every unit it watches. %{matchCount} shows the number.",
+        values = { { text = "at least", value = ">=" },
+                   { text = "at most", value = "<=" },
+                   { text = "exactly", value = "==" } },
+        enabled = IsAura,
+        get = function(aura) return ns.TriggerField(aura, "matchOp", currentTrigger) end,
+        set = function(aura, value)
+            TriggerOf(aura).matchOp = value
+            Commit(false)
+        end,
+    },
+    {
+        kind = "slider", label = "Match count", key = "matchCount", min = 0, max = 40,
+        enabled = IsAura,
+        get = function(aura) return tonumber(ns.Trigger(aura, currentTrigger).matchCount) or 0 end,
+        set = function(aura, value)
+            TriggerOf(aura).matchCount = (value > 0) and value or nil
+            Commit(false)
+        end,
+    },
+    {
+        kind = "check", label = "One region per match (inside a group)", key = "cloneMatches",
+        tip = "Each matching aura -- on each unit -- gets a region of its own, laid out by "
+           .. "the group. %{unitName} names whose it is.",
+        enabled = IsAura,
+        get = function(aura) return ns.Trigger(aura, currentTrigger).cloneMatches and true or false end,
+        set = function(aura, checked)
+            TriggerOf(aura).cloneMatches = checked or nil
             Commit(false)
         end,
     },
@@ -1838,7 +2170,12 @@ local COLOURS = {
 
 -- Only an aura that is not inside a group has a place of its own on screen;
 -- the group decides where its children go.
-local function OwnPosition(aura) return aura.parent == nil end
+-- A free group's children each have one too, from the group's center.
+local function OwnPosition(aura)
+    if aura.parent == nil then return true end
+    local parent = ns.FindAura(aura.parent)
+    return parent ~= nil and ns.GroupField(parent, "growth") == "FREE"
+end
 
 local POSITION_TIP = "Where its center sits, in pixels from the center of the "
     .. "screen: 0, 0 is dead center, X grows to the right and Y upward. Drag "
@@ -2457,7 +2794,8 @@ local DISPLAY_FIELDS = {
                    { text = "Center H", value = "HCENTER" },
                    { text = "Center V", value = "VCENTER" },
                    { text = "Circle", value = "CIRCLE" },
-                   { text = "Custom", value = "CUSTOM" } },
+                   { text = "Custom", value = "CUSTOM" },
+                   { text = "Free", value = "FREE" } },
         get = function(aura) return ns.GroupField(aura, "growth") end,
         set = function(aura, value)
             aura.growth = value
@@ -2480,6 +2818,21 @@ local DISPLAY_FIELDS = {
         get = function(aura) return ns.GroupField(aura, "columns") end,
         set = function(aura, value)
             aura.columns = value
+            Commit(false)
+        end,
+    },
+    {
+        kind = "check", label = "New lines go up (or left)", key = "wrapReverse",
+        tip = "When it wraps: a row's next line goes above it rather than below, a "
+           .. "column's to its left rather than its right.",
+        visible = function(aura)
+            local growth = ns.GroupField(aura, "growth")
+            return ns.IsGroup(aura) and (ns.GroupField(aura, "columns") or 0) > 0
+                and growth ~= "CIRCLE" and growth ~= "CUSTOM" and growth ~= "FREE"
+        end,
+        get = function(aura) return ns.GroupField(aura, "wrapReverse") end,
+        set = function(aura, checked)
+            aura.wrapReverse = checked or nil
             Commit(false)
         end,
     },
@@ -3313,7 +3666,7 @@ do
                 { "Auras & cooldowns", { "aura", "cooldown" } },
                 { "Spells", { "usable", "known", "range", "charges", "cast" } },
                 { "Items", { "itemcooldown", "slotcooldown", "itemcount", "equipped", "enchant" } },
-                { "You", { "form", "threat", "xp", "money", "status", "zone" } },
+                { "You", { "form", "threat", "xp", "reputation", "money", "status", "zone" } },
                 { "Events", { "chat", "readycheck" } },
                 { "Bars (display only)", { "health", "power" } },
                 { "Custom", { "custom" } },
@@ -3729,13 +4082,226 @@ local ANIMATION_FIELDS = {
 }
 Config.__animationFields = ANIMATION_FIELDS
 
+-------------------------------------------------------------------------------
+-- Options tab: custom options
+-------------------------------------------------------------------------------
+-- WeakAuras' Custom Options: settings an aura's author offers, which its code
+-- reads as aura_env.config. The top is for using them; author mode, below,
+-- makes them.
+
+local authorMode = false
+local currentOption = 1
+function Config.__optionCursor(i, mode)
+    if i then currentOption = i end
+    if mode ~= nil then authorMode = mode end
+    return currentOption, authorMode
+end
+
+local function OptionList(aura) return type(aura.authorOptions) == "table" and aura.authorOptions or nil end
+local function CurOption(aura)
+    local list = OptionList(aura)
+    return list and list[currentOption]
+end
+local function Authoring(aura) return authorMode and CurOption(aura) ~= nil end
+local function OptionIs(...)
+    local wanted = {}
+    for i = 1, select("#", ...) do wanted[select(i, ...)] = true end
+    return function(aura)
+        local option = CurOption(aura)
+        return authorMode and option ~= nil and wanted[option.type or "input"] and true or false
+    end
+end
+
+local function OptionsChanged(aura)
+    ns.Env:RefreshConfig(aura)
+    Commit(false)
+end
+
+local OPTION_TYPES = {
+    { text = "Toggle", value = "toggle" }, { text = "Text", value = "input" },
+    { text = "Number", value = "number" }, { text = "Slider", value = "range" },
+    { text = "Color", value = "color" }, { text = "Choice", value = "select" },
+    { text = "Several choices", value = "multiselect" }, { text = "Media (a path)", value = "media" },
+    { text = "Heading", value = "header" }, { text = "Description", value = "description" },
+    { text = "Space", value = "space" },
+}
+-- What a fresh option of each type starts with.
+local OPTION_DEFAULTS = {
+    toggle = false, input = "", number = 0, range = 0, color = { 1, 1, 1, 1 },
+    select = 1, multiselect = {}, media = "",
+}
+
+local function OptionText(key, label, visible, tip)
+    return {
+        kind = "text", label = label, key = key, width = 240, visible = visible, tip = tip,
+        get = function(aura)
+            local option = CurOption(aura)
+            local value = option and option[key:gsub("^opt", ""):lower()]
+            return value ~= nil and tostring(value) or ""
+        end,
+        set = function(aura, text)
+            local option = CurOption(aura)
+            if not option then return end
+            option[key:gsub("^opt", ""):lower()] = text ~= "" and text or nil
+            OptionsChanged(aura)
+        end,
+    }
+end
+local function OptionNumber(field, label, visible)
+    return {
+        kind = "text", label = label, key = "opt_" .. field, width = 80, visible = visible,
+        get = function(aura)
+            local option = CurOption(aura)
+            return option and option[field] ~= nil and tostring(option[field]) or ""
+        end,
+        set = function(aura, text)
+            local option = CurOption(aura)
+            if not option then return end
+            option[field] = tonumber(text)
+            OptionsChanged(aura)
+        end,
+    }
+end
+
+local OPTION_FIELDS = {
+    { kind = "header", label = "Custom options" },
+    {
+        kind = "authoroptions", key = "authorOptions",
+        empty = "This aura has no custom options. Author mode, below, adds settings "
+             .. "for its code to read as aura_env.config; an aura shared with them brings them along.",
+        set = function(aura, path, value)
+            aura.config = type(aura.config) == "table" and aura.config or {}
+            local t = aura.config
+            for i = 1, #path - 1 do
+                if type(t[path[i]]) ~= "table" then t[path[i]] = {} end
+                t = t[path[i]]
+            end
+            t[path[#path]] = value
+            OptionsChanged(aura)
+        end,
+    },
+    {
+        kind = "button", label = "Reset to defaults", text = "Reset to defaults", key = "optReset",
+        visible = function(aura) return OptionList(aura) ~= nil end,
+        click = function(aura)
+            aura.config = nil
+            OptionsChanged(aura)
+        end,
+    },
+    {
+        kind = "check", label = "Author mode", key = "authorMode",
+        tip = "Make the options: add them, name them, set their defaults.",
+        get = function() return authorMode end,
+        set = function(_, checked)
+            authorMode = checked and true or false
+            Config:Refresh()
+        end,
+    },
+    {
+        kind = "strip", label = "Options", key = "optionStrip", max = 20,
+        visible = function() return authorMode end,
+        empty = "none yet -- + adds one",
+        count = function(aura) local list = OptionList(aura) return list and #list or 0 end,
+        current = function() return currentOption end,
+        select = function(i) currentOption = i end,
+        add = function(aura)
+            aura.authorOptions = OptionList(aura) or {}
+            local n = #aura.authorOptions + 1
+            aura.authorOptions[n] = { type = "toggle", key = "option" .. n, name = "Option " .. n, default = false }
+            currentOption = n
+            ns.Env:RefreshConfig(aura)
+        end,
+        remove = function(aura)
+            local list = OptionList(aura)
+            if not list then return end
+            table.remove(list, currentOption)
+            if #list == 0 then aura.authorOptions = nil end
+            currentOption = math.max(1, currentOption - 1)
+            ns.Env:RefreshConfig(aura)
+        end,
+        move = function(aura, step)
+            local list = OptionList(aura)
+            local to = currentOption + step
+            if not list or not list[to] then return end
+            list[currentOption], list[to] = list[to], list[currentOption]
+            currentOption = to
+        end,
+    },
+    {
+        kind = "choice", label = "Type", key = "optType", width = 200, dropdown = true,
+        values = OPTION_TYPES, visible = Authoring,
+        get = function(aura) local option = CurOption(aura) return option and (option.type or "input") end,
+        set = function(aura, value)
+            local option = CurOption(aura)
+            if not option then return end
+            option.type = value
+            local default = OPTION_DEFAULTS[value]
+            option.default = type(default) == "table" and CopyValue(default) or default
+            if value == "range" then option.min, option.max, option.step = 0, 100, 1 end
+            if (value == "select" or value == "multiselect") and type(option.values) ~= "table" then
+                option.values = { "First", "Second" }
+            end
+            OptionsChanged(aura)
+        end,
+    },
+    OptionText("optKey", "Key (aura_env.config.<key>)",
+        OptionIs("toggle", "input", "number", "range", "color", "select", "multiselect", "media")),
+    OptionText("optName", "Name", OptionIs("toggle", "input", "number", "range", "color", "select",
+        "multiselect", "media", "header")),
+    OptionText("optDesc", "Tooltip", OptionIs("toggle", "input", "number", "range", "color", "select",
+        "multiselect", "media")),
+    OptionText("optText", "Text", OptionIs("header", "description")),
+    {
+        kind = "text", label = "Default", key = "optDefault", width = 160,
+        tip = "true or false for a toggle, a number for a number or slider, the choice's number for a choice.",
+        visible = OptionIs("toggle", "input", "number", "range", "select", "media"),
+        get = function(aura)
+            local option = CurOption(aura)
+            return option and option.default ~= nil and tostring(option.default) or ""
+        end,
+        set = function(aura, text)
+            local option = CurOption(aura)
+            if not option then return end
+            local kind = option.type or "input"
+            if kind == "toggle" then option.default = (text == "true")
+            elseif kind == "number" or kind == "range" or kind == "select" then option.default = tonumber(text)
+            else option.default = text end
+            OptionsChanged(aura)
+        end,
+    },
+    OptionNumber("min", "Lowest", OptionIs("range", "number")),
+    OptionNumber("max", "Highest", OptionIs("range", "number")),
+    OptionNumber("step", "Step", OptionIs("range", "number")),
+    {
+        kind = "text", label = "Choices, split by commas", key = "optValues", width = 300,
+        visible = OptionIs("select", "multiselect"),
+        get = function(aura)
+            local option = CurOption(aura)
+            return option and type(option.values) == "table" and table.concat(option.values, ", ") or ""
+        end,
+        set = function(aura, text)
+            local option = CurOption(aura)
+            if not option then return end
+            local values = {}
+            for part in text:gmatch("[^,]+") do
+                part = part:match("^%s*(.-)%s*$")
+                if part ~= "" then values[#values + 1] = part end
+            end
+            option.values = values
+            OptionsChanged(aura)
+        end,
+    },
+}
+Config.__optionFields = OPTION_FIELDS
+
 local TABS = {
-    { key = "trigger",    text = "Trigger" },
-    { key = "display",    text = "Display" },
-    { key = "conditions", text = "Conditions" },
-    { key = "load",       text = "Load" },
-    { key = "actions",    text = "Actions" },
-    { key = "animations", text = "Animations" },
+    { key = "trigger",    text = "Trigger",    width = 60 },
+    { key = "display",    text = "Display",    width = 60 },
+    { key = "conditions", text = "Conditions", width = 74 },
+    { key = "load",       text = "Load",       width = 46 },
+    { key = "actions",    text = "Actions",    width = 60 },
+    { key = "animations", text = "Animations", width = 78 },
+    { key = "options",    text = "Options",    width = 60 },
 }
 
 local function BuildEditor(parent)
@@ -3773,7 +4339,7 @@ local function BuildEditor(parent)
     -- Tabs
     editor.tabButtons = {}
     for index, tab in ipairs(TABS) do
-        local button = Button(body, tab.text, 70, function()
+        local button = Button(body, tab.text, tab.width or 70, function()
             Config:SetTab(tab.key)
         end)
         if index == 1 then
@@ -3795,6 +4361,7 @@ local function BuildEditor(parent)
         load    = BuildLoadFields(),
         actions = ACTION_FIELDS,
         animations = ANIMATION_FIELDS,
+        options = OPTION_FIELDS,
     }
 
     for key, fields in pairs(specs) do
@@ -3830,11 +4397,23 @@ local function BuildEditor(parent)
         .. "it out. Groups are listed above with [group] or [dynamic] in front.")
 
     local remove = Button(body, "Delete", 80, function()
-        Config:Delete(selectedID)
+        Config:DeleteSelected()
     end)
     remove:SetPoint("LEFT", parentBox, "RIGHT", 12, 0)
     Tooltip(remove, "Delete", "Deleting a group leaves its children behind, "
-        .. "outside any group -- nothing is ever removed twice over.")
+        .. "outside any group -- nothing is ever removed twice over. With several "
+        .. "selected (ctrl-click), deletes them all.")
+
+    -- With several selected: this tab's settings onto all of them.
+    local copyTab = Button(body, "Copy tab to selected", 150, function()
+        local n = Config:CopyTabToSelected()
+        ns.Print("copied to " .. n .. ".")
+    end)
+    copyTab:SetPoint("LEFT", remove, "RIGHT", 8, 0)
+    Tooltip(copyTab, "Copy this tab to the selected",
+        "Ctrl-click auras in the list to select several; this copies what is on the open tab "
+        .. "from this one onto the rest.")
+    editor.copyTab = copyTab
 end
 
 local function RefreshEditor()
@@ -3848,6 +4427,9 @@ local function RefreshEditor()
 
     editor.hint:Hide()
     editor.body:Show()
+    local selectedCount = #Config:SelectedList()
+    editor.copyTab:SetShown(selectedCount > 1)
+    editor.copyTab:SetText("Copy tab to " .. (selectedCount - 1) .. " more")
 
     for _, button in ipairs(editor.tabButtons) do
         if button.key == currentTab then
@@ -3975,6 +4557,7 @@ function Config:Select(id)
         currentTrigger = 1
         currentCondition, currentCheck, currentChange = 1, 1, 1
         currentText = 1
+        currentOption = 1
     end
     selectedID = id
     self:Refresh()
@@ -4085,6 +4668,83 @@ function Config:AddNamed(text)
     return aura
 end
 
+-- New from template (Templates.lua): a spell, and what to watch about it.
+function Config:AddFromTemplate(kind, spellID)
+    local profile = ns.GetProfile()
+    if not profile or not spellID then return nil end
+    local aura = ns.Templates:Make(kind, spellID)
+    if not aura then return nil end
+    aura.id = ns.NextID(profile)
+    local selected = Current()
+    if selected then
+        if ns.IsGroup(selected) then
+            aura.parent = selected.id
+        elseif selected.parent then
+            aura.parent = selected.parent
+        end
+    end
+    Config:InheritDisplay(aura)
+    profile.auras[#profile.auras + 1] = aura
+    selectedID = aura.id
+    Commit(true)
+    return aura
+end
+
+local templateFrame
+function Config:OpenTemplates()
+    if not window then return end
+    if not templateFrame then
+        local frame = CreateFrame("Frame", "ChairAurasTemplates", window, "BackdropTemplate")
+        frame:SetSize(300, 176)
+        frame:SetPoint("CENTER", window, "CENTER", 0, 40)
+        pcall(frame.SetFrameStrata, frame, "DIALOG")
+        pcall(frame.SetBackdrop, frame, { bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+        pcall(frame.SetBackdropColor, frame, 0.05, 0.06, 0.08, 0.98)
+        pcall(frame.SetBackdropBorderColor, frame, 0.25, 0.77, 1, 0.7)
+        frame:EnableMouse(true)
+        local title = Text(frame, "New from template", "GameFontNormal")
+        title:SetPoint("TOP", frame, "TOP", 0, -10)
+
+        local spellLabel = Text(frame, "Spell (from your spellbook)", "GameFontNormalSmall")
+        spellLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -34)
+        local spellHost = CreateFrame("Frame", nil, frame)
+        spellHost:SetSize(260, 22)
+        spellHost:SetPoint("TOPLEFT", spellLabel, "BOTTOMLEFT", 0, -4)
+        frame.spells = {}
+        frame.spellDrop = Dropdown(spellHost, 260, frame.spells, function(value)
+            frame.spell = value
+            frame.spellDrop:SetValue(value)
+        end)
+
+        local kindLabel = Text(frame, "Watch", "GameFontNormalSmall")
+        kindLabel:SetPoint("TOPLEFT", spellHost, "BOTTOMLEFT", 0, -10)
+        local kindHost = CreateFrame("Frame", nil, frame)
+        kindHost:SetSize(260, 22)
+        kindHost:SetPoint("TOPLEFT", kindLabel, "BOTTOMLEFT", 0, -4)
+        frame.kind = "cooldown"
+        frame.kindDrop = Dropdown(kindHost, 260, ns.Templates.KINDS, function(value)
+            frame.kind = value
+            frame.kindDrop:SetValue(value)
+        end)
+
+        local create = Button(frame, "Create", 90, function()
+            if Config:AddFromTemplate(frame.kind, frame.spell) then frame:Hide() end
+        end)
+        create:SetPoint("BOTTOMRIGHT", frame, "BOTTOM", -4, 12)
+        local cancel = Button(frame, "Cancel", 90, function() frame:Hide() end)
+        cancel:SetPoint("BOTTOMLEFT", frame, "BOTTOM", 4, 12)
+        templateFrame = frame
+        Config.__templates = frame
+    end
+    wipe(templateFrame.spells)
+    for _, entry in ipairs(ns.Templates:Spells()) do templateFrame.spells[#templateFrame.spells + 1] = entry end
+    if not templateFrame.spell and templateFrame.spells[1] then templateFrame.spell = templateFrame.spells[1].value end
+    templateFrame.spellDrop:SetValue(templateFrame.spell)
+    templateFrame.kindDrop:SetValue(templateFrame.kind)
+    templateFrame:Show()
+end
+
 function Config:AddGroup(dynamic)
     local profile = ns.GetProfile()
     if not profile then return end
@@ -4097,6 +4757,46 @@ function Config:AddGroup(dynamic)
     profile.auras[#profile.auras + 1] = aura
     selectedID = aura.id
     Commit(true)
+end
+
+-- Everything selected, in list order.
+function Config:SelectedList()
+    local out = {}
+    for _, entry in ipairs(TreeOrder()) do
+        if entry.aura.id == selectedID or multi[entry.aura.id] then out[#out + 1] = entry.aura end
+    end
+    return out
+end
+
+function Config:DeleteSelected()
+    local list = self:SelectedList()
+    if #list <= 1 then return self:Delete(selectedID) end
+    for _, aura in ipairs(list) do self:Delete(aura.id) end
+    wipe(multi)
+end
+
+-- The open tab's settings, copied onto the rest of the selection.
+local TAB_PARTS = {
+    trigger = { "triggers" }, display = { "display" }, conditions = { "conditions" },
+    load = { "load" }, actions = { "actions" }, animations = { "animation" },
+    options = { "authorOptions", "config" },
+}
+local NOT_ON_GROUPS = { trigger = true, conditions = true, actions = true }
+function Config:CopyTabToSelected()
+    local source = Current()
+    local parts = TAB_PARTS[currentTab]
+    if not (source and parts) then return 0 end
+    local copied = 0
+    for _, aura in ipairs(self:SelectedList()) do
+        if aura ~= source and not (NOT_ON_GROUPS[currentTab] and ns.IsGroup(aura)) then
+            for _, key in ipairs(parts) do aura[key] = CopyValue(source[key]) end
+            if source.untrusted then aura.untrusted = true end
+            if currentTab == "options" then ns.Env:RefreshConfig(aura) end
+            copied = copied + 1
+        end
+    end
+    Commit(true)
+    return copied
 end
 
 function Config:Delete(id)
@@ -4387,6 +5087,12 @@ local function BuildWindow()
     local dropHint = Text(window, "or drag a spell here", "GameFontDisableSmall")
     dropHint:SetPoint("LEFT", namedButton, "RIGHT", 10, 0)
 
+    local templateButton = Button(window, "From template", 110, function() Config:OpenTemplates() end)
+    templateButton:SetPoint("LEFT", dropHint, "RIGHT", 10, 0)
+    Tooltip(templateButton, "New from template",
+        "Pick a spell from your spellbook and what to watch about it -- its cooldown, its buff, "
+        .. "the buff missing, your debuff on the target -- and the aura is made for you.")
+
     -- List
     local inset = CreateFrame("Frame", nil, window, "InsetFrameTemplate3")
     inset:SetWidth(LIST_W)
@@ -4397,9 +5103,24 @@ local function BuildWindow()
                            "GameFontDisableSmall")
     shiftHint:SetPoint("BOTTOMRIGHT", inset, "TOPRIGHT", 0, 1)
 
+    -- Search: the list narrows to what matches, and the groups it is in.
+    local search = CreateFrame("EditBox", nil, inset, "InputBoxTemplate")
+    search:SetSize(LIST_W - 40, 20)
+    search:SetPoint("TOPLEFT", inset, "TOPLEFT", 12, -5)
+    search:SetAutoFocus(false)
+    local searchHint = Text(search, "search", "GameFontDisableSmall")
+    searchHint:SetPoint("LEFT", search, "LEFT", 2, 0)
+    search:SetScript("OnTextChanged", function(self)
+        Config.search = self:GetText() or ""
+        searchHint:SetShown(Config.search == "")
+        RefreshTree()
+    end)
+    search:SetScript("OnEscapePressed", function(self) self:SetText("") self:ClearFocus() end)
+    window.search = search
+
     local scroll = CreateFrame("ScrollFrame", "ChairAurasConfigScroll", inset,
                                "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", inset, "TOPLEFT", 4, -4)
+    scroll:SetPoint("TOPLEFT", inset, "TOPLEFT", 4, -30)
     scroll:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", -26, 4)
 
     listChild = CreateFrame("Frame", nil, scroll)

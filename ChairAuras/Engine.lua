@@ -164,7 +164,40 @@ local MAX_AURAS = 40
 -- all. An aura whose fields come back secret is not one that failed to match,
 -- it is a question this client refused -- and the two have opposite
 -- consequences for an inverted watcher.
+-- "Also match": more names and IDs beside the main one, typed with commas.
+local alsoCache = {}
+local function AlsoList(trigger)
+    local text = trigger.also
+    if type(text) ~= "string" or text == "" then return nil end
+    local list = alsoCache[text]
+    if not list then
+        list = { ids = {}, names = {} }
+        for part in text:gmatch("[^,]+") do
+            part = part:match("^%s*(.-)%s*$")
+            local id = tonumber(part)
+            if id then list.ids[id] = true elseif part ~= "" then list.names[part:lower()] = true end
+        end
+        alsoCache[text] = list
+    end
+    return list
+end
+
+local MatchesMain
+
 local function Matches(data, trigger)
+    local matched, blind = MatchesMain(data, trigger)
+    if matched then return true, false end
+    local also = AlsoList(trigger)
+    if also then
+        local spellID = ns.AuraField(data, "spellId")
+        if spellID and also.ids[spellID] then return true, false end
+        local name = ns.AuraField(data, "name")
+        if name and also.names[name:lower()] then return true, false end
+    end
+    return false, blind
+end
+
+MatchesMain = function(data, trigger)
     if ns.TriggerFieldValue(trigger, "match") == "name" then
         local wanted = trigger.text
         if not wanted or wanted == "" then return false, false end
@@ -236,6 +269,46 @@ local function FindAura(unit, trigger)
     return nil, unreadable
 end
 
+-- Every match on one unit, into `out`. Answers whether anything was refused.
+local function FindAll(unit, trigger, out)
+    local okE, exists = pcall(UnitExists, unit)
+    if not okE or not exists then return false end
+
+    local filter = ns.TriggerFieldValue(trigger, "harmful") and "HARMFUL" or "HELPFUL"
+    if ns.TriggerFieldValue(trigger, "mine") then filter = filter .. "|PLAYER" end
+
+    local unreadable = false
+    for index = 1, MAX_AURAS do
+        local ok, data = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
+        if not ok then return true end
+        if not data then return unreadable end
+        local matched, blind = Matches(data, trigger)
+        if blind then unreadable = true end
+        if matched and StacksSatisfied(trigger, (ns.StackCount(data))) then
+            out[#out + 1] = { unit = unit, data = data, index = index }
+        end
+    end
+    return unreadable
+end
+
+-- Units beyond the four: every member of a group, or the bosses.
+local function Range(prefix, count, withPlayer)
+    local out = withPlayer and { "player" } or {}
+    for i = 1, count do out[#out + 1] = prefix .. i end
+    return out
+end
+local GROUP_UNITS = {
+    party = function() return Range("party", 4, true) end,
+    raid  = function() return Range("raid", 40) end,
+    boss  = function() return Range("boss", 5) end,
+    group = function()
+        local okR, raid = pcall(IsInRaid)
+        if okR and raid then return Range("raid", 40) end
+        return Range("party", 4, true)
+    end,
+}
+Engine.GROUP_UNITS = GROUP_UNITS
+
 -------------------------------------------------------------------------------
 -- One trigger's evaluation
 -------------------------------------------------------------------------------
@@ -279,8 +352,76 @@ local function AssumeAura(trigger, ts, now)
     end
 end
 
+local FillFromAura
+
+-- How many matches, against the trigger's count setting. Zero wanted means
+-- any at all.
+local function CountSatisfied(trigger, count)
+    local wanted = tonumber(trigger.matchCount) or 0
+    if wanted <= 0 then return count > 0 end
+    local op = ns.TriggerFieldValue(trigger, "matchOp")
+    if op == "<=" then return count <= wanted end
+    if op == "==" then return count == wanted end
+    return count >= wanted
+end
+
+-- The long way round: a group of units, a count, or one region per match.
+local function EvaluateMatches(trigger, ts, now, unit)
+    local list = GROUP_UNITS[unit]
+    if list then ns.watchesGroupUnits = true end
+    local matches, refused = {}, false
+    for _, one in ipairs(list and list() or { unit }) do
+        if FindAll(one, trigger, matches) then refused = true end
+    end
+    if #matches == 0 and refused then
+        ts.unknown = true
+        AssumeAura(trigger, ts, now)
+        return
+    end
+    ts.unknown, ts.assumed = false, false
+    ts.castSeen = now
+    ts.matchCount = #matches
+    ts.met = CountSatisfied(trigger, #matches)
+
+    local first = matches[1]
+    if first then
+        FillFromAura(ts, first.data, now)
+        ts.met = CountSatisfied(trigger, #matches)
+        ts.unit = first.unit
+        local okN, name = pcall(UnitName, first.unit)
+        ts.unitName = okN and ns.SafeText(name) or nil
+    else
+        local met = ts.met
+        ClearState(ts)
+        ts.met = met
+        ts.icon, ts.name, ts.unit, ts.unitName = nil, nil, nil, nil
+    end
+
+    -- One region per match, for a group to lay out.
+    if trigger.cloneMatches and #matches > 0 then
+        local clones = {}
+        for i, match in ipairs(matches) do
+            local data = match.data
+            local okN, unitName = pcall(UnitName, match.unit)
+            clones[i] = { key = string.format("%s:%02d", match.unit, match.index), state = {
+                show = true, name = ns.AuraField(data, "name"), icon = ns.AuraField(data, "icon"),
+                stacks = ns.StackCount(data), duration = ns.AuraField(data, "duration"),
+                expirationTime = ns.AuraField(data, "expires"), unit = match.unit,
+                unitName = okN and ns.SafeText(unitName) or nil,
+            } }
+        end
+        ts.cloneStates = clones
+    else
+        ts.cloneStates = nil
+    end
+end
+
 local function EvaluateAura(trigger, ts, now)
     local unit = ns.TriggerFieldValue(trigger, "unit")
+    if GROUP_UNITS[unit] or (tonumber(trigger.matchCount) or 0) > 0 or trigger.cloneMatches then
+        return EvaluateMatches(trigger, ts, now, unit)
+    end
+    ts.matchCount, ts.cloneStates = nil, nil
     local data, unknown = FindAura(unit, trigger)
 
     if not data and unknown then
@@ -302,6 +443,11 @@ local function EvaluateAura(trigger, ts, now)
         return
     end
 
+    FillFromAura(ts, data, now)
+end
+
+-- A found aura's values, onto the trigger's state.
+FillFromAura = function(ts, data, now)
     ts.met = true
     -- applications is the current name for the stack count; older clients
     -- fill in others. nil means the count could not be read, never zero.

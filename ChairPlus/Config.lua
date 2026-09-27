@@ -45,13 +45,16 @@ ns.defaults = {
     osdMail             = false,     -- a mail icon while there is unread mail
     osdSocial           = false,     -- friends online
     osdGuild            = false,     -- guildmates online
+    osdRep              = false,     -- the reputation you watch
+    osdBgAlpha          = 0.45,      -- how dark the background is
+    osdMaxWidth         = 0,         -- wrap onto another line past this; 0 never
     osdCasino           = false,     -- a Chairface's Casino table in your group
     osdBrokers          = "",        -- other addons' feeds that are on, by key
     hideStatusBars      = false,     -- hide the game's XP bar and status bar 2
     osdHideMinimap      = false,     -- hide minimap buttons of addons on the display
     -- Display order, left to right. Items missing from it (a new one, or a
     -- hand-edited list) are added at the end in their default place.
-    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,threat,clock,alarm,tracker,latency,session,gph,sessiongold,speed,pet,mail,social,guild,casino",
+    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,rep,threat,clock,alarm,tracker,latency,session,gph,sessiongold,speed,pet,mail,social,guild,casino",
     osdLocked           = true,     -- click-through until "/chair plus osd unlock"
     osdFontSize         = 14,
     osdScale            = 1.0,
@@ -107,6 +110,24 @@ ns.defaults = {
 
     -- Camera
     maxCameraZoom       = false,
+
+    -- Tooltip extras (Tooltips.lua)
+    tooltipExtras       = false,
+    tooltipSellPrice    = true,     -- what it sells to a merchant for
+    tooltipIDs          = false,    -- item and spell IDs
+
+    -- Mail and small automations (Mail.lua)
+    mailOpenAll         = false,    -- an "Open all" button on the inbox
+    autoReleaseBG       = false,    -- release on dying in a battleground
+    skipCinematics      = false,    -- the in-game cutscenes
+    autoDismount        = false,    -- dismount / stand on those errors
+
+    -- Nameplate threat colors (Nameplates.lua)
+    nameplateThreat     = false,
+    npMine              = true,  npMineR = 0.2,  npMineG = 0.8,  npMineB = 0.2,
+    npChanging          = true,  npChangingR = 1, npChangingG = 0.6, npChangingB = 0,
+    npNonTank           = true,  npNonTankR = 1, npNonTankG = 0.1, npNonTankB = 0.1,
+    npOtherTank         = true,  npOtherTankR = 0.25, npOtherTankG = 0.5, npOtherTankB = 1,
 
     -- Invites, duels, resurrection (Social.lua). Hold shift to answer yourself.
     autoInvite          = false,    -- accept group invites from...

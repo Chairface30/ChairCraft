@@ -294,11 +294,18 @@ local PIVOT = {
     VCENTER = "CENTER",
     CIRCLE  = "CENTER",
     CUSTOM  = "CENTER",
+    FREE    = "CENTER",
 }
+
+-- With new lines going the other way (up, or left), the corner that holds
+-- still is the one on that side.
+local REVERSED_PIVOT = { RIGHT = "BOTTOMLEFT", LEFT = "BOTTOMRIGHT", DOWN = "TOPRIGHT", UP = "BOTTOMRIGHT" }
 
 function Display:PivotFor(aura)
     if not ns.IsGroup(aura) then return "CENTER" end
-    return PIVOT[ns.GroupField(aura, "growth")] or "TOPLEFT"
+    local growth = ns.GroupField(aura, "growth")
+    if ns.GroupField(aura, "wrapReverse") and REVERSED_PIVOT[growth] then return REVERSED_PIVOT[growth] end
+    return PIVOT[growth] or "TOPLEFT"
 end
 
 -- Where a named point of a frame sits relative to that frame's own centre.
@@ -594,6 +601,22 @@ local function CirclePositions(group, children)
 end
 Display.CirclePositions = CirclePositions
 
+-- Free: each child where its own position puts it, from the group's center --
+-- how a WeakAuras group lays out what is in it.
+local function FreePositions(group, children)
+    local out, maxX, maxY = {}, 0, 0
+    for i, child in ipairs(children) do
+        local w, h = RegionExtent(child)
+        local pos = (child.cloneOf or child).pos
+        local x, y = pos and tonumber(pos.x) or 0, pos and tonumber(pos.y) or 0
+        out[i] = { x = x, y = y, w = w, h = h }
+        maxX = math.max(maxX, math.abs(x) + w / 2)
+        maxY = math.max(maxY, math.abs(y) + h / 2)
+    end
+    return out, 2 * maxX, 2 * maxY
+end
+Display.FreePositions = FreePositions
+
 -- What a custom growth function said last time, for measuring the group.
 local customExtent = {}
 
@@ -606,6 +629,10 @@ function Display:GroupExtent(group, children)
     local growth = ns.GroupField(group, "growth")
     if growth == "CIRCLE" then
         local _, w, h = CirclePositions(group, children)
+        return w, h
+    end
+    if growth == "FREE" then
+        local _, w, h = FreePositions(group, children)
         return w, h
     end
     if growth == "CUSTOM" and customExtent[group.id] then
@@ -674,6 +701,8 @@ local function Arrange(group, children, states)
     local positions, width, height
     if growth == "CIRCLE" then
         positions, width, height = CirclePositions(group, children)
+    elseif growth == "FREE" then
+        positions, width, height = FreePositions(group, children)
     elseif growth == "CUSTOM" then
         positions, width, height = CustomPositions(group, children, states)
         if positions then customExtent[group.id] = { width, height } end
@@ -693,11 +722,25 @@ local function Arrange(group, children, states)
     local lines, along, across, vertical
     lines, along, across, vertical, growth = Measure(group, children)
     local centred = CENTRED[growth]
+    -- Grid order: new lines below (or right of) the last, or above (left of) it.
+    local reverse = ns.GroupField(group, "wrapReverse") and true or false
 
     for _, line in ipairs(lines) do
         for _, item in ipairs(line.items) do
             local frame = regions[item.child.id]
-            if frame then
+            if frame and reverse and not centred then
+                Size(frame, item.width, item.height)
+                if growth == "LEFT" then
+                    Pin(frame, "BOTTOMRIGHT", groupFrame, "BOTTOMRIGHT", -item.offset, line.crossOffset)
+                elseif growth == "UP" then
+                    Pin(frame, "BOTTOMRIGHT", groupFrame, "BOTTOMRIGHT", -line.crossOffset, item.offset)
+                elseif growth == "DOWN" then
+                    Pin(frame, "TOPRIGHT", groupFrame, "TOPRIGHT", -line.crossOffset, -item.offset)
+                else
+                    Pin(frame, "BOTTOMLEFT", groupFrame, "BOTTOMLEFT", item.offset, line.crossOffset)
+                end
+                frame:Show()
+            elseif frame then
                 Size(frame, item.width, item.height)
 
                 if centred then
@@ -705,6 +748,7 @@ local function Arrange(group, children, states)
                     -- and closes around its own centre.
                     local alongPos = item.offset + item.along / 2 - line.total / 2
                     local acrossPos = line.crossOffset + item.across / 2 - across / 2
+                    if reverse then acrossPos = -acrossPos end
 
                     if vertical then
                         Pin(frame, "CENTER", groupFrame, "CENTER", acrossPos, -alongPos)

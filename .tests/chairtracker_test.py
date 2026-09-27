@@ -594,6 +594,65 @@ check("the panel's own ranks are used, not the character sheet",
       L.eval('LogHas("350 / 350")') and L.eval("select(2, WOWFTrackerNS.SkillSource())") == "panel",
       L.eval("select(2, WOWFTrackerNS.SkillSource())"))
 
+# --- 3d'. WoW Forever: both at once ------------------------------------------
+# The old globals answer with spellbook tabs at 1/1; C_SkillInfo, the Skills
+# panel's own source, answers with real ranks -- no panel opened (2026-09-26).
+L = boot('''
+ResetPanel(false, false)
+TABS = { { "Class Skills", true }, { "Feral Combat", false, 1, 1 }, { "Balance", false, 1, 1 } }
+function GetNumSkillLines() return #TABS end
+function GetSkillLineInfo(i)
+    local t = TABS[i]
+    if not t then return nil end
+    return t[1], t[2], true, t[3] or 0, 0, 0, t[4] or 0
+end
+INFO = {
+    { name = "Class Skills", isHeader = true, isCollapsed = false, rank = 0, maxRank = 0 },
+    { name = "Balance", isHeader = false, rank = 1, maxRank = 1 },
+    { name = "Weapon Skills", isHeader = true, isCollapsed = false, rank = 0, maxRank = 0 },
+    { name = "Daggers", isHeader = false, rank = 50, maxRank = 100, skillLineCategoryID = 6 },
+    { name = "Feral Combat", isHeader = false, rank = 63, maxRank = 65, skillLineCategoryID = 6 },
+    { name = "Armor Proficiencies", isHeader = true, isCollapsed = false, rank = 0, maxRank = 0 },
+    { name = "Leather", isHeader = false, rank = 1, maxRank = 1 },
+}
+C_SkillInfo = {
+    GetNumSkillLines = function() return #INFO end,
+    GetSkillLineInfo = function(i) return INFO[i] end,
+    ExpandSkillHeader = function() end, CollapseSkillHeader = function() end,
+}
+WOWFTrackerDB = { settings = { sortMode = "name_asc" }, factions = {},
+    skills = { ["skill:Daggers"] = true, ["skill:Feral Combat"] = true, ["skill:Balance"] = true } }
+''')
+check("on Forever, C_SkillInfo answers rather than the spellbook tabs",
+      L.eval("(WOWFTrackerNS.SkillSource())") == "C_SkillInfo", L.eval("(WOWFTrackerNS.SkillSource())"))
+check("with every weapon skill at its real rank, no panel opened",
+      L.eval("ShownBars()") == "Daggers|Feral Combat" and L.eval('LogHas("50 / 100")')
+      and L.eval('LogHas("63 / 65")'), L.eval("ShownBars()"))
+# Standing sorts: factions by standing, then the skills after them.
+L.execute("""
+WOWFTrackerDB.settings.sortMode = "standing_desc"
+SORTED = {
+    { name = "Skill A", isSkill = true, standing = 0, progressPct = 0.2 },
+    { name = "Friendly", isSkill = false, standing = 5, progressPct = 0.5 },
+    { name = "Skill B", isSkill = true, standing = 0, progressPct = 0.9 },
+    { name = "Exalted", isSkill = false, standing = 8, progressPct = 0.1 },
+}
+WOWFTrackerNS.SortEntries(SORTED)
+ORDER = {} for i, e in ipairs(SORTED) do ORDER[i] = e.name end
+ORDER = table.concat(ORDER, ",")
+WOWFTrackerDB.settings.sortMode = "name_asc"
+""")
+check("in standing order the factions come first and the skills after them",
+      L.eval("ORDER") == "Exalted,Friendly,Skill B,Skill A", L.eval("ORDER"))
+
+check("and the 1/1 spell tabs and armor types left out",
+      not L.eval("WOWFTrackerNS.HasSkill('Balance')") and not L.eval("WOWFTrackerNS.HasSkill('Leather')"))
+# In combat the client may answer with secrets: the last reading stands.
+L.execute("INFO[4] = { name = 'Daggers', isHeader = false, rank = setmetatable({}, { __tostring = function() error('secret') end }), maxRank = setmetatable({}, { __tostring = function() error('secret') end }) }"
+          " WOWFTrackerNS.InvalidateSkillRows() WOWFTrackerNS.UpdateReputation()")
+check("a skill read as secret keeps its last reading rather than vanishing",
+      L.eval("ShownBars()") == "Daggers|Feral Combat" and L.eval('LogHas("50 / 100")'), L.eval("ShownBars()"))
+
 # --- 3e. a panel that answers with the spellbook's own lines ---------------
 # What this client actually does: the rows are spell tabs, each reading 1/1.
 # A tab is not a skill with progress, and a druid's "Feral Combat" tab must
@@ -1167,7 +1226,7 @@ CALLED = {}
 SkillsFrame = {
     GetRegions = function() return end,
     GetChildren = function() return unpack(WINDOW_ROWS) end,
-    HookScript = function() return true end,
+    HookScript = function(_, which, fn) if which == "OnShow" then HOOKED_ONSHOW = fn end return true end,
     IsShown = function() return SHOWN_NOW end,
     GetParent = function() return PARENT_NOW end,
     SetParent = function(_, p) PARENT_NOW = p end,
@@ -1200,8 +1259,9 @@ WOWFTrackerDB = { settings = { sortMode = "name_asc" }, factions = {},
     skills = { ["skill:Daggers"] = true, ["skill:Defense"] = true } }
 '''
 
-# The kindest client: the window has an update of its own, and calling it is all
-# filling it consists of.
+# Blizzard's panel is never made to run by us any more: its own update, its
+# OnShow and a hidden show all made its row code run as ours, which on this
+# client trips over a secret value (SkillsFrame.lua:466, 2026-09-26).
 L = boot('''
 FILLS = "update"
 ''' + PANEL + '''
@@ -1210,67 +1270,33 @@ SkillsFrame.Update = function()
     FillWindow()
 end
 ''')
-check("nothing but Defense before anything is warmed",
+check("nothing but Defense before the panel has been opened",
       L.eval("ShownBars()") == "Defense", L.eval("ShownBars()"))
-
 learned = L.eval("WOWFTrackerNS.WarmSkills(true)")
-check("the warm learns the skills the sheet could not answer for",
-      learned == 2, learned)
-check("its own update is what was called, and it was never shown",
-      L.eval("table.concat(CALLED, ',')") == "Update",
-      L.eval("table.concat(CALLED, ',')"))
-check("the window was left as it was found",
-      L.eval("SHOWN_NOW") is False and L.eval("PARENT_NOW") == "UIParent",
-      (L.eval("SHOWN_NOW"), L.eval("PARENT_NOW")))
+check("the warm never makes Blizzard's panel run: no update, no OnShow, no show",
+      learned == 0 and L.eval("table.concat(CALLED, ',')") == "",
+      (learned, L.eval("table.concat(CALLED, ',')")))
+check("and never moves it",
+      L.eval("SHOWN_NOW") is False and L.eval("PARENT_NOW") == "UIParent")
 
-L.execute("WOWFTrackerNS.UpdateReputation()")
-check("and the bar is drawn without the panel ever being opened",
+# The player opens it: Blizzard fills it, and a moment later it is read.
+L.execute("C_Timer.After = function(_, fn) fn() end"
+          " WOWFTrackerNS.HookSkillsWindow() FillWindow() SHOWN_NOW = true HOOKED_ONSHOW(SkillsFrame)")
+check("opening the panel yourself is when the ranks are read",
+      L.eval("WOWFTrackerDB.weaponSkills.Daggers") == 48
+      and L.eval("WOWFTrackerDB.weaponSkills.Maces") == 19)
+L.execute("SHOWN_NOW = false WINDOW_ROWS = {} WOWFTrackerNS.UpdateReputation()")
+check("and kept once it closes again",
       sorted(L.eval("ShownBars()").split("|")) == ["Daggers", "Defense"],
       L.eval("ShownBars()"))
 check("at the number the window was holding", L.eval('LogHas("48 / 80")'))
-
-# The header the window draws above its rows is not a skill, and would be a bar
-# at 0 out of 80 if it were taken for one.
 check("the header among the rows is not stored as a skill",
       L.eval("WOWFTrackerDB.weaponSkills['Weapon Skills']") is None)
 
-# What the whole thing is for: the values are the addon's own now, so a window
-# that goes back to empty -- which is what the next login looks like -- does not
-# take the numbers with it.
-L.execute("WINDOW_ROWS = {} WOWFTrackerNS.UpdateReputation()")
-check("and they survive the window emptying again",
-      sorted(L.eval("ShownBars()").split("|")) == ["Daggers", "Defense"],
-      L.eval("ShownBars()"))
-
-# A client whose window only fills when it is told it has appeared. Nothing is
-# shown here either -- the script is run, not the frame.
-L = boot('FILLS = "onshow"\n' + PANEL)
-learned = L.eval("WOWFTrackerNS.WarmSkills(true)")
-check("an OnShow-only window is filled by running its OnShow",
-      learned == 2 and L.eval("table.concat(CALLED, ',')") == "OnShow",
-      (learned, L.eval("table.concat(CALLED, ',')")))
-check("and it still never went on screen", L.eval("SHOWN_NOW") is False)
-
-# The hard case: nothing fills it but a real show. It gets one, parented to
-# something hidden, and has to come back with its parent and its anchors.
-L = boot('FILLS = "show"\n' + PANEL)
-learned = L.eval("WOWFTrackerNS.WarmSkills(true)")
-check("a window that only fills on a real show gets one",
-      learned == 2 and L.eval("table.concat(CALLED, ',')") == "Show",
-      (learned, L.eval("table.concat(CALLED, ',')")))
-check("it is hidden again afterwards", L.eval("SHOWN_NOW") is False)
-check("its parent is put back",
-      L.eval("PARENT_NOW") == "UIParent", L.eval("PARENT_NOW"))
-check("and so is its anchor, which is where the panel opens next time",
-      L.eval("POINTS_NOW") == 1, L.eval("POINTS_NOW"))
-
-# A panel the player is looking at is not something to move out from under them.
-L = boot('FILLS = "show"\n' + PANEL + '\nSHOWN_NOW = true\n')
-L.eval("WOWFTrackerNS.WarmSkills(true)")
-check("a panel that is open is read rather than reparented",
-      L.eval("PARENT_NOW") == "UIParent"
-      and L.eval("table.concat(CALLED, ',')") == "",
-      (L.eval("PARENT_NOW"), L.eval("table.concat(CALLED, ',')")))
+# A panel already holding rows is simply read.
+L = boot('FILLS = "none"\n' + PANEL + '\nFillWindow()\n')
+check("a panel that already holds rows is read as it stands",
+      L.eval("WOWFTrackerNS.WarmSkills(true)") == 2 and L.eval("table.concat(CALLED, ',')") == "")
 
 # And a client with no such window at all costs the attempt and nothing else.
 L = boot(PANEL + "\nSkillsFrame = nil\nFILLS = 'none'\n")
@@ -1279,33 +1305,10 @@ check("no window at all is not an error",
 check("and the addon still draws what it does know",
       L.eval("ShownBars()") == "Defense", L.eval("ShownBars()"))
 
-# The throttle: this runs on every skill-up, and a run of them must not turn
-# into a run of full attempts.
-L = boot('''
-FILLS = "update"
-''' + PANEL + '''
-SkillsFrame.Update = function()
-    table.insert(CALLED, "Update")
-    FillWindow()
-end
-''')
-L.eval("WOWFTrackerNS.WarmSkills(false)")
-L.execute("CALLED = {}")
-L.eval("WOWFTrackerNS.WarmSkills(false)")
-check("an unforced warm straight after another one does nothing",
-      L.eval("table.concat(CALLED, ',')") == "",
-      L.eval("table.concat(CALLED, ',')"))
-# Emptied first, or the walk stops at "ask it" -- the window is still full from
-# the warm above, and answering from it is the right thing to do.
-L.execute("WINDOW_ROWS = {} NOW = NOW + 30")
-L.eval("WOWFTrackerNS.WarmSkills(false)")
-check("and it is allowed again once the gap has passed",
-      L.eval("table.concat(CALLED, ',')") == "Update",
-      L.eval("table.concat(CALLED, ',')"))
-
 # The report itself. It is the thing that will be read in game when a client
 # turns out to fill its window some sixth way, so it has to survive every shape
 # above -- including the one with no window at all.
+L = boot('FILLS = "none"\n' + PANEL + '\nFillWindow()\n')
 ran = L.eval("""
 (function()
     local ok, err = pcall(SlashCmdList["WOWFTRACKER"], "weapons warm")
@@ -1313,6 +1316,20 @@ ran = L.eval("""
 end)()
 """)
 check("/wowft weapons warm runs and says what each step did", ran == "ok", ran)
+ran = L.eval("""
+(function()
+    WOWFTrackerAccountDB = WOWFTrackerAccountDB or {}
+    C_FakeSkills = { GetSkillInfo = function(id) return { name = "Daggers", rank = 48, maxRank = 80 } end,
+                     OpenSkills = function() OPENED_SKILLS = true end }
+    local ok, err = pcall(SlashCmdList["WOWFTRACKER"], "skilldata")
+    return ok and "ok" or tostring(err)
+end)()
+""")
+check("/chair tracker skilldata runs", ran == "ok", ran)
+check("and records what the read-only skill functions answer",
+      "rank=48" in str(L.eval("WOWFTrackerAccountDB.skillData.panelUnopened.calls['C_FakeSkills.GetSkillInfo(173)']")),
+      L.eval("WOWFTrackerAccountDB.skillData.panelUnopened.calls['C_FakeSkills.GetSkillInfo(173)']"))
+check("without calling anything that is not a Get", L.eval("OPENED_SKILLS") is None)
 # The command prints; the frame log is for bars, so this looks where it went.
 PRINTED_HAS = """
 (function(needle)

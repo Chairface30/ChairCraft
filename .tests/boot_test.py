@@ -97,8 +97,9 @@ BAGS[0] = { size = 16, family = 0, items = {} }
 """)
 check("no display is shown",
       stock.eval("not (ChairPlusOSD and ChairPlusOSD:IsShown())") is True)
-check("the camera stays at the client's own limit",
-      stock.eval('CVARS["cameraDistanceMaxZoomFactor"]') == 1.9,
+# Not even written: the player's own zoom (Blizzard's slider) is left alone.
+check("the camera setting is not touched",
+      stock.eval('CVARS["cameraDistanceMaxZoomFactor"]') is None,
       str(stock.eval('CVARS["cameraDistanceMaxZoomFactor"]')))
 check("/chair is still registered", stock.eval("SlashCmdList.CHAIRCRAFT ~= nil") is True)
 

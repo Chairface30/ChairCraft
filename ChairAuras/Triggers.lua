@@ -445,6 +445,73 @@ Register("xp", {
     end,
 })
 
+-- A faction's standing: the one you watch, or one named. Stacks carry the
+-- standing (1 hated .. 8 exalted), %n the faction, the bar its progress.
+local STANDINGS = { "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }
+local function Faction(wanted)
+    local function Pack(name, standing, low, high, value)
+        return { name = ns.SafeText(name), standing = Num(standing), low = Num(low),
+                 high = Num(high), value = Num(value) }
+    end
+    if not wanted or wanted == "" then
+        local reputation = _G.C_Reputation
+        if reputation and type(reputation.GetWatchedFactionData) == "function" then
+            local data = Try(reputation.GetWatchedFactionData)
+            if type(data) == "table" then
+                return Pack(data.name, data.reaction, data.currentReactionThreshold,
+                            data.nextReactionThreshold, data.currentStanding)
+            end
+        end
+        local name, standing, low, high, value = Try(_G.GetWatchedFactionInfo)
+        if name then return Pack(name, standing, low, high, value) end
+        return nil
+    end
+    wanted = wanted:lower()
+    local count = Num(Try(_G.GetNumFactions)) or 0
+    for i = 1, count do
+        local name, _, standing, low, high, value = Try(_G.GetFactionInfo, i)
+        if type(name) == "string" and name:lower() == wanted then
+            return Pack(name, standing, low, high, value)
+        end
+    end
+    return nil
+end
+ns.ReputationFaction = Faction
+
+Register("reputation", {
+    text = "Reputation",
+    tip = "A faction's standing: the one you watch, or one named. Stacks show the standing "
+       .. "(1 hated to 8 exalted), %n the faction, and a bar fills through the standing.",
+    fields = {
+        { kind = "text", key = "faction", label = "Faction (empty: the one you watch)" },
+        { kind = "choice", key = "standingOp", label = "Standing", values = OPS },
+        { kind = "choice", key = "standing", label = "Is", dropdown = true, values = {
+            { text = "Hated", value = 1 }, { text = "Hostile", value = 2 }, { text = "Unfriendly", value = 3 },
+            { text = "Neutral", value = 4 }, { text = "Friendly", value = 5 }, { text = "Honored", value = 6 },
+            { text = "Revered", value = 7 }, { text = "Exalted", value = 8 } }, default = 1 },
+    },
+    Evaluate = function(trigger, ts)
+        local faction = Faction(trigger.faction)
+        if not faction or not faction.standing then
+            ts.met = false
+            ts.name, ts.live = nil, nil
+            return
+        end
+        ts.count, ts.countKnown = faction.standing, true
+        ts.name = faction.name
+        ts.standingName = STANDINGS[faction.standing]
+        ts.met = Compare(faction.standing, Field(trigger, "standingOp", ">="), Field(trigger, "standing", 1))
+        -- Progress through the standing, drawn by a bar like health.
+        if faction.low and faction.high and faction.value and faction.high > faction.low then
+            ts.reputation = faction.value - faction.low
+            ts.reputationMax = faction.high - faction.low
+            ts.live = { kind = "value", value = ts.reputation, max = ts.reputationMax }
+        else
+            ts.live = nil
+        end
+    end,
+})
+
 Register("money", {
     text = "Money",
     tip = "The gold you carry.",
@@ -643,7 +710,10 @@ Register("power", {
 function ns.DrawLive(bar, live)
     if not (bar and live) then return false end
     local current, maximum
-    if live.kind == "health" then
+    if live.kind == "value" then
+        -- A readable number and its most (reputation), drawn the same way.
+        current, maximum = live.value, live.max
+    elseif live.kind == "health" then
         current, maximum = Try(_G.UnitHealth, live.unit), Try(_G.UnitHealthMax, live.unit)
     else
         current, maximum = Try(_G.UnitPower, live.unit), Try(_G.UnitPowerMax, live.unit)

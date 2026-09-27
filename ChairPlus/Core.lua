@@ -67,6 +67,19 @@ function ns.Num(value)
     return (ok and type(plain) == "number") and plain or nil
 end
 
+-- A yes/no that is safe to branch on: true, false, or nil when the client
+-- keeps it secret. Even testing a secret boolean throws on a tainted stack,
+-- so the test itself is what sits inside the pcall.
+function ns.Bool(value)
+    if value == nil then return nil end
+    local ok, answer = pcall(function()
+        if value then return true end
+        return false
+    end)
+    if ok then return answer end
+    return nil
+end
+
 -- A string that is safe to concat and compare. nil comes back as nil so
 -- callers can tell "absent" apart from "unreadable".
 --

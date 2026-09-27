@@ -1,5 +1,98 @@
 # Changelog
 
+## 1.2.0: polish, new features, and ChairAuras phases 10 and 11
+
+### Polish and new features
+
+**New**
+- **OSD**
+  - A **watched reputation** item.
+  - The **repair cost** on the durability tooltip (exact where the client gives it, otherwise the last merchant's quote).
+  - **Background opacity**, and a **wrap width** past which items start a second line.
+  - **Right-click actions:** money lists every character's gold, durability says itself in chat, and the clock switches 12 and 24 hour.
+- **ChairPlus**
+  - **Tooltip extras:** sell prices, and item and spell IDs.
+  - An **Open all** button on the mailbox (it skips cash-on-delivery and GM mail, and stops when bags are full).
+  - **Release in battlegrounds**, **skip cinematics**, and **dismount or stand when needed**.
+- **Nameplate threat colors** on the Threat page: I have aggro, aggro changing, a non-tank has aggro, and another tank has aggro, each in your own color. `/chair threat nameplates` reports what this client lets it read.
+- **A General page** in the menu: the minimap icon, locking the display, copying from another character, and **export and import of every setting** as one line of text.
+
+**Fixed**
+- **Chaircraft no longer makes Blizzard's own windows run their code:**
+  - The menu no longer hides the options window directly.
+  - The error-spam filter no longer replays the error frame's handler.
+  - Hiding the XP bars makes them see-through and click-through instead of hiding them, and they stay that way after a reload, when the game's own bar layout used to bring them back.
+  - Quest safety checks read the quest, not Blizzard's quest window.
+- **Max camera zoom, left off,** no longer resets your own zoom setting every time any setting changed.
+- **Repair:**
+  - Guild funds are used even when you are short of gold.
+  - "Repaired" is only said when it happened.
+  - Junk selling stops at twelve per visit, so all of it can still be bought back.
+- **Quests:**
+  - A turn-in whose item the client has not loaded yet is left to you.
+  - Blocked quests are refused when offered directly, too.
+- **Gossip:** the one-option skip recognizes flight masters, innkeepers, trainers and vendors by their icon on this client.
+- **Invite on keyword:** after turning the party into a raid, the invite waits for the raid to exist.
+- **Faster loot:** with full bags, coin and currency are taken and the items left, without the "Inventory is full" flood.
+- **The threat warning** can no longer be set above 100%, where it could never fire.
+- **The OSD:**
+  - The zone name follows zone changes.
+  - Threat follows target changes.
+  - A long name no longer leaves a gap once it is gone.
+  - XP is hidden at the level cap.
+  - Values the client keeps secret no longer break an item.
+- **Wording:**
+  - The OSD reset says where the display went (the center of the screen).
+  - Help text no longer loses letters to color codes.
+  - A broken slider texture path is fixed.
+- **ChairSnack:**
+  - The ammo low-supply warning can reach its own default (200).
+  - Running out of ammo shows 0 instead of hiding the bar.
+  - Secret aura data can no longer break the buff checks.
+  - Bag changes are rescanned once per frame instead of once per bag.
+- **ChairTracker:**
+  - Clicking a profession bar in combat no longer gets blocked.
+  - The standing sorts put skills after factions.
+  - It does less work per redraw.
+  - Its options talk about factions and skills, not just factions.
+  - The fade and linger sliders gray out with auto-hide off.
+
+**Polish**
+- Tooltips on nearly every setting in the ChairPlus, ChairSnack and ChairTracker options, explaining what each does and, for the automation, what it will never do.
+- Menu rows for settings that could only be set by command: the gossip, social and flight chat summaries, and the faster-loot throttle.
+- US spelling throughout, and ChairSnack says ChairSnack.
+
+### ChairAuras toward WeakAuras (phases 10 and 11)
+
+- **A Free group layout**: each child sits at its own offset from the group's center, set with its X and Y on the Display tab.
+- **Exports** now go out as `!CA:3!` strings, compressed with LibSerialize and LibDeflate (now included), so they are much shorter. Older `CA1:` strings still import. WeakAuras' own strings are not read.
+- **Custom options** on a new **Options** tab: settings an aura offers, which its code reads as `aura_env.config`.
+  - Types: toggles, text, numbers, sliders, colors, choices, multiple choices, headings and descriptions.
+  - **Author mode** adds, orders and edits your own.
+  - **Reset to defaults** puts them back.
+- **From template**: pick a spell from your spellbook and what to watch about it. The choices are its cooldown, its buff, the buff missing, your debuff on the target, usable now, or after you cast it. Built from your own spellbook, so this client's own spells are included.
+- **The editor** (phase 11):
+  - A search box above the list.
+  - **Ctrl-click** selects several auras. Dragging one moves them all, Delete removes them all, and **Copy tab to selected** copies the open tab's settings onto the rest.
+  - Code boxes have **Run**, which compiles and runs the code once and shows what it returned or where it failed. Tab indents.
+- **Aura triggers:**
+  - **Also match** takes more names or spell IDs, split by commas, for spells with several ranks or buffs with several versions.
+  - They can watch your **party** (you included), the **raid**, **group** (whichever you are in) or the **bosses**.
+  - **Match count:** at least, at most or exactly so many matching auras, across every unit watched. `%{matchCount}` shows the number.
+  - **One region per match** inside a group, with `%{unitName}` naming whose it is.
+- **Text formatters**, after a colon in braces:
+  - `abbr` (12.3k), `round`, `floor`, `ceil`, `time`, `upper`, `lower`
+  - `norealm`, which drops the realm from a name
+  - `maxN`, which cuts text to N characters
+  - `class`, which colors a name by its unit's class
+  - They chain: `%{unitName:norealm:class}`.
+- **Group grid order**: a wrapping group can start each new line above the last (or left of it), instead of below.
+- **Reputation trigger**: the faction you watch, or one by name, at a standing or better. Stacks show the standing, `%n` the faction, and a bar fills through the standing.
+- **The guild window can be moved** by dragging its title bar, like the other windows ChairPlus frees, and it stays where you drop it. This covers the guild and communities window, an older-style guild window, and the guild bank.
+- **ChairTracker reads every skill without the Skills panel ever being opened.** On WoW Forever the old skill functions only return spellbook tabs at 1/1, but `C_SkillInfo`, the Skills panel's own data source, returns every skill at its real rank: weapons (Feral Combat included), Defense, professions and secondary skills. ChairTracker now reads that directly, and keeps the last reading if the client hides the numbers in combat. Found with the new `/chair tracker skilldata` command.
+- **Fixed: ChairTracker no longer trips Blizzard's Skills panel.** It used to make the panel fill itself, and Blizzard's row code then ran as Chaircraft's and hit a hidden value ("SkillsFrame.lua:466: attempt to compare field 'modifier'"). Nothing of the panel's is run any more.
+- Not done: syntax coloring in code boxes, which needs a library whose license could not be confirmed.
+
 ## 1.1.0: ChairAuras toward WeakAuras
 
 - **More load conditions** (phase 9), grouped on the Load tab. Lists are typed with commas.

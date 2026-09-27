@@ -452,5 +452,48 @@ check("dragging moves it round the edge, and remembers the angle",
 check("the old free-floating size setting is gone",
       L.eval("addon.minimapDefaults.size") is None)
 
+
+print("-- polish: bag updates, ammo, aura fields")
+L = boot('SnapSnackDB = nil')
+L.execute('FireEvent("ADDON_LOADED", "Chaircraft") SnapSnackDB = { version = 2 }')
+L.execute('IMMEDIATE_TIMERS = true FireEvent("PLAYER_LOGIN") IMMEDIATE_TIMERS = false')
+L.execute("""
+SCANS = 0
+local real = addon.ScanBags
+addon.ScanBags = function(self, ...) SCANS = SCANS + 1 return real(self, ...) end
+PENDING = {}
+C_Timer.After = function(_, fn) table.insert(PENDING, fn) end
+FireEvent("BAG_UPDATE", 0) FireEvent("BAG_UPDATE", 1) FireEvent("BAG_UPDATE", 2)
+local i = 1
+while PENDING[i] do PENDING[i]() i = i + 1 end
+""")
+check("three bag updates in one frame are one rescan", L.eval("SCANS") == 1, L.eval("SCANS"))
+
+L.execute("""
+AMMO_ID = 2512
+function GetInventoryItemID(unit, slot) return AMMO_ID end
+function GetItemInfo(id)
+    if id == 2512 then return "Rough Arrow", nil, nil, nil, nil, nil, nil, nil, nil, 132382 end
+end
+function GetInventoryItemCount() return 200 end
+FIRST = addon:AmmoInfo()
+AMMO_ID = nil
+SECOND = addon:AmmoInfo()
+""")
+check("ammo shows what is loaded", L.eval("FIRST.count") == 200)
+check("and when it runs out, the same ammo at 0 rather than nothing",
+      L.eval("SECOND ~= nil and SECOND.count == 0 and SECOND.name == 'Rough Arrow'") is True)
+
+L.execute("""
+SECRET = setmetatable({}, { __tostring = function() error("secret") end,
+                            __concat = function() error("secret") end })
+CLEAN, REFUSED = addon.LaunderAura({ name = SECRET, spellId = 1 })
+PLAIN = addon.LaunderAura({ name = "Well Fed", spellId = 19705, duration = 900 })
+""")
+check("an aura whose name the client keeps secret is a refusal, not a crash",
+      L.eval("CLEAN") is None and L.eval("REFUSED") is True)
+check("a readable one comes through as it was",
+      L.eval("PLAIN.name") == "Well Fed" and L.eval("PLAIN.spellId") == 19705)
+
 print("ALL OK" if not failures else "%d FAILED" % len(failures))
 sys.exit(1 if failures else 0)

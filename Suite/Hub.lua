@@ -353,13 +353,13 @@ SlashCmdList["CHAIRCRAFT"] = Handler
 
 local ICON = "Interface\\AddOns\\Chaircraft\\ChairSnack\\minimap"
 
+-- Settings.ClosePanel is the public way out of the options window. Its frames
+-- are not hidden directly: making a Blizzard frame run its own code from ours
+-- taints it (see ChairTracker's skills window, 2026-09-26).
 local function OpenMenu()
     if _G.Settings and type(_G.Settings.ClosePanel) == "function" then
         pcall(_G.Settings.ClosePanel)
     end
-    if _G.SettingsPanel then _G.SettingsPanel:Hide() end
-    if _G.InterfaceOptionsFrame then _G.InterfaceOptionsFrame:Hide() end
-    if _G.GameMenuFrame then _G.GameMenuFrame:Hide() end
     local ns = Chaircraft.ChairPlus
     if ns and ns.TogglePanel then
         ns.TogglePanel("plus")

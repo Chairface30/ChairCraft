@@ -68,6 +68,7 @@ local TRIGGER_DEFAULTS = {
     partial = false,       -- name match: contains, rather than equals
     stacksOp = ">=",       -- >= | <= | ==
     stacks  = 0,           -- 0 means "do not care"
+    matchOp = ">=",        -- with matchCount: how many matches
 }
 ns.TRIGGER_DEFAULTS = TRIGGER_DEFAULTS
 
@@ -197,6 +198,7 @@ local GROUP_DEFAULTS = {
     sort    = "none",      -- none | name | time
     limit   = 0,           -- dynamic only; 0 means no limit
     columns = 0,           -- 0 means a single row or column
+    wrapReverse = false,   -- new lines above (or left of) the last, not below
     -- CIRCLE: round a ring. The radius is worked out from what is in it at 0.
     radius   = 0,
     arcStart = 0,          -- degrees clockwise from the top

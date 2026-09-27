@@ -203,6 +203,27 @@ local function GetFreeSlots()
     if not sawAny then return nil end
     return general, special, sawSpecial, generalTotal, specialTotal
 end
+-- Shared with faster loot, which needs the same answer.
+ns.FreeBagSlots = GetFreeSlots
+
+do
+    local quote = CreateFrame("Frame")
+    for _, event in ipairs({ "MERCHANT_SHOW", "MERCHANT_UPDATE", "UPDATE_INVENTORY_DURABILITY" }) do
+        pcall(quote.RegisterEvent, quote, event)
+    end
+    local atMerchant = false
+    quote:SetScript("OnEvent", function(_, event)
+        if event == "MERCHANT_SHOW" then atMerchant = true end
+        if not atMerchant and event ~= "MERCHANT_SHOW" then return end
+        local ok, cost = pcall(_G.GetRepairAllCost)
+        cost = ok and ns.Num(cost) or nil
+        if cost then ns.repairQuote = cost end
+    end)
+    pcall(quote.RegisterEvent, quote, "MERCHANT_CLOSED")
+    quote:HookScript("OnEvent", function(_, event)
+        if event == "MERCHANT_CLOSED" then atMerchant = false end
+    end)
+end
 
 -- "12", or "12/80" with the bag total setting on.
 local function SlotsText(free, total)
@@ -392,6 +413,31 @@ local function ReadMoney()
     return ok and ns.Num(raw) or nil
 end
 
+-- Every character's gold as last seen, for the money item's right-click.
+local function RememberMoney()
+    local store = SessionStore()
+    local money = ReadMoney()
+    if not (store and money) then return end
+    store.lastMoney = money
+    local okN, name = pcall(_G.UnitName, "player")
+    local okR, realm = pcall(_G.GetRealmName)
+    store.name = (okN and ns.Text(name) or "?") .. "-" .. (okR and ns.Text(realm) or "?")
+end
+
+function ns.AllCharacterGold()
+    local db = _G.ChairPlusDB
+    local out, total = {}, 0
+    for _, store in pairs(type(db) == "table" and type(db.sessions) == "table" and db.sessions or {}) do
+        local money = type(store) == "table" and ns.Num(store.lastMoney)
+        if money and type(store.name) == "string" then
+            out[#out + 1] = { store.name, money }
+            total = total + money
+        end
+    end
+    table.sort(out, function(a, b) return a[2] > b[2] end)
+    return out, total
+end
+
 local function StartSession(keepTime)
     local store = SessionStore()
     if not store then return end
@@ -511,9 +557,22 @@ local function PetHealthPct()
     return hp / max * 100
 end
 
+-- At the level cap there is no bar to fill, whatever UnitXPMax still says,
+-- and XP turned off at a trainer counts the same.
+local function AtLevelCap()
+    local okD, disabled = pcall(_G.IsXPUserDisabled)
+    if okD and ns.Bool(disabled) then return true end
+    local getMax = _G.GetMaxPlayerLevel
+    if type(getMax) ~= "function" then return false end
+    local okM, cap = pcall(getMax)
+    local okL, level = pcall(_G.UnitLevel, "player")
+    cap, level = okM and ns.Num(cap), okL and ns.Num(level)
+    return cap ~= nil and level ~= nil and cap > 0 and level >= cap
+end
+
 local function HasMail()
     local ok, has = pcall(_G.HasNewMail)
-    return ok and has and true or false
+    return ok and ns.Bool(has) == true
 end
 
 -- Online friends, as names, and how many. Both friend list APIs are tried:
@@ -525,7 +584,7 @@ local function OnlineFriends()
         local ok, count = pcall(list.GetNumFriends)
         for i = 1, (ok and ns.Num(count) or 0) do
             local okI, info = pcall(list.GetFriendInfoByIndex, i)
-            if okI and type(info) == "table" and info.connected then
+            if okI and type(info) == "table" and ns.Bool(info.connected) then
                 names[#names + 1] = { ns.Text(info.name) or "?", ns.Num(info.level), ns.Text(info.area) }
             end
         end
@@ -533,7 +592,7 @@ local function OnlineFriends()
         local ok, count = pcall(_G.GetNumFriends)
         for i = 1, (ok and ns.Num(count) or 0) do
             local okI, name, level, _, area, connected = pcall(_G.GetFriendInfo, i)
-            if okI and connected then
+            if okI and ns.Bool(connected) then
                 names[#names + 1] = { ns.Text(name) or "?", ns.Num(level), ns.Text(area) }
             end
         end
@@ -549,12 +608,12 @@ end
 -- Online guildmates, as names; nil when not in a guild.
 local function OnlineGuild()
     local okG, inGuild = pcall(_G.IsInGuild)
-    if not (okG and inGuild) then return nil end
+    if not (okG and ns.Bool(inGuild)) then return nil end
     local names = {}
     local ok, total = pcall(_G.GetNumGuildMembers)
     for i = 1, (ok and ns.Num(total) or 0) do
         local okI, name, _, _, level, _, zone, _, _, online = pcall(_G.GetGuildRosterInfo, i)
-        if okI and online then
+        if okI and ns.Bool(online) then
             names[#names + 1] = { (ns.Text(name) or "?"):gsub("%-.*$", ""), ns.Num(level), ns.Text(zone) }
         end
     end
@@ -652,6 +711,35 @@ local function OpenCharacter(tab)
     Try("ToggleCharacter", tab or "PaperDollFrame")
 end
 
+-- The faction you watch: name, standing (1 hated .. 8 exalted), and where it
+-- is through that standing. Either API this client might have.
+local STANDING_NAMES = { "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }
+local function WatchedFaction()
+    local rep = _G.C_Reputation
+    if rep and type(rep.GetWatchedFactionData) == "function" then
+        local ok, data = pcall(rep.GetWatchedFactionData)
+        if ok and type(data) == "table" and ns.Text(data.name) then
+            return ns.Text(data.name), ns.Num(data.reaction), ns.Num(data.currentReactionThreshold),
+                   ns.Num(data.nextReactionThreshold), ns.Num(data.currentStanding)
+        end
+    end
+    if type(_G.GetWatchedFactionInfo) == "function" then
+        local ok, name, standing, low, high, value = pcall(_G.GetWatchedFactionInfo)
+        if ok and ns.Text(name) then
+            return ns.Text(name), ns.Num(standing), ns.Num(low), ns.Num(high), ns.Num(value)
+        end
+    end
+    return nil
+end
+ns.WatchedFaction = WatchedFaction
+
+local function StandingColour(standing)
+    local colors = _G.FACTION_BAR_COLORS
+    local c = colors and standing and colors[standing]
+    if type(c) == "table" then return c.r or 1, c.g or 1, c.b or 1 end
+    return 1, 1, 1
+end
+
 local SLOT_NAMES = {
     [1] = "Head", [3] = "Shoulders", [5] = "Chest", [6] = "Waist", [7] = "Legs",
     [8] = "Feet", [9] = "Wrists", [10] = "Hands", [16] = "Main hand",
@@ -675,6 +763,46 @@ local function DurabilityLines(tip)
         tip:AddDoubleLine(row[1], string.format("%d%%", math.floor(pct + 0.5)), 1, 1, 1, r, g, pct < 50 and 0.2 or 1)
     end
     if #rows == 0 then tip:AddLine("Nothing worn wears out.", 0.6, 0.6, 0.6) end
+end
+
+-- What a repair would cost now. Newer clients put it on each worn item's
+-- tooltip data; failing that, the last price a merchant quoted this session
+-- (read, never paid, on every merchant visit -- see the quote frame below).
+local function RepairCost()
+    local info = _G.C_TooltipInfo
+    local total, found = 0, false
+    if info and type(info.GetInventoryItem) == "function" then
+        for slot in pairs(SLOT_NAMES) do
+            local ok, data = pcall(info.GetInventoryItem, "player", slot)
+            local cost = ok and type(data) == "table" and ns.Num(data.repairCost) or nil
+            if cost then
+                found = true
+                total = total + cost
+            end
+        end
+    end
+    if found then return total, false end
+    if ns.repairQuote then return ns.repairQuote, true end
+    return nil
+end
+ns.RepairCost = RepairCost
+
+local function RepairLine(tip)
+    local cost, quoted = RepairCost()
+    local lowest = LowestDurability()
+    if cost == nil then
+        if lowest and lowest < 100 then
+            tip:AddLine("Repair cost: visit a merchant to see it.", 0.6, 0.6, 0.6)
+        end
+        return
+    end
+    local text = tostring(cost) .. "c"
+    if type(ns.GetCoinText) == "function" then
+        local ok, coin = pcall(ns.GetCoinText, cost)
+        if ok and ns.Text(coin) then text = ns.Text(coin) end
+    end
+    if cost <= 0 then text = "nothing" end
+    tip:AddDoubleLine(quoted and "Repair (last merchant quote)" or "Repair", text, 1, 0.82, 0, 1, 1, 1)
 end
 
 local function BagLines(tip)
@@ -742,9 +870,18 @@ local ITEMS = {
             if delta then
                 tip:AddDoubleLine("This session", (delta < 0 and "-" or "+") .. Coins(delta, 12), 1, 1, 1, 1, 1, 1)
             end
-            Hint(tip, "Click to open your bags.")
+            Hint(tip, "Click to open your bags. Right-click for every character's gold.")
+        end,
+        rightClick = function()
+            local list, total = ns.AllCharacterGold()
+            ns.Print("Gold on each character:")
+            for _, entry in ipairs(list) do
+                ns.Print("  " .. entry[1] .. ": " .. Coins(entry[2], 12))
+            end
+            ns.Print("  Total: " .. Coins(total, 12))
         end,
         build = function(size)
+            RememberMoney()
             local amounts = { GetMoneyParts() }
             local coins = {}
             for i = 1, #COIN do
@@ -789,7 +926,18 @@ local ITEMS = {
         tooltip = function(tip)
             tip:AddLine("Durability", 1, 0.82, 0)
             DurabilityLines(tip)
-            Hint(tip, "Click to open your character.")
+            RepairLine(tip)
+            Hint(tip, "Click to open your character. Right-click to say it in chat.")
+        end,
+        rightClick = function()
+            local pct = LowestDurability()
+            local cost, quoted = RepairCost()
+            local text = pct and string.format("Durability: worst piece at %d%%.", math.floor(pct + 0.5))
+                or "Durability: nothing worn wears out."
+            if cost and cost > 0 then
+                text = text .. " Repair: " .. Coins(cost, 12) .. (quoted and " (last merchant quote)" or "") .. "."
+            end
+            ns.Print(text)
         end,
         build = function(size)
             local pct = LowestDurability()
@@ -878,6 +1026,7 @@ local ITEMS = {
             end
         end,
         build = function(size)
+            if AtLevelCap() then return nil end
             local okX, xp = pcall(_G.UnitXP, "player")
             local okM, maxXP = pcall(_G.UnitXPMax, "player")
             xp, maxXP = okX and ns.Num(xp), okM and ns.Num(maxXP)
@@ -913,7 +1062,10 @@ local ITEMS = {
             local here, realm = FormatTime(TimeNow(false)), FormatTime(TimeNow(true))
             if here then tip:AddDoubleLine("Local", here, 1, 1, 1, 1, 1, 1) end
             if realm then tip:AddDoubleLine("Realm", realm, 1, 1, 1, 1, 1, 1) end
-            Hint(tip, "Click to open the clock.")
+            Hint(tip, "Click to open the clock. Right-click to switch 12 and 24 hour.")
+        end,
+        rightClick = function()
+            ns.Set("osdClock24", not ns.Get("osdClock24"))
         end,
         sample = function(size)
             return IconOnly("Interface\\ICONS\\INV_Misc_PocketWatch_01", size, true)
@@ -989,7 +1141,7 @@ local ITEMS = {
             local detailed = _G.UnitDetailedThreatSituation
             if type(detailed) == "function" then
                 local ok, tanking, _, pct = pcall(detailed, "player", "target")
-                if ok and tanking then tip:AddLine("You are tanking it.", 1, 0.3, 0.3) end
+                if ok and ns.Bool(tanking) then tip:AddLine("You are tanking it.", 1, 0.3, 0.3) end
                 if ok and ns.Num(pct) then tip:AddLine(string.format("%d%% of the aggro threshold", ns.Num(pct)), 1, 1, 1) end
             end
         end,
@@ -998,12 +1150,12 @@ local ITEMS = {
             local detailed = _G.UnitDetailedThreatSituation
             if type(detailed) ~= "function" then return nil end
             local okE, exists = pcall(_G.UnitExists, "target")
-            if not (okE and exists) then return nil end
+            if not (okE and ns.Bool(exists)) then return nil end
             local ok, tanking, _, pct = pcall(detailed, "player", "target")
             pct = ok and ns.Num(pct) or nil
             if not pct then return nil end
             local text = string.format("Threat %d%%", math.floor(pct + 0.5))
-            if tanking or pct >= 100 then return Coloured(text, 1, 0.15, 0.15) end
+            if ns.Bool(tanking) or pct >= 100 then return Coloured(text, 1, 0.15, 0.15) end
             if pct >= 80 then return Coloured(text, 1, 0.55, 0) end
             if pct >= 50 then return Coloured(text, 1, 0.9, 0.2) end
             return text
@@ -1272,6 +1424,47 @@ local ITEMS = {
             if not guild then return nil end
             return IconOnly("Interface\\ICONS\\INV_Shirt_GuildTabard_01", size, true)
                 .. string.format(" Guild %d", #guild)
+        end,
+    },
+    {
+        -- The reputation you watch (the one ticked on the reputation panel):
+        -- how far through its standing. Hover for the numbers; click for the
+        -- reputation window.
+        key = "rep", setting = "osdRep", label = "Watched reputation",
+        click = function() OpenCharacter("ReputationFrame") end,
+        tooltip = function(tip)
+            local name, standing, low, high, value = WatchedFaction()
+            if not name then
+                tip:AddLine("No reputation watched", 1, 0.82, 0)
+                tip:AddLine("Tick \"Show as experience bar\" on a faction in the reputation window.", 1, 1, 1, true)
+                return
+            end
+            tip:AddLine(name, 1, 0.82, 0)
+            local r, g, b = StandingColour(standing)
+            tip:AddLine(STANDING_NAMES[standing or 0] or "", r, g, b)
+            if low and high and value and high > low and standing ~= 8 then
+                tip:AddDoubleLine("Progress", string.format("%d / %d", value - low, high - low), 1, 1, 1, 1, 1, 1)
+                local nextName = STANDING_NAMES[(standing or 0) + 1]
+                if nextName then
+                    tip:AddDoubleLine("To " .. nextName, string.format("%d", high - value), 1, 1, 1, 1, 1, 1)
+                end
+            end
+            Hint(tip, "Click for the reputation window.")
+        end,
+        build = function(size)
+            local name, standing, low, high, value = WatchedFaction()
+            if not name then return nil end
+            local text
+            if standing == 8 then
+                text = "Exalted"
+            elseif low and high and value and high > low then
+                text = string.format("%d%%", math.floor((value - low) / (high - low) * 100))
+            else
+                text = STANDING_NAMES[standing or 0] or ""
+            end
+            local r, g, b = StandingColour(standing)
+            return IconOnly("Interface\\ICONS\\INV_Misc_Note_02", size, true) .. " "
+                .. name .. " " .. Coloured(text, r, g, b)
         end,
     },
     {
@@ -1656,6 +1849,14 @@ end
 -- rate alone made the whole bar twitch several times a second.
 local slots, reserved = {}, {}
 local reservedSize
+-- When each item last needed its reserved width, and the width its sample
+-- text takes: a reserve holds still while the text jiggles (fps, coordinates),
+-- but gives the room back once the text has been narrower for a while -- a
+-- long subzone name no longer leaves a gap for the rest of the session.
+local reservedAt, sampleWidth = {}, {}
+local SHRINK_AFTER = 10
+-- For the tests: the room an item holds.
+function ns.OSDReserved(key) return reserved[key] end
 local lastLine = ""
 
 local function Slot(key)
@@ -1796,6 +1997,11 @@ local function Hotspot(item)
             if type(stop) == "function" then stop(frame) end
         end)
         button:SetScript("OnClick", function(self, mouse)
+            -- A right-click is the item's second action, where it has one.
+            if mouse == "RightButton" and item.rightClick then
+                pcall(item.rightClick, self)
+                return
+            end
             if item.click then pcall(item.click, self, mouse) end
         end)
         button:SetScript("OnEnter", function(self)
@@ -1897,16 +2103,17 @@ end
 local function ApplyPosition()
     if not frame then return end
     frame:ClearAllPoints()
-    local anchor = ns.Get("osdAnchor") or "TOPRIGHT"
+    -- The same place the defaults put it: the middle of the screen.
+    local anchor = ns.Get("osdAnchor") or "CENTER"
     local relAnchor = ns.Get("osdRelAnchor") or anchor
-    local x = ns.Num(ns.Get("osdX")) or -20
-    local y = ns.Num(ns.Get("osdY")) or -20
+    local x = ns.Num(ns.Get("osdX")) or 0
+    local y = ns.Num(ns.Get("osdY")) or 0
     -- A bad anchor name is a hard error from SetPoint, and an anchor name is
     -- exactly the sort of thing a hand-edited baked table gets wrong.
     local ok = pcall(frame.SetPoint, frame, anchor, UIParent, relAnchor, x, y)
     if not ok then
         frame:ClearAllPoints()
-        frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -20)
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
 end
 
@@ -1919,6 +2126,7 @@ local function Refresh()
     -- A new text size makes every reserved width wrong.
     if reservedSize ~= size then
         wipe(reserved)
+        wipe(sampleWidth)
         reservedSize = size
     end
     -- A wider gap between items than inside one (between the coins), so each
@@ -1958,66 +2166,97 @@ local function Refresh()
     local lines = {}
     wipe(layout)
     local spotHeight = size + 6
+
+    -- Two passes: where each thing goes (x, and which row) while measuring,
+    -- then placing once the row height is known. Past the wrap width a new
+    -- row starts -- but not while arranging, when dragging works along one
+    -- line and the drop marker reads x alone.
+    local maxWidth = ns.Num(ns.Get("osdMaxWidth")) or 0
+    local wrap = maxWidth > 0 and not arranging
+    local row, rowWidths = 1, {}
+    local place = {}   -- { region, x, row, kind = "text" | "spot" | "line" }
+    local function NewRowIfPast(width)
+        if wrap and x > PAD and x + width + PAD > maxWidth then
+            rowWidths[row] = x - gap + PAD
+            row = row + 1
+            x = PAD
+            return true
+        end
+        return false
+    end
+
     for _, entry in ipairs(kept) do
         local item = entry.item
         local text = entry.text
         if item.divider then
-            -- A divider is a thin line, not a character: almost the full
-            -- height of the background, which is only known once every item
-            -- is measured, so it is sized after the loop.
-            local line = DividerLine(item.key)
-            line:ClearAllPoints()
-            line:SetPoint("LEFT", frame, "LEFT", x, 0)
-            line:Show()
-            lines[#lines + 1] = line
-            used[item.key] = true
-            parts[#parts + 1] = "|"
-            layout[#layout + 1] = { key = item.key, left = x - gap / 2, right = x + 1 + gap / 2 }
-            if arranging then
-                -- A line one pixel wide is no target; the gap around it is.
-                local button = Hotspot(item)
-                button:ClearAllPoints()
-                button:SetPoint("LEFT", frame, "LEFT", x - gap / 2, 0)
-                button:SetSize(gap + 1, spotHeight)
-                button:EnableMouse(true)
-                button:Show()
-            elseif hotspots[item.key] then
-                hotspots[item.key]:Hide()
+            -- A divider that would open a new row divides nothing: left out.
+            if NewRowIfPast(1) then
+                if hotspots[item.key] then hotspots[item.key]:Hide() end
+            else
+                -- A divider is a thin line, not a character: almost the full
+                -- height of the background, which is only known once every
+                -- item is measured, so it is sized after the loop.
+                local line = DividerLine(item.key)
+                place[#place + 1] = { line, x, row }
+                line:Show()
+                lines[#lines + 1] = line
+                used[item.key] = true
+                parts[#parts + 1] = "|"
+                layout[#layout + 1] = { key = item.key, left = x - gap / 2, right = x + 1 + gap / 2 }
+                if arranging then
+                    -- A line one pixel wide is no target; the gap around it is.
+                    local button = Hotspot(item)
+                    place[#place + 1] = { button, x - gap / 2, row }
+                    button:SetSize(gap + 1, spotHeight)
+                    button:EnableMouse(true)
+                    button:Show()
+                elseif hotspots[item.key] then
+                    hotspots[item.key]:Hide()
+                end
+                x = x + 1 + gap
             end
-            x = x + 1 + gap
         elseif text then
             local fs = Slot(item.key)
             local font, _, flags = fs:GetFont()
             if font then pcall(fs.SetFont, fs, font, size, flags) end
             local widest = reserved[item.key] or 0
-            if item.sample and widest == 0 then
+            if item.sample and sampleWidth[item.key] == nil then
                 local okS, sample = pcall(item.sample, size)
-                if okS and sample then widest = Measure(fs, sample) end
+                sampleWidth[item.key] = (okS and sample) and Measure(fs, sample) or 0
             end
+            local floor = sampleWidth[item.key] or 0
             -- SetText is one of the operations a secret kills, and everything
             -- reaching it has been laundered -- but it is guarded anyway.
-            widest = math.max(widest, Measure(fs, text))
+            local need = Measure(fs, text)
+            local now = ns.Num(GetTime()) or 0
+            if need >= widest or widest == 0 then
+                widest = math.max(need, floor)
+                reservedAt[item.key] = now
+            elseif now - (reservedAt[item.key] or now) > SHRINK_AFTER then
+                widest = math.max(need, floor)
+                reservedAt[item.key] = now
+            end
             reserved[item.key] = widest
-            fs:ClearAllPoints()
-            fs:SetPoint("LEFT", frame, "LEFT", x, 0)
+            NewRowIfPast(widest)
+            place[#place + 1] = { fs, x, row }
             fs:SetWidth(widest + 2)
             pcall(fs.SetJustifyH, fs, item.justify or "LEFT")
             fs:Show()
             height = math.max(height, ns.Num(fs:GetStringHeight()) or size)
             layout[#layout + 1] = { key = item.key, left = x, right = x + widest }
-            x = x + widest + gap
-            used[item.key] = true
             if arranging or item.click or item.hover or item.tooltip or item.enter then
                 local button = Hotspot(item)
-                button:ClearAllPoints()
-                button:SetPoint("LEFT", frame, "LEFT", x - widest - gap, 0)
+                place[#place + 1] = { button, x, row }
                 button:SetSize(widest + 2, (ns.Num(fs:GetStringHeight()) or size) + 6)
                 button:EnableMouse(true)
                 button:Show()
             end
+            x = x + widest + gap
+            used[item.key] = true
             parts[#parts + 1] = text
         end
     end
+    rowWidths[row] = (x > PAD) and (x - gap + PAD) or PAD
     for key, fs in pairs(slots) do
         if not used[key] then fs:Hide() end
     end
@@ -2027,18 +2266,32 @@ local function Refresh()
     for key, button in pairs(hotspots) do
         if not used[key] then button:Hide() end
     end
+
+    -- Now the rows are known: each thing at its row's middle. One row reads
+    -- exactly as it always has, centered on the frame.
+    local rowHeight = math.max(height + 8, 16)
+    for _, spot in ipairs(place) do
+        local region, px, prow = spot[1], spot[2], spot[3]
+        region:ClearAllPoints()
+        region:SetPoint("LEFT", frame, "TOPLEFT", px, -((prow - 1) * rowHeight + rowHeight / 2))
+    end
     ns.DockTracker(used.tracker and hotspots.tracker or nil)
 
     local ok, line = pcall(table.concat, parts, "   ")
     lastLine = ok and line or ""
 
-    local width = (#parts > 0) and (x - gap + PAD) or 24
-    local frameHeight = math.max(height + 8, 16)
-    frame:SetSize(math.max(width, 24), frameHeight)
-    for _, line in ipairs(lines) do
-        line:SetSize(1, math.max(frameHeight - 4, 4))
+    local width = 24
+    if #parts > 0 then
+        for _, w in pairs(rowWidths) do width = math.max(width, w) end
     end
+    local frameHeight = rowHeight * row
+    frame:SetSize(math.max(width, 24), frameHeight)
+    for _, divider in ipairs(lines) do
+        divider:SetSize(1, math.max(rowHeight - 4, 4))
+    end
+    ns.osdRows = row
 
+    pcall(backdrop.SetColorTexture, backdrop, 0, 0, 0, ns.Num(ns.Get("osdBgAlpha")) or 0.45)
     backdrop:SetShown(ns.Get("osdBackground") and true or false)
 end
 
@@ -2103,7 +2356,12 @@ local function CreateFrame_OSD()
             "UPDATE_PENDING_MAIL", "MAIL_CLOSED", "UNIT_PET", "UNIT_HAPPINESS",
             "PET_UI_UPDATE", "FRIENDLIST_UPDATE", "GUILD_ROSTER_UPDATE",
             "PLAYER_GUILD_UPDATE", "BN_FRIEND_ACCOUNT_ONLINE",
-            "BN_FRIEND_ACCOUNT_OFFLINE" }) do
+            "BN_FRIEND_ACCOUNT_OFFLINE",
+            -- The zone name, the threat item and profession bags at login
+            -- (whose item data may not be in yet) each change on these.
+            "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
+            "PLAYER_TARGET_CHANGED", "UNIT_THREAT_LIST_UPDATE",
+            "GET_ITEM_INFO_RECEIVED", "UPDATE_FACTION" }) do
         pcall(frame.RegisterEvent, frame, event)
     end
     frame:SetScript("OnEvent", MarkDirty)

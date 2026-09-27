@@ -243,9 +243,8 @@ end
 -- Is the buff up?
 -------------------------------------------------------------------------------
 
--- Every field C_UnitAuras returns is readable on this client -- the probe
--- confirmed name, spellId, duration and the rest all come back plain, not
--- secret -- so the name can be lowercased and searched without a guard.
+-- The buffs come from addon.BuffData, which makes name and spellId plain
+-- (or refuses the aura) before anything here lowercases or searches them.
 function addon:HasFoodBuff()
     local buffs = self:PlayerBuffs()
     if not buffs then return false end
@@ -518,7 +517,7 @@ function addon:BuffFoodCommand(rest)
     end
 
     -- Status.
-    print("|cffFFFF00=== SnapSnack buff food ===|r")
+    print("|cffFFFF00=== ChairSnack buff food ===|r")
     print("Buff is up right now: "
           .. (self:HasFoodBuff() and "|cff33ff33yes|r -- bar hidden"
                                  or "|cffff5555no|r -- bar shown"))

@@ -83,6 +83,8 @@ local function Method(k)
                 end
                 e[(...)] = true
             elseif k == "UnregisterAllEvents" then
+                -- Still a frame that listens: registering again must reach it.
+                if not rawget(self, "_events") then table.insert(EVENT_FRAMES, self) end
                 rawset(self, "_events", {})
             elseif k == "UnregisterEvent" then
                 local e = rawget(self, "_events")
@@ -297,8 +299,14 @@ MERCHANT_CAN_REPAIR = true
 REPAIR_COST = 500
 REPAIRED = {}
 function CanMerchantRepair() return MERCHANT_CAN_REPAIR end
-function GetRepairAllCost() return REPAIR_COST, REPAIR_COST > 0 end
-function RepairAllItems(useGuild) table.insert(REPAIRED, useGuild and "guild" or "self") end
+-- CAN_AFFORD and GUILD_PAYS say whether each purse covers the bill; a repair
+-- that goes through leaves nothing more to pay.
+CAN_AFFORD, GUILD_PAYS = true, true
+function GetRepairAllCost() return REPAIR_COST, CAN_AFFORD and REPAIR_COST > 0 end
+function RepairAllItems(useGuild)
+    table.insert(REPAIRED, useGuild and "guild" or "self")
+    if (useGuild and GUILD_PAYS) or (not useGuild and CAN_AFFORD) then REPAIR_COST = 0 end
+end
 function IsInGuild() return IN_GUILD end
 function CanGuildBankRepair() return GUILD_CAN_REPAIR end
 IN_GUILD, GUILD_CAN_REPAIR = false, false
@@ -357,7 +365,7 @@ SUITE_TABLE = { ChairPlus = NS }
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "Quests.lua", "Gossip.lua",
     "Vendor.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "Arrow.lua",
-    "Threat.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Commands.lua",
+    "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
 for _, file in ipairs(files) do
     local chunk, err = loadfile("ChairPlus/" .. file)
@@ -568,6 +576,24 @@ check("valueless grey kept", 103 not in sold)
 printed = "\n".join(str(v) for v in rt.eval("PRINTED").values())
 check("summary counts stack (50 x 2)", "100 copper" in printed, printed)
 
+# Buyback holds twelve: a visit sells no more, so all of it can come back.
+rt, g = fresh()
+rt.execute("""
+BAGS[0] = { size = 16, family = 0, items = {} }
+for i = 1, 14 do
+    ITEMS[600 + i] = { quality = 0, price = 1, classID = 9 }
+    BAGS[0].items[i] = { itemID = 600 + i, quality = 0, stackCount = 1, hasNoValue = false }
+end
+BOOT()
+MerchantFrame:Show()
+FireEvent("MERCHANT_SHOW")
+RUN_TIMERS(3)
+""")
+sold = list(rt.eval("SOLD").values())
+check("no more than twelve sold in one visit", len(set(sold)) == 12, len(set(sold)))
+printed = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("and it says the rest waits", "bought back" in printed, printed[-200:])
+
 rt, g = fresh()
 rt.execute("""
 ITEMS[201] = { quality = 0, price = 10, classID = 9 }
@@ -641,6 +667,23 @@ rt, g = fresh()
 rt.execute("REPAIR_COST = 0 BOOT() MerchantFrame:Show() FireEvent('MERCHANT_SHOW')")
 check("no repair when nothing to pay", len(list(rt.eval("REPAIRED").values())) == 0)
 
+# Short of gold, the guild still pays: the gold check used to come first.
+rt, g = fresh()
+rt.execute("""
+IN_GUILD, GUILD_CAN_REPAIR, CAN_AFFORD = true, true, false
+NS.baked["repairGuildFunds"] = true
+BOOT() MerchantFrame:Show() FireEvent('MERCHANT_SHOW')
+""")
+repaired = list(rt.eval("REPAIRED").values())
+check("short of gold, guild funds still repair", repaired == ["guild"], str(repaired))
+check("and the repair is reported", "Repaired for" in "\n".join(str(v) for v in rt.eval("PRINTED").values()))
+
+rt, g = fresh()
+rt.execute("CAN_AFFORD = false BOOT() MerchantFrame:Show() FireEvent('MERCHANT_SHOW')")
+printed = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("a repair that cannot be paid for is not reported as done",
+      "Repaired for" not in printed, printed[-200:])
+
 print("\nQuest safety gates")
 rt, g = fresh()
 rt.execute("BOOT() FireEvent('QUEST_PROGRESS')")
@@ -699,6 +742,18 @@ rt.execute("LOOT_SLOTS = 2 BOOT() FireEvent('LOOT_READY') FireEvent('LOOT_READY'
 check("second LOOT_READY in the same instant is throttled",
       len(list(rt.eval("LOOTED").values())) == 2)
 
+# Full bags: coin and currency still come, items wait in the window.
+rt, g = fresh()
+rt.execute("""
+LOOT_TYPES = { [1] = 1, [2] = 2, [3] = 3 }   -- item, money, currency
+function GetLootSlotType(i) return LOOT_TYPES[i] end
+BOOT()
+NS.FreeBagSlots = function() return 0, 0, false, 16, 0 end
+LOOT_SLOTS = 3 FireEvent('LOOT_READY')
+""")
+looted = sorted(rt.eval("LOOTED").values())
+check("with bags full, coin and currency are still taken", looted == [2, 3], str(looted))
+
 print("\nCamera")
 rt, g = fresh()
 rt.execute("BOOT()")
@@ -706,6 +761,10 @@ check("zoom factor raised", rt.eval('CVARS["cameraDistanceMaxZoomFactor"]') == 2
 rt.execute('NS.Set("maxCameraZoom", false)')
 check("zoom factor restored when switched off",
       rt.eval('CVARS["cameraDistanceMaxZoomFactor"]') == 1.9)
+rt, g = fresh(stock=True)
+rt.execute('BOOT() CVARS["cameraDistanceMaxZoomFactor"] = 2.2 NS.Set("osdFontSize", 14)')
+check("left off, the player's own zoom is never touched",
+      rt.eval('CVARS["cameraDistanceMaxZoomFactor"]') == 2.2)
 
 print("\nToggling off unhooks")
 rt, g = fresh()
@@ -1493,6 +1552,14 @@ for label, option in (
 ):
     rt, sel = gossip(f"GOSSIP_OPTIONS = {{ {option} }}")
     check(f"{label} is never auto-selected", sel == [], str(sel))
+for label, option in (
+    ("a Classic flight master known only by its icon", '{ name = "Fly me", gossipOptionID = 3, icon = 132057 }'),
+    ("a Classic innkeeper known only by its icon", '{ name = "Make this my home", gossipOptionID = 3, icon = 132052 }'),
+):
+    rt, sel = gossip(f"GOSSIP_OPTIONS = {{ {option} }}")
+    check(f"{label} is never auto-selected", sel == [], str(sel))
+rt, sel = gossip('GOSSIP_OPTIONS = { { name = "Tell me more", gossipOptionID = 7, icon = 132053 } }')
+check("an ordinary talk option still is", sel == ["7"], str(sel))
 
 rt, sel = gossip('GOSSIP_OPTIONS = { { name = "|cffff0000Skip ahead|r",'
                  ' gossipOptionID = 3 } }')
@@ -1690,7 +1757,7 @@ FireEvent("MERCHANT_SHOW")
 """)
 repaired = list(rt.eval("REPAIRED").values())
 check("a repeated MERCHANT_SHOW repairs once", repaired == ["self"], str(repaired))
-rt.execute('FireEvent("MERCHANT_CLOSED") FireEvent("MERCHANT_SHOW")')
+rt.execute('REPAIR_COST = 500 FireEvent("MERCHANT_CLOSED") FireEvent("MERCHANT_SHOW")')
 repaired = list(rt.eval("REPAIRED").values())
 check("but a genuinely new visit repairs again", repaired == ["self", "self"],
       str(repaired))
@@ -2401,6 +2468,29 @@ rt.execute("BOOT() MakeWindow('AuctionFrame') FireEvent('AUCTION_HOUSE_SHOW')")
 check("an older client's AuctionFrame is handled the same way",
       rt.eval("AuctionFrame.chairMoverHandle") is not None)
 
+# The guild window: the guild and communities window on this engine, loaded
+# on demand; an older GuildFrame on others.
+rt, g = fresh()
+rt.execute(MOVERS_SETUP)
+rt.execute("BOOT() MakeWindow('CommunitiesFrame') FireEvent('ADDON_LOADED', 'Blizzard_Communities')")
+check("the guild window gets its handle once it loads",
+      rt.eval("CommunitiesFrame.chairMoverHandle") is not None)
+cf = rt.eval("rawget(CommunitiesFrame.chairMoverHandle, '_scripts')")
+cf.OnDragStart(rt.eval("CommunitiesFrame.chairMoverHandle"))
+rt.execute("rawset(CommunitiesFrame, '_cx', 760) rawset(CommunitiesFrame, '_cy', 540)")
+cf.OnDragStop(rt.eval("CommunitiesFrame.chairMoverHandle"))
+rt.execute("CommunitiesFrame:SetPoint('TOPLEFT', UIParent, 'TOPLEFT', 0, -104) "
+           "UpdateUIPanelPositions(CommunitiesFrame)")
+point = rt.eval("rawget(CommunitiesFrame, '_point')")
+check("and stays where it was dropped",
+      point.point == "CENTER" and point.x == -200 and point.y == 0,
+      f"{point.point} {point.x} {point.y}")
+rt, g = fresh()
+rt.execute(MOVERS_SETUP)
+rt.execute("BOOT() MakeWindow('GuildFrame') FireEvent('PLAYER_LOGIN')")
+check("an older client's GuildFrame is handled the same way",
+      rt.eval("GuildFrame.chairMoverHandle") is not None)
+
 # The profession window is load-on-demand as well.
 rt, g = fresh()
 rt.execute(MOVERS_SETUP)
@@ -2608,9 +2698,13 @@ check("keeping this character's own label",
 rt.execute('NS.Set("osdFontSize", 9)')
 rt.execute('AS("Player-1-A")')
 check("and the source is left alone", g.NS.Get("osdFontSize") == 21)
-rt.execute('AS("Player-1-B") NS.OpenPanel("plus")')
-check("the Plus page offers the copy", rt.eval('SHOWN_BUTTON("Import")') is True
+rt.execute('AS("Player-1-B") NS.OpenPanel("general")')
+check("the General page offers the copy", rt.eval('SHOWN_BUTTON("Import")') is True
       and any_text(rt, "|cffffffffAlpha-Forever|r"))
+check("and the settings backup beside it",
+      rt.eval('SHOWN_BUTTON("Export settings")') is True and rt.eval('SHOWN_BUTTON("Import settings")') is True)
+rt.execute('NS.OpenPanel("plus")')
+check("which the Plus page no longer carries", rt.eval('SHOWN_BUTTON("Export settings")') is False)
 
 print("\nInvites, duels, resurrection")
 SOCIAL = """
@@ -2659,6 +2753,47 @@ check("resurrection is accepted", rt.eval('DID("rez")') is True)
 check("summons are accepted", rt.eval('DID("summon")') is True)
 check("and each says so", "Declined a duel from Rogue" in printed_text(rt), printed_text(rt)[-300:])
 
+print("\nQuest turn-in safety")
+QUESTS_SETUP = """
+QUEST_ITEMS, QUEST_CURRENCIES, ITEMS_LOADED, COMPLETED, ACCEPTED = {}, 0, {}, 0, 0
+function GetNumQuestCurrencies() return QUEST_CURRENCIES end
+function GetNumQuestItems() return #QUEST_ITEMS end
+function GetQuestItemInfo(kind, i)
+    local item = QUEST_ITEMS[i]
+    if kind ~= "required" or not item then return nil end
+    return item.name, 0, 1, 1, true, item.id
+end
+function IsQuestCompletable() return true end
+function CompleteQuest() COMPLETED = COMPLETED + 1 end
+function AcceptQuest() ACCEPTED = ACCEPTED + 1 end
+function GetQuestMoneyToGet() return 0 end
+function GetQuestID() return QUEST_ID end
+function QuestIsDaily() return false end
+function QuestIsWeekly() return false end
+"""
+rt, g = fresh(stock=True)
+rt.execute(QUESTS_SETUP)
+rt.execute('BOOT() NS.Set("quests", true) NS.Set("questsTurnIn", true) NS.Set("questsAccept", true)')
+rt.execute("""NS.GetItemInfo = function(id)
+    local item = ITEMS_LOADED[id]
+    if not item then return nil end
+    local info = { item.name }
+    info[17] = item.reagent
+    return unpack(info, 1, 17)
+end""")
+rt.execute('QUEST_ITEMS = { { name = "Wolf Pelt", id = 1 } } ITEMS_LOADED[1] = { name = "Wolf Pelt" } FireEvent("QUEST_PROGRESS")')
+check("a turn-in asking for a plain item goes ahead", rt.eval("COMPLETED") == 1)
+rt.execute('QUEST_ITEMS = { { name = "Linen Cloth", id = 2 } } ITEMS_LOADED[2] = { name = "Linen Cloth", reagent = true } FireEvent("QUEST_PROGRESS")')
+check("one asking for a crafting reagent is left to you", rt.eval("COMPLETED") == 1)
+rt.execute('QUEST_ITEMS = { { name = "Something", id = 3 } } FireEvent("QUEST_PROGRESS")')
+check("and so is one whose item the client has not loaded yet", rt.eval("COMPLETED") == 1)
+rt.execute('QUEST_ITEMS = {} QUEST_CURRENCIES = 1 FireEvent("QUEST_PROGRESS")')
+check("and one asking for a currency", rt.eval("COMPLETED") == 1)
+rt.execute('NS.blockedQuests[4242] = true QUEST_ID = 4242 FireEvent("QUEST_DETAIL")')
+check("a blocked quest offered straight to the detail window is not accepted", rt.eval("ACCEPTED") == 0)
+rt.execute('QUEST_ID = 17 FireEvent("QUEST_DETAIL")')
+check("an ordinary one is", rt.eval("ACCEPTED") == 1)
+
 print("\nError spam filter")
 ERRORS_SETUP = """
 ERR_OUT_OF_RAGE = "Not enough rage"
@@ -2667,14 +2802,17 @@ SHOWN_ERRORS = {}
 UIErrorsFrame = MakeMock()
 rawset(UIErrorsFrame, "_events", { UI_ERROR_MESSAGE = true })
 table.insert(EVENT_FRAMES, UIErrorsFrame)
+HANDLER_RAN_BY_US = 0
 rawset(UIErrorsFrame, "_scripts", { OnEvent = function(self, event, kind, message)
+    if FILTER_ACTIVE then HANDLER_RAN_BY_US = HANDLER_RAN_BY_US + 1 end
     table.insert(SHOWN_ERRORS, message)
 end })
+rawset(UIErrorsFrame, "AddMessage", function(self, text) table.insert(SHOWN_ERRORS, text) end)
 rawset(UIErrorsFrame, "GetScript", function(self, name) return rawget(self, "_scripts")[name] end)
 """
 rt, g = fresh(stock=True)
 rt.execute(ERRORS_SETUP)
-rt.execute('BOOT() NS.Set("filterErrors", true)')
+rt.execute('BOOT() NS.Set("filterErrors", true) FILTER_ACTIVE = true')
 rt.execute('FireEvent("UI_ERROR_MESSAGE", 1, "Not enough rage") '
            'FireEvent("UI_ERROR_MESSAGE", 2, "Spell is not ready yet") '
            'FireEvent("UI_ERROR_MESSAGE", 3, "Inventory is full.")')
@@ -2682,7 +2820,9 @@ shown = [str(v) for v in rt.eval("SHOWN_ERRORS").values()]
 check("the spam is dropped", "Not enough rage" not in shown and "Spell is not ready yet" not in shown,
       str(shown))
 check("a real error still shows, once", shown.count("Inventory is full.") == 1, str(shown))
-rt.execute('NS.Set("filterErrors", false) SHOWN_ERRORS = {} FireEvent("UI_ERROR_MESSAGE", 1, "Not enough rage")')
+check("through the frame's AddMessage, never by running its own handler from ours",
+      rt.eval("HANDLER_RAN_BY_US") == 0)
+rt.execute('NS.Set("filterErrors", false) FILTER_ACTIVE = false SHOWN_ERRORS = {} FireEvent("UI_ERROR_MESSAGE", 1, "Not enough rage")')
 check("switching it off hands the errors back",
       [str(v) for v in rt.eval("SHOWN_ERRORS").values()] == ["Not enough rage"])
 
@@ -3036,6 +3176,221 @@ rt.execute('NS.Set("osdBagsTotal", true) NS.RefreshOSD() DRIVER_TICK()')
 line = rt.eval("NS.OSDLine()") or ""
 check("or free/total with the toggle on", "|t 25/26" in line, line)
 
+print("\nOSD polish: level cap, zone changes, widths, help text")
+rt, g = fresh()
+rt.execute("""
+ZONE_NOW = "Elwynn Forest"
+function GetZoneText() return ZONE_NOW end
+function GetSubZoneText() return "" end
+function UnitXP() return 0 end
+function UnitXPMax() return 12345 end
+function GetMaxPlayerLevel() return 60 end
+LEVEL = 60
+function UnitLevel() return LEVEL end
+BOOT() NS.SetMany({ osdZone = true, osdXP = true }) NS.RefreshOSD() DRIVER_TICK()
+""")
+line = rt.eval("NS.OSDLine()") or ""
+check("at the level cap the XP item is left out, not shown at 0.00%", "0.00%" not in line, line)
+rt.execute('ZONE_NOW = "Westfall" FireEvent("ZONE_CHANGED_NEW_AREA") DRIVER_TICK()')
+check("the zone name follows a zone change on its own",
+      "Westfall" in (rt.eval("NS.OSDLine()") or ""), rt.eval("NS.OSDLine()"))
+
+# A long name reserves room; once it is gone for a while the room is given back.
+rt.execute('STRING_WIDTH = function(text) return #tostring(text or "") * 6 end')
+rt.execute('ZONE_NOW = "The Very Long Name Of A Subzone Somewhere" FireEvent("ZONE_CHANGED") DRIVER_TICK()')
+wide = rt.eval("NS.OSDReserved and NS.OSDReserved('zone')")
+rt.execute('ZONE_NOW = "Goldshire" FireEvent("ZONE_CHANGED") DRIVER_TICK()')
+still = rt.eval("NS.OSDReserved and NS.OSDReserved('zone')")
+rt.execute('NOW = NOW + 11 FireEvent("ZONE_CHANGED") DRIVER_TICK()')
+after = rt.eval("NS.OSDReserved and NS.OSDReserved('zone')")
+check("a wide name keeps its room for a moment, then gives it back",
+      wide and still == wide and after < wide, (wide, still, after))
+
+rt.execute('PRINTED = {} SlashCmdList["CHAIRPLUS"]("help")')
+helptext = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("help text escapes its separators, so no color code eats a letter",
+      "|reset" not in helptext.replace("||", "") and "on||off||toggle" in helptext, helptext[:300])
+
+print("\nOSD: watched reputation and repair cost")
+rt, g = fresh()
+rt.execute("""
+WATCHED = { "Stormwind", 5, 3000, 9000, 6000 }
+function GetWatchedFactionInfo() if WATCHED then return unpack(WATCHED) end end
+FACTION_BAR_COLORS = { [5] = { r = 0, g = 0.6, b = 0.1 } }
+BOOT() NS.SetMany({ osdRep = true }) NS.RefreshOSD() DRIVER_TICK()
+""")
+line = rt.eval("NS.OSDLine()") or ""
+check("the watched faction shows, how far through its standing", "Stormwind" in line and "50%" in line, line)
+rt.execute("WATCHED = nil NS.RefreshOSD() DRIVER_TICK()")
+check("and nothing when no faction is watched", "Stormwind" not in (rt.eval("NS.OSDLine()") or ""))
+
+rt.execute("""
+function GetRepairAllCost() return 2500, true end
+FireEvent("MERCHANT_SHOW")
+""")
+check("a merchant's repair quote is remembered", rt.eval("(NS.RepairCost())") == 2500)
+check("and marked as a quote", rt.eval("select(2, NS.RepairCost())") is True)
+rt.execute("""
+C_TooltipInfo = { GetInventoryItem = function(unit, slot)
+    if slot == 1 then return { repairCost = 120 } end
+    if slot == 5 then return { repairCost = 80 } end
+    return {}
+end }
+""")
+check("an exact cost from the items wins over the quote",
+      rt.eval("(NS.RepairCost())") == 200 and rt.eval("select(2, NS.RepairCost())") is False)
+
+print("\nOSD layout: wrapping, opacity, right-click")
+rt, g = fresh()
+rt.execute("""
+STRING_WIDTH = function(text) return 100 end
+function GetZoneText() return "Elwynn Forest" end
+function GetSubZoneText() return "" end
+BOOT() NS.SetMany({ osdMoney = true, osdZone = true, osdClock = true, osdBackground = true })
+NS.RefreshOSD() DRIVER_TICK()
+""")
+check("with no wrap width, one line", rt.eval("NS.osdRows") == 1)
+rt.execute('NS.Set("osdMaxWidth", 250) NS.RefreshOSD() DRIVER_TICK()')
+check("past the wrap width, items start another line", rt.eval("NS.osdRows") >= 2, rt.eval("NS.osdRows"))
+check("and the display is no wider than the wrap width",
+      rt.eval("rawget(ChairPlusOSD, '_w')") <= 250, rt.eval("rawget(ChairPlusOSD, '_w')"))
+
+rt.execute("""
+ChairPlusDB.sessions = ChairPlusDB.sessions or {}
+ChairPlusDB.sessions["Player-1-alt"] = { name = "Alt-Testrealm", lastMoney = 50000 }
+PRINTED = {}
+local b = NS.OSDHotspot("money") b._scripts.OnClick(b, "RightButton")
+""")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("right-clicking money lists every character's gold", "Alt-Testrealm" in said and "Total" in said, said[-300:])
+before = rt.eval('NS.Get("osdClock24")')
+rt.execute('for _, it in ipairs(NS.OSD_ITEMS) do if it.key == "clock" then it.rightClick() end end')
+check("right-clicking the clock switches 12 and 24 hour", rt.eval('NS.Get("osdClock24")') != before)
+rt.execute('OPENED_ALARM = false NS.OpenAlarm = function() OPENED_ALARM = true end '
+           'for _, it in ipairs(NS.OSD_ITEMS) do if it.key == "clock" then it.click() end end')
+check("while a left-click still opens the clock", rt.eval("OPENED_ALARM") is True)
+
+print("\nTooltip extras, mail and small automations, nameplate colors")
+rt, g = fresh(stock=True)
+rt.execute("""
+POST = {}
+Enum.TooltipDataType = { Item = 0, Spell = 1, UnitAura = 7 }
+TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn) POST[kind] = fn end }
+TIP_LINES = {}
+GameTooltip = GameTooltip or MakeMock()
+rawset(GameTooltip, "AddDoubleLine", function(self, a, b) table.insert(TIP_LINES, tostring(a) .. "=" .. tostring(b)) end)
+rawset(GameTooltip, "AddLine", function(self, a) table.insert(TIP_LINES, tostring(a)) end)
+function GetItemInfo(id)
+    if id == 2589 then return "Linen Cloth", nil, 1, nil, nil, nil, nil, 20, nil, nil, 13 end
+end
+C_Item.GetItemInfo = GetItemInfo
+BOOT() NS.SetMany({ tooltipExtras = true, tooltipIDs = true })
+POST[0](GameTooltip, { id = 2589 })
+POST[1](GameTooltip, { id = 774 })
+""")
+lines = [str(v) for v in rt.eval("TIP_LINES").values()]
+check("an item's tooltip gets what it sells for", any(l.startswith("Sells for=") for l in lines), lines)
+check("and its ID, and a spell's", "Item ID=2589" in lines and "Spell ID=774" in lines, lines)
+rt.execute('TIP_LINES = {} NS.Set("tooltipExtras", false) POST[0](GameTooltip, { id = 2589 })')
+check("switched off, nothing is added", len(list(rt.eval("TIP_LINES").values())) == 0)
+
+rt.execute("""
+MAIL = { { money = 1500, items = {} }, { money = 0, cod = 500, items = { "Pricey" } },
+         { money = 0, items = { "Wool Cloth", "Linen Cloth" } } }
+function GetInboxNumItems() return #MAIL end
+function GetInboxHeaderInfo(i)
+    local m = MAIL[i]
+    local n = 0 for _ in pairs(m.items) do n = n + 1 end
+    return nil, nil, "Someone", "Hi", m.money, m.cod or 0, 30, n, false, false, false, true, false
+end
+function GetInboxItem(i, a) return MAIL[i].items[a] end
+function TakeInboxMoney(i) MAIL[i].money = 0 end
+function TakeInboxItem(i, a) MAIL[i].items[a] = nil end
+NS.Set("mailOpenAll", true)
+PRINTED = {}
+NS.OpenAllMail()
+RUN_TIMERS(10)
+""")
+check("open all takes the gold", rt.eval("MAIL[1].money") == 0)
+check("and the items", rt.eval("next(MAIL[3].items)") is None)
+check("but never a cash-on-delivery letter", rt.eval("MAIL[2].items[1]") == "Pricey")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("and says what it took", "from the mail" in said and "2 items" in said, said[-200:])
+
+rt.execute("""
+RELEASED, STOPPED, DISMOUNTED, STOOD = 0, 0, 0, 0
+function IsInInstance() return true, "pvp" end
+function HasSoulstone() return nil end
+function RepopMe() RELEASED = RELEASED + 1 end
+function StopCinematic() STOPPED = STOPPED + 1 end
+function Dismount() DISMOUNTED = DISMOUNTED + 1 end
+function DoEmote(e) if e == "STAND" then STOOD = STOOD + 1 end end
+function InCombatLockdown() return false end
+ERR_ATTACK_MOUNTED = "You are mounted."
+SPELL_FAILED_NOT_STANDING = "You must be standing to do that"
+NS.SetMany({ autoReleaseBG = true, skipCinematics = true, autoDismount = true })
+FireEvent("PLAYER_DEAD") FireEvent("CINEMATIC_START")
+FireEvent("UI_ERROR_MESSAGE", 1, "You are mounted.")
+FireEvent("UI_ERROR_MESSAGE", 1, "You must be standing to do that")
+""")
+check("dying in a battleground releases", rt.eval("RELEASED") == 1)
+check("a cinematic is skipped", rt.eval("STOPPED") == 1)
+check("'You are mounted' dismounts, 'must be standing' stands",
+      rt.eval("DISMOUNTED") == 1 and rt.eval("STOOD") == 1)
+rt.execute('function HasSoulstone() return "Use Soulstone" end FireEvent("PLAYER_DEAD")')
+check("but not with a soulstone to come back where you fell", rt.eval("RELEASED") == 1)
+
+rt.execute("""
+BAR = MakeMock()
+BAR_COLOR = { 0.8, 0, 0 }
+rawset(BAR, "SetStatusBarColor", function(self, r, g, b) BAR_COLOR = { r, g, b } end)
+rawset(BAR, "GetStatusBarColor", function() return BAR_COLOR[1], BAR_COLOR[2], BAR_COLOR[3] end)
+C_NamePlate = { GetNamePlateForUnit = function(unit) return { UnitFrame = { healthBar = BAR } } end }
+STATUS, ON_ME, TARGET_ROLE, GROUPED = 3, false, "DAMAGER", true
+function UnitAffectingCombat(u) return true end
+function UnitThreatSituation(me, u) return STATUS end
+function UnitIsFriend() return false end
+function UnitExists(u) return true end
+function UnitIsUnit(a, b) return ON_ME end
+function UnitInParty(u) return GROUPED end
+function UnitGroupRolesAssigned(u) return TARGET_ROLE end
+NS.Set("nameplateThreat", true)
+FireEvent("NAME_PLATE_UNIT_ADDED", "nameplate1")
+""")
+def colour():
+    return tuple(round(rt.eval("BAR_COLOR[%d]" % i), 2) for i in (1, 2, 3))
+check("I have aggro: my color", colour() == (0.2, 0.8, 0.2), colour())
+rt.execute('STATUS = 2 FireEvent("UNIT_THREAT_LIST_UPDATE", "nameplate1")')
+check("aggro changing: its color", colour() == (1.0, 0.6, 0.0), colour())
+rt.execute('STATUS = 0 FireEvent("UNIT_THREAT_LIST_UPDATE", "nameplate1")')
+check("a non-tank has aggro: its color", colour() == (1.0, 0.1, 0.1), colour())
+rt.execute('TARGET_ROLE = "TANK" FireEvent("UNIT_THREAT_LIST_UPDATE", "nameplate1")')
+check("another tank has it: its color", colour() == (0.25, 0.5, 1.0), colour())
+rt.execute('GROUPED = false FireEvent("UNIT_THREAT_LIST_UPDATE", "nameplate1")')
+check("on someone outside the group, the plate's own color comes back", colour() == (0.8, 0.0, 0.0), colour())
+rt.execute('GROUPED = true STATUS = 3 NS.Set("npMine", false) FireEvent("UNIT_THREAT_LIST_UPDATE", "nameplate1")')
+check("a state switched off is left alone", colour() == (0.8, 0.0, 0.0), colour())
+
+print("\nSettings backup")
+rt, g = fresh()
+for lib in ("Libs/LibStub/LibStub.lua", "Libs/LibDeflate/LibDeflate.lua", "Libs/LibSerialize/LibSerialize.lua"):
+    source = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", lib), encoding="utf-8").read()
+    rt.execute("local f = assert(loadstring(...)) f()", source)
+rt.execute('BOOT() NS.Set("osdFontSize", 19) NS.Set("sellJunk", true)')
+exported = rt.eval("(NS.ExportSettings(false))")
+check("export gives one Chaircraft string", isinstance(exported, str) and exported.startswith("!CC:1!"),
+      str(exported)[:40])
+rt.execute('NS.Set("osdFontSize", 12) NS.Set("sellJunk", false)')
+rt.globals().BACKUP = exported
+rt.execute("COPIED, DATA = NS.ImportSettings(BACKUP, false)")
+check("and importing it puts the settings back",
+      g.NS.Get("osdFontSize") == 19 and g.NS.IsEnabled("sellJunk") is True,
+      (g.NS.Get("osdFontSize"), g.NS.IsEnabled("sellJunk")))
+check("leaving no temporary profile behind",
+      rt.eval('ChairPlusDB.profiles["import:backup"]') is None)
+check("a string that is not one is refused, not an error",
+      rt.eval("select(2, NS.PeekSettings('hello'))") == "that is not a Chaircraft settings string")
+
 print("\nArrow custom color")
 rt, g = arrow_rt('PIN = { map = 1, x = 0.5, y = 0.4 }')
 rt.execute("""
@@ -3059,7 +3414,9 @@ ColorPickerFrame = PICKER
 rawset(PICKER, "SetupColorPickerAndShow", function(self, info) PICKER_INFO = info end)
 rawset(PICKER, "GetColorRGB", function() return 0.5, 0.25, 0.75 end)
 for _, f in ipairs(FRAMES) do
-    if rawget(f, "fill") and rawget(f, "_scripts") then rawget(f, "_scripts").OnClick(f) end
+    if rawget(f, "fill") and rawget(f, "_scripts") and rawget(f, "settingKey") == "arrowCustomColor" then
+        rawget(f, "_scripts").OnClick(f)
+    end
 end
 PICKER_INFO.swatchFunc()
 """)
@@ -3511,8 +3868,10 @@ rt.execute('LEADER, GROUP = true, 5 NS.Set("keywordInviteRaid", false) CHAT("CHA
 check("a full party is not turned into a raid when told not to",
       "Ida" not in invited(rt) and rt.eval("CONVERTED") is False, str(invited(rt)))
 rt.execute('NS.Set("keywordInviteRaid", true) CHAT("CHAT_MSG_WHISPER", "inv", "Ida")')
-check("and is when allowed, then the invite goes out",
-      rt.eval("CONVERTED") is True and invited(rt)[-1] == "Ida", str(invited(rt)))
+check("and is when allowed, but the invite waits for the raid to land",
+      rt.eval("CONVERTED") is True and "Ida" not in invited(rt), str(invited(rt)))
+rt.execute("RUN_TIMERS(1)")
+check("then the invite goes out", invited(rt)[-1] == "Ida", str(invited(rt)))
 rt.execute('NS.Set("keywordInvite", false) CHAT("CHAT_MSG_WHISPER", "inv", "Jo")')
 check("switched off, nothing happens", "Jo" not in invited(rt), str(invited(rt)))
 rt.execute("NS.ToggleKeywordPanel()")
@@ -3662,13 +4021,51 @@ BOOT()
 """)
 check("off by default, both bars are left alone",
       rt.eval("MainStatusTrackingBarContainer:IsShown() and SecondaryStatusTrackingBarContainer:IsShown()") is True)
+rt.execute("""
+BAR_CHILD = CreateFrame("StatusBar", nil, MainStatusTrackingBarContainer)
+rawset(MainStatusTrackingBarContainer, "GetChildren", function() return BAR_CHILD end)
+rawset(BAR_CHILD, "IsMouseEnabled", function(self) return rawget(self, "_mouse") ~= false end)
+HIDE_CALLS = 0
+for _, bar in ipairs({ MainStatusTrackingBarContainer, SecondaryStatusTrackingBarContainer }) do
+    rawset(bar, "Hide", function() HIDE_CALLS = HIDE_CALLS + 1 end)
+end
+""")
 rt.execute('NS.Set("hideStatusBars", true)')
-check("one toggle hides both",
-      rt.eval("not MainStatusTrackingBarContainer:IsShown() and not SecondaryStatusTrackingBarContainer:IsShown()") is True)
+check("one toggle makes both see-through",
+      rt.eval("MainStatusTrackingBarContainer:GetAlpha() == 0 and SecondaryStatusTrackingBarContainer:GetAlpha() == 0") is True)
+check("and click-through, so no tooltip from an invisible bar",
+      rt.eval("rawget(BAR_CHILD, '_mouse')") is False)
+check("without ever calling Hide on Blizzard's bars", rt.eval("HIDE_CALLS") == 0)
 check("and a bar missing on this client is not an error", rt.eval("NS.modules.hideStatusBars.broken") is None)
 rt.execute('NS.Set("hideStatusBars", false)')
-check("turning it off brings both back",
-      rt.eval("MainStatusTrackingBarContainer:IsShown() and SecondaryStatusTrackingBarContainer:GetAlpha() == 1") is True)
+check("turning it off brings both back, mouse and all",
+      rt.eval("MainStatusTrackingBarContainer:GetAlpha() == 1 and SecondaryStatusTrackingBarContainer:GetAlpha() == 1") is True
+      and rt.eval("rawget(BAR_CHILD, '_mouse')") is True)
+# The reload case (2026-09-26): on, from the saved file, then the client's
+# own bar layout puts the alpha back after login without showing the bar.
+rt, g = fresh()
+rt.execute("""
+function InCombatLockdown() return false end
+function hooksecurefunc(obj, name, fn)
+    if type(obj) == "string" then obj, name, fn = _G, obj, name end
+    local original = obj[name]
+    rawset(obj, name, function(...)
+        local a, b, c = original(...)
+        fn(...)
+        return a, b, c
+    end)
+end
+MainStatusTrackingBarContainer = CreateFrame("Frame", "MainStatusTrackingBarContainer", UIParent)
+MainStatusTrackingBarContainer:Show()
+ChairPlusDB = { settings = { hideStatusBars = true } }
+BOOT()
+MainStatusTrackingBarContainer:SetAlpha(1)
+""")
+check("after a reload, the client putting the XP bar back does not bring it back",
+      rt.eval("MainStatusTrackingBarContainer:GetAlpha()") == 0, rt.eval("MainStatusTrackingBarContainer:GetAlpha()"))
+rt.execute('NS.Set("hideStatusBars", false) MainStatusTrackingBarContainer:SetAlpha(1)')
+check("and switched off, the client's alpha stands",
+      rt.eval("MainStatusTrackingBarContainer:GetAlpha()") == 1)
 check("the toggle is on the OSD page, not under the display's own switch",
       rt.eval("""(function() for _, r in ipairs(NS.ROWS or {}) do
           if r.key == "hideStatusBars" then return r.tab == "osd" and r.sub == nil end end

@@ -1,6 +1,6 @@
 ----------------------------------------------------------------------
--- WOWFTracker.lua  v1.0
--- Compact, draggable reputation tracker with sorting & auto-hide
+-- WOWFTracker.lua
+-- Compact, draggable reputation and skills tracker with sorting & auto-hide
 ----------------------------------------------------------------------
 
 WOWFTrackerNS = WOWFTrackerNS or {}
@@ -134,7 +134,14 @@ local function FindPanelAPI()
         }
     end
 
-    local found = shape(_G, "globals")
+    -- C_SkillInfo first. On WoW Forever the old globals are still there but
+    -- answer with spellbook tabs at 1/1, while C_SkillInfo is the Skills
+    -- panel's own source: every skill with its real rank, readable without
+    -- the panel ever being opened (/chair tracker skilldata, 2026-09-26).
+    local found = shape(_G.C_SkillInfo, "C_SkillInfo")
+    if found then return found end
+
+    found = shape(_G, "globals")
     if found then return found end
 
     for name, value in pairs(_G) do
@@ -149,11 +156,15 @@ end
 -- both leave here as name, isHeader, isExpanded, rank, maxRank.
 local function SkillLineFields(first, ...)
     if type(first) == "table" then
+        -- C_SkillInfo says isCollapsed; older shapes said isExpanded.
+        local expanded = first.isExpanded ~= false
+        if first.isCollapsed ~= nil then expanded = not first.isCollapsed end
         return first.skillName or first.name,
                first.isHeader and true or false,
-               first.isExpanded ~= false,
-               Printable(first.skillRank or first.rank) or 0,
-               Printable(first.skillMaxRank or first.maxRank) or 0
+               expanded,
+               -- nil, not 0, when unreadable: see ScanSkillPanel.
+               Printable(first.skillRank or first.rank),
+               Printable(first.skillMaxRank or first.maxRank)
     end
     local isHeader, isExpanded, rank, _, _, maxRank = ...
     return first,
@@ -247,6 +258,10 @@ function WOWFTrackerNS.UnopenedHeaders()
     return unopened
 end
 
+-- The last readable rank of each skill, for a scan the client will not
+-- answer (secret values, in combat).
+local lastKnownSkill = {}
+
 local function ScanSkillPanel()
     scanningSkills = true
     wipe(unopened)
@@ -255,6 +270,27 @@ local function ScanSkillPanel()
     local i = 1
     while i <= PanelCount() do
         local name, isHeader, isExpanded, rank, maxRank = PanelLine(i)
+        if name and not isHeader then
+            if rank == nil or maxRank == nil then
+                -- Unreadable right now: the last reading stands, and a skill
+                -- never read is left out rather than drawn as nothing.
+                local known = lastKnownSkill[name]
+                if known then
+                    rank, maxRank = known[1], known[2]
+                elseif panelAPI.source == "C_SkillInfo" then
+                    name = nil
+                end
+            else
+                lastKnownSkill[name] = { rank, maxRank }
+            end
+        end
+        rank, maxRank = rank or 0, maxRank or 0
+        -- From C_SkillInfo a 1/1 row is a class spell tab or an armor type,
+        -- never a skill with progress: its weapon skills, Feral Combat
+        -- included, carry their real ranks. So those rows are left out.
+        if name and not isHeader and maxRank <= 1 and panelAPI.source == "C_SkillInfo" then
+            name = nil
+        end
         if name then
             -- A row that tops out at one point is a skill this client will
             -- name but not measure: a druid's Feral Combat comes back 1/1
@@ -680,9 +716,11 @@ local function HookSkillsWindow()
         InvalidateSkillRows()
 
         -- Shown and filled are not the same moment: the rows are built after
-        -- the frame appears, so the list is thrown away again once they exist.
+        -- the frame appears, so they are read -- and kept -- once they exist.
+        -- Blizzard filled them itself, untouched by us; this only reads.
         if C_Timer and C_Timer.After then
             C_Timer.After(0.3, function()
+                if WOWFTrackerNS.HarvestOpenPanel then WOWFTrackerNS.HarvestOpenPanel() end
                 InvalidateSkillRows()
                 if WOWFTrackerNS.UpdateReputation then
                     WOWFTrackerNS.UpdateReputation()
@@ -708,30 +746,27 @@ WOWFTrackerNS.HookSkillsWindow = HookSkillsWindow
 -- panel is opened, and is short again next login, because the saved file this
 -- client writes is not read back either.
 --
--- The window does not have to be looked at, though. It only has to have run.
--- Five things are tried, cheapest and least invasive first, and the walk stops
--- the moment rows come out:
+-- Two things are tried, and both only read:
 --
 --   1. load it, if it is the kind of window a client only loads when wanted
---   2. ask it -- it may have been filled already, by the player or by us
---   3. call its own update, which is what filling it consists of
---   4. run its OnShow without showing it, which is the same thing one step up
---   5. show it parented to something hidden, which is the only way to get rows
---      that are read off what is drawn rather than out of a data provider
+--   2. ask it -- it may have been filled already, by the player opening it
 --
--- Steps 3 to 5 are reaching into Blizzard's frame, and 5 reaches furthest: it
--- moves the frame. So 5 happens once a session, never while the panel is open,
--- never in combat -- the one state where a taint of our making could cost
--- something -- and everything is put back afterwards, anchors included.
+-- And when the player does open it, what it shows is read and kept (the
+-- OnShow hook above).
+--
+-- It used to go further -- call the window's own update, run its OnShow, show
+-- it out of sight -- to fill it without anyone opening it. That made
+-- Blizzard's row code run as ours, and on this client it then trips over a
+-- secret value: "SkillsFrame.lua:466: attempt to compare field 'modifier' (a
+-- secret number value, while execution tainted by 'Chaircraft')" (removed
+-- 2026-09-26). Nor is it needed any more: saved variables load on this client
+-- now, so ranks read once stay known across sessions.
 --
 -- What comes out is written into the same per-character table the character
--- sheet writes into. That is the part that matters: after one warm the ranks
--- are answers this addon holds, not answers the window holds, so they keep
--- being drawn whether or not anything ever opens it again.
+-- sheet writes into, so the ranks are answers this addon holds, drawn whether
+-- or not anything opens the window again.
 
-local warmParent
 local warmSteps = {}        -- what each attempt did, for /chair tracker weapons
-local warmedHidden = false  -- step 5, once a session
 local filledOnce = false    -- whether any step has ever produced rows
 local warming = false
 local lastWarm = 0
@@ -744,7 +779,7 @@ local function Note(step, outcome, rows)
 end
 
 function WOWFTrackerNS.WarmReport()
-    return warmSteps, warmedHidden
+    return warmSteps, false
 end
 
 -- Rows the panel gave us, kept as this addon's own answer. A row the panel
@@ -800,105 +835,18 @@ local function LoadSkillsAddOn()
     return "none of the usual names"
 end
 
--- 3. Filling the window is what its own update does, so the update is called
---    directly. Nothing here is documented for this client; the names are the
---    ones a window of this kind has had, and a miss costs a pcall.
-local REFRESH_METHODS = {
-    "Update", "UpdateSkills", "Refresh", "RefreshSkills", "FullUpdate",
-    "Initialize", "Init", "InitSkills", "Populate", "UpdateLayout",
-}
-
-local REFRESH_GLOBALS = {
-    "SkillsFrame_Update", "SkillsFrame_OnShow", "SkillsFrame_LoadUI",
-    "SkillFrame_Update", "SkillFrame_OnShow",
-}
-
-local function CallUpdates(frame)
-    local called = {}
-
-    for _, name in ipairs(REFRESH_METHODS) do
-        local method = frame[name]
-        if type(method) == "function" then
-            if pcall(method, frame) then called[#called + 1] = ":" .. name end
-        end
-    end
-
-    for _, name in ipairs(REFRESH_GLOBALS) do
-        local fn = _G[name]
-        if type(fn) == "function" then
-            if pcall(fn, frame) then called[#called + 1] = name end
-        end
-    end
-
-    if #called == 0 then return "nothing by any of the usual names" end
-    local ok, line = pcall(table.concat, called, " ")
-    return ok and line or "some of them"
+-- The open panel, read. Called a moment after the player opens it, once
+-- Blizzard has built the rows.
+function WOWFTrackerNS.HarvestOpenPanel()
+    local rows, count = PanelRows()
+    if count == 0 then return 0 end
+    filledOnce = true
+    local learned = RememberWeaponRows(rows)
+    if learned > 0 then InvalidateSkillRows() end
+    return learned
 end
 
--- 4. The same work one step further up: whatever the window does when it
---    appears, done without it appearing. Our own hook is in there too, which is
---    harmless -- it drops the cached list, which is what we want anyway.
-local function RunOnShow(frame)
-    local ok, script = pcall(frame.GetScript, frame, "OnShow")
-    if not ok or type(script) ~= "function" then return "it has no OnShow" end
-    if not pcall(script, frame) then return "its OnShow threw" end
-    return "ran"
-end
-
--- 5. Shown, but parented to a frame that is hidden, so nothing reaches the
---    screen. The last resort, and the only one that can produce rows read off
---    what is drawn -- a scrolling list makes no row frames until it is asked to
---    lay itself out.
-local function ShowHidden(frame, harvest)
-    local okShown, shown = pcall(frame.IsShown, frame)
-    if okShown and shown then return "the panel is open -- left alone" end
-
-    local okCombat, inCombat = pcall(_G.UnitAffectingCombat, "player")
-    if okCombat and inCombat then return "in combat -- not now" end
-
-    local okParent, previous = pcall(frame.GetParent, frame)
-    if not okParent then return "its parent could not be read" end
-
-    -- Every anchor it had, so moving it can be undone. A frame that comes back
-    -- from this unanchored is a window that opens in the wrong place for the
-    -- rest of the session, which is worse than the thing being fixed.
-    local points = {}
-    pcall(function()
-        for i = 1, (frame:GetNumPoints() or 0) do
-            points[#points + 1] = { frame:GetPoint(i) }
-        end
-    end)
-
-    warmParent = warmParent or CreateFrame("Frame", nil, UIParent)
-    warmParent:Hide()
-
-    if not pcall(frame.SetParent, frame, warmParent) then
-        return "it would not be reparented"
-    end
-
-    pcall(frame.Show, frame)
-
-    -- Read while it is up, not after. A scrolling list makes its row frames
-    -- when it is shown and is entitled to unmake them when it is hidden, and
-    -- for that client this is the only moment the numbers exist at all.
-    local count = harvest and harvest() or 0
-
-    pcall(frame.Hide, frame)
-
-    pcall(frame.SetParent, frame, previous or UIParent)
-    if #points > 0 then
-        pcall(function()
-            frame:ClearAllPoints()
-            for _, point in ipairs(points) do frame:SetPoint(unpack(point)) end
-        end)
-    end
-
-    warmedHidden = true
-    return "shown out of sight", count
-end
-
--- force skips the throttle and lets step 5 run again, which is what
--- /chair tracker weapons warm is for.
+-- force skips the throttle, which is what /chair tracker weapons warm is for.
 function WOWFTrackerNS.WarmSkills(force)
     if warming then return 0 end
 
@@ -931,31 +879,10 @@ function WOWFTrackerNS.WarmSkills(force)
     if type(frame) ~= "table" then
         Note("ask it", "there is no SkillsFrame on this client", 0)
     else
-        -- Asking first is right the first time and wrong afterwards: once the
-        -- window holds rows, reading them again hands back the snapshot it was
-        -- filled with, however old. A later warm wants it to recompute, so the
-        -- update goes first and the ask comes after it.
-        local done = false
-        if not filledOnce then
-            done = Harvest("ask it", "asked as it stands")
-        end
-        if not done then done = Harvest("call its update", CallUpdates(frame)) end
-        if not done then done = Harvest("run its OnShow", RunOnShow(frame)) end
-
-        if not done and (force or not warmedHidden) then
-            local outcome, count = ShowHidden(frame, function()
-                local rows, found = PanelRows()
-                if found > 0 then learned = learned + RememberWeaponRows(rows) end
-                return found
-            end)
-            Note("show it out of sight", outcome, count or 0)
-
-            -- Only if nothing was readable while it was up: a window that keeps
-            -- its rows afterwards is worth one more ask, and a window that does
-            -- not has already been read.
-            if (count or 0) == 0 then
-                Harvest("ask it again", "after being shown")
-            end
+        -- Only read. If it holds nothing, the player has not opened it this
+        -- session, and it fills -- and is read -- when they do.
+        if not Harvest("ask it", "asked as it stands") then
+            Note("wait for it", "open your Skills panel once and the ranks are kept", 0)
         end
     end
 
@@ -1012,6 +939,8 @@ skillPoll:SetScript("OnUpdate", function(_, elapsed)
     -- Before the database is in, the remembered table is a throwaway and
     -- writing to it would be work with nowhere to land.
     if not (WOWFTrackerDB and type(WOWFTrackerDB) == "table") then return end
+    -- Nothing tracked, nothing to keep up to date.
+    if type(WOWFTrackerDB.skills) ~= "table" or next(WOWFTrackerDB.skills) == nil then return end
     WOWFTrackerNS.PollWeaponSkills()
 end)
 
@@ -1487,6 +1416,9 @@ local function CreateBar(index)
     -- Opening a profession without a cast, where the client allows it.
     bar:SetScript("OnMouseUp", function(self, button)
         if button ~= "LeftButton" or not self.profession then return end
+        -- In combat the client blocks this outright, and a pcall does not
+        -- stop the "action blocked" message from reaching the player.
+        if Locked() then return end
         local open = DirectOpen()
         local panel = PROFESSION_PANELS[self.profession]
         if open and panel then pcall(open, panel[2]) end
@@ -1622,9 +1554,13 @@ local function SortEntries(entries)
     elseif mode == "name_desc" then
         table.sort(entries, function(a, b) return a.name > b.name end)
 
+    -- A skill has no standing, so in the standing sorts the factions go first
+    -- in standing order and the skills follow, by how far along they are --
+    -- rather than every skill being filed as "standing 0" at one end.
     elseif mode == "standing_desc" then
         table.sort(entries, function(a, b)
-            if a.standing == b.standing then
+            if (a.isSkill and true or false) ~= (b.isSkill and true or false) then return not a.isSkill end
+            if a.isSkill or a.standing == b.standing then
                 return a.progressPct > b.progressPct
             end
             return a.standing > b.standing
@@ -1632,7 +1568,8 @@ local function SortEntries(entries)
 
     elseif mode == "standing_asc" then
         table.sort(entries, function(a, b)
-            if a.standing == b.standing then
+            if (a.isSkill and true or false) ~= (b.isSkill and true or false) then return not a.isSkill end
+            if a.isSkill or a.standing == b.standing then
                 return a.progressPct < b.progressPct
             end
             return a.standing < b.standing
@@ -1666,6 +1603,7 @@ local function SortEntries(entries)
         end)
     end
 end
+WOWFTrackerNS.SortEntries = SortEntries
 
 ----------------------------------------------------------------------
 -- Skill data helper
@@ -1959,6 +1897,11 @@ end
 -- knows about. They differ exactly once -- the first sweep after the panel has
 -- been opened -- and that is the moment to read it again.
 local function WindowHasMore()
+    -- C_SkillInfo is the panel's own source: it cannot know less than the
+    -- panel, and scraping the panel on every redraw would be work for nothing.
+    if WOWFTrackerNS.SkillSource and (WOWFTrackerNS.SkillSource()) == "C_SkillInfo" then
+        return false
+    end
     local window = WOWFTrackerNS.ScrapeSkillsFrame and WOWFTrackerNS.ScrapeSkillsFrame()
     if not window then return false end
 
@@ -2176,7 +2119,7 @@ function WOWFTrackerNS.UpdateReputation()
         if undiscovered > 0 then
             anchor.emptyText:SetText(undiscovered .. " tracked faction(s) not discovered yet")
         else
-            anchor.emptyText:SetText("No items tracked — click the gear icon")
+            anchor.emptyText:SetText("No factions or skills tracked — click the gear icon")
         end
         anchor.emptyText:Show()
         container:SetHeight(30)
@@ -2609,7 +2552,10 @@ anchor:SetScript("OnEvent", function(self, event, arg1)
         WarmSoon(2)
         WarmSoon(8)
 
-        print("|cff88aaddChairTracker|r v1.4.0 loaded — by |cff00ccffChairface|r. Type /chair tracker for options.")
+        local meta = (_G.C_AddOns and _G.C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
+        local okV, version = pcall(meta or function() return nil end, "Chaircraft", "Version")
+        version = okV and type(version) == "string" and version or "?"
+        print("|cff88aaddChairTracker|r v" .. version .. " loaded — by |cff00ccffChairface|r. Type /chair tracker for options.")
     end
     if self.dbReady then
         WOWFTrackerNS.UpdateReputation()
@@ -2922,6 +2868,120 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
 
         print("|cff88aadd[WOWFT]|r === End skills probe ===")
 
+    elseif cmd == "skilldata" then
+        -- Where does the Skills panel get its numbers? Every function this
+        -- client has with "Skill" in its name, the read-only ones called with
+        -- the usual weapon skill-line IDs, and what came back -- readable or
+        -- secret. Read-only: nothing of Blizzard's panel is run. Kept in the
+        -- saved file (WOWFTrackerAccountDB.skillData) to be read afterwards.
+        local function Secret(v)
+            return not pcall(function() return "" .. v end)
+        end
+        local function Describe(v, depth)
+            depth = depth or 0
+            local kind = type(v)
+            if kind == "nil" or kind == "boolean" then return tostring(v) end
+            if kind == "number" or kind == "string" then
+                if Secret(v) then return "<secret " .. kind .. ">" end
+                local text = tostring(v)
+                return (#text > 60) and (text:sub(1, 60) .. "...") or text
+            end
+            if kind == "table" then
+                if depth >= 2 then return "{...}" end
+                local parts, n = {}, 0
+                local ok = pcall(function()
+                    for key, value in pairs(v) do
+                        n = n + 1
+                        if n <= 14 then
+                            parts[#parts + 1] = tostring(key) .. "=" .. Describe(value, depth + 1)
+                        end
+                    end
+                end)
+                if not ok then return "<secret table>" end
+                return "{" .. table.concat(parts, ", ") .. (n > 14 and (", +" .. (n - 14)) or "") .. "}"
+            end
+            return "<" .. kind .. ">"
+        end
+        local function Pack(...)
+            local n = select("#", ...)
+            local parts = {}
+            for i = 1, math.min(n, 12) do parts[i] = Describe((select(i, ...))) end
+            return table.concat(parts, " | ")
+        end
+
+        local READ = { "^Get", "^Is", "^Has", "^Can" }
+        local function ReadOnly(name)
+            for _, pattern in ipairs(READ) do if name:match(pattern) then return true end end
+            return false
+        end
+        -- Functions that belong to the panels themselves are never called.
+        local function PanelCode(name)
+            return name:match("Frame") ~= nil or name:match("^Toggle") ~= nil or name:match("_On") ~= nil
+        end
+
+        local found = {}
+        for tableName, space in pairs(_G) do
+            if type(tableName) == "string" and tableName:match("^C_") and type(space) == "table" then
+                local wholeTable = tableName:lower():find("skill") ~= nil
+                pcall(function()
+                    for fnName, fn in pairs(space) do
+                        if type(fn) == "function" and type(fnName) == "string"
+                           and (wholeTable or fnName:lower():find("skill")) then
+                            found[#found + 1] = { name = tableName .. "." .. fnName, fn = fn, short = fnName }
+                        end
+                    end
+                end)
+            elseif type(tableName) == "string" and type(space) == "function" and tableName:lower():find("skill")
+                   and not PanelCode(tableName) then
+                found[#found + 1] = { name = tableName, fn = space, short = tableName }
+            end
+        end
+        table.sort(found, function(a, b) return a.name < b.name end)
+
+        local ARGS = { {}, { 1 }, { 2 }, { 43 }, { 173 }, { 95 } }
+        local out = { when = date and date("%Y-%m-%d %H:%M") or "?", functions = {}, calls = {} }
+        for _, entry in ipairs(found) do
+            out.functions[#out.functions + 1] = entry.name
+            if ReadOnly(entry.short) then
+                for _, args in ipairs(ARGS) do
+                    local result = { pcall(entry.fn, unpack(args)) }
+                    local ok = table.remove(result, 1)
+                    local line = ok and Pack(unpack(result)) or ("error: " .. Describe(result[1]))
+                    out.calls[entry.name .. "(" .. table.concat(args, ",") .. ")"] = line
+                end
+            end
+        end
+
+        -- If the panel has been opened this session, what its rows carry.
+        local frame = _G.SkillsFrame
+        local box = type(frame) == "table" and (frame.ScrollBox or frame.scrollBox or frame.SkillsScrollBox)
+        if box then
+            pcall(function()
+                local provider = box.GetDataProvider and box:GetDataProvider()
+                local n = 0
+                out.rows = {}
+                for _, row in provider:Enumerate() do
+                    n = n + 1
+                    if n <= 6 then out.rows[n] = Describe(row) end
+                end
+                out.rowCount = n
+            end)
+        end
+
+        -- Kept apart: a run before the panel has been opened this session,
+        -- and one after, which also shows what its rows carry.
+        if type(WOWFTrackerAccountDB) == "table" then
+            if type(WOWFTrackerAccountDB.skillData) ~= "table" or WOWFTrackerAccountDB.skillData.calls then
+                WOWFTrackerAccountDB.skillData = {}
+            end
+            WOWFTrackerAccountDB.skillData[(out.rowCount and out.rowCount > 0) and "panelOpened" or "panelUnopened"] = out
+        end
+        local calls = 0
+        for _ in pairs(out.calls) do calls = calls + 1 end
+        print("|cff88aadd[WOWFT]|r skill data: " .. #out.functions .. " functions found, "
+            .. calls .. " read-only calls made" .. (out.rowCount and (", panel rows: " .. out.rowCount) or "")
+            .. ". Saved; /reload or log out, then tell Claude.")
+
     elseif cmd == "weapons" then
         -- Everything that can answer "what is my sword skill", and what each one
         -- actually said, because on this client the answer is different for every
@@ -2961,7 +3021,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
         --    asked, so the step that moves the frame can be retried on demand.
         if force then print("  |cffffcc00forcing a full warm|r") end
         local learned = WOWFTrackerNS.WarmSkills and WOWFTrackerNS.WarmSkills(force) or 0
-        local steps, usedHidden = WOWFTrackerNS.WarmReport()
+        local steps = WOWFTrackerNS.WarmReport()
 
         print("  |cffffcc00warming the skills window (learned " .. learned .. " new):|r")
         for _, step in ipairs(steps or {}) do
@@ -2970,9 +3030,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
                 or "|cff808080no rows|r"
             print("    " .. step.step .. ": " .. step.outcome .. " — " .. rows)
         end
-        if usedHidden then
-            print("    |cff808080(the out-of-sight show has been used this session)|r")
-        end
+
 
         -- 3. What the addon now holds, which is what gets drawn whether or not
         --    anything ever opens the panel again.

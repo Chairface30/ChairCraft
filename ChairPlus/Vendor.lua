@@ -29,6 +29,14 @@ local lastSellError = nil
 local SELL_INTERVAL = 0.3
 local SELL_MAX_PASSES = 40
 
+-- The merchant's buyback holds the last twelve things sold. Selling more in
+-- one visit pushes the first ones out for good, so a visit stops at twelve:
+-- whatever was sold by mistake can still be bought back. The rest waits for
+-- the next visit.
+local SELL_CAP = 12
+local soldThisVisit = 0
+local capped = false
+
 -------------------------------------------------------------------------------
 -- Bag reading
 -------------------------------------------------------------------------------
@@ -115,10 +123,12 @@ local function StopSelling(report)
             local ok, coin = pcall(ns.GetCoinText, sellTotal)
             if ok then text = ns.Text(coin) end
         end
-        ns.Print("Sold junk for", text or (sellTotal .. "c"))
+        ns.Print("Sold junk for", text or (sellTotal .. "c"),
+            capped and "|cff888888(twelve, so all of it can still be bought back; talk to the merchant again for the rest)|r" or "")
     end
 
     sellTotal = 0
+    soldThisVisit, capped = 0, false
     wipe(sellCounted)
     if ns.RefreshOSD then ns.RefreshOSD() end
 end
@@ -178,8 +188,17 @@ local function SellSweep()
                     -- pass did not sell, and counting it twice would report a
                     -- total that never arrived.
                     local tag = bag .. ":" .. slot .. ":" .. (info.itemID or 0)
+                    if not sellCounted[tag] and soldThisVisit >= SELL_CAP then
+                        capped = true
+                        skip = true
+                    end
+                end
+
+                if not skip then
+                    local tag = bag .. ":" .. slot .. ":" .. (info.itemID or 0)
                     if not sellCounted[tag] then
                         sellCounted[tag] = true
+                        soldThisVisit = soldThisVisit + 1
                         local price = SellPrice(info.itemID, info.hyperlink)
                         if price then
                             sellTotal = sellTotal + (price * (info.stackCount or 1))
@@ -244,6 +263,7 @@ local function StartSelling()
     selling = true
     sellPass = 0
     sellTotal = 0
+    soldThisVisit, capped = 0, false
     lastSellError = nil
     wipe(sellCounted)
     -- Deferred, never immediate. Called straight from the MERCHANT_SHOW
@@ -267,7 +287,7 @@ local function DoRepair()
     local okCost, cost, canAfford = pcall(getCost)
     if not okCost then return end
     cost = ns.Num(cost) or 0
-    if cost <= 0 or not canAfford then return end
+    if cost <= 0 then return end
 
     local repairAll = _G.RepairAllItems
     if type(repairAll) ~= "function" then return end
@@ -286,7 +306,22 @@ local function DoRepair()
             usedGuild = true
         end
     end
-    pcall(repairAll)
+    -- Personal gold only if it covers the bill: guild funds were tried
+    -- first, and short of gold the guild is the only way this repair happens
+    -- (it used to stop before asking the guild at all).
+    if canAfford then pcall(repairAll) end
+
+    -- Said only if something was actually repaired. The cost is read again,
+    -- because none of these calls says whether it worked.
+    local okAfter, left = pcall(getCost)
+    left = okAfter and ns.Num(left) or cost
+    if left >= cost then
+        if ns.Get("repairSummary") then
+            ns.Print("|cffff5555Could not repair:|r not enough gold" .. (usedGuild and " or guild funds." or "."))
+        end
+        return
+    end
+    cost = cost - left
 
     if ns.Get("repairSummary") then
         local text = nil

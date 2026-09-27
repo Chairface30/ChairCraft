@@ -1,5 +1,5 @@
 ----------------------------------------------------------------------
--- Config.lua — Defaults for ChairTracker v1.0
+-- Config.lua — Defaults for ChairTracker
 ----------------------------------------------------------------------
 
 WOWFTracker_Defaults = {

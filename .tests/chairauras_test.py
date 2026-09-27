@@ -423,9 +423,10 @@ def check(name, cond, detail=""):
 L = lua51.LuaRuntime(unpack_returned_tuples=True)
 loadstring = L.eval("function(s,n) return loadstring(s,n) end")
 FILES = ["Core.lua", "Presets.lua", "Database.lua", "Load.lua", "AuraEnvironment.lua", "Engine.lua", "CustomTrigger.lua", "Triggers.lua", "Text.lua", "Conditions.lua", "Actions.lua",
-         "Display.lua", "Regions.lua", "SubRegions.lua", "Animations.lua", "Icons.lua", "Share.lua", "Sounds.lua", "Config.lua",
+         "Display.lua", "Regions.lua", "SubRegions.lua", "Animations.lua", "Icons.lua", "Share.lua", "Templates.lua", "Sounds.lua", "Config.lua",
          "Probe.lua", "Commands.lua"]
 FILES = ["ChairAuras/" + _f for _f in FILES]
+LIBS = ["Libs/LibStub/LibStub.lua", "Libs/LibDeflate/LibDeflate.lua", "Libs/LibSerialize/LibSerialize.lua"]
 for f in FILES:
     res = loadstring(io.open(f, encoding="utf-8").read(), "@" + f)
     fn, err = (res if isinstance(res, tuple) else (res, None))
@@ -443,6 +444,10 @@ def boot(setup="", preset=False):
     L.execute(setup)
     run = L.eval("function(s, n) local f = assert(loadstring(s, n)); f('Chaircraft', suite) end")
     L.execute("ns = {}; suite = { ChairAuras = ns }")
+    # The libraries the TOC loads ahead of ChairAuras: LibStub, and the ones
+    # the WeakAuras-style strings are made with.
+    for f in LIBS:
+        run(io.open(f, encoding="utf-8").read(), "@" + f)
     for f in FILES:
         run(io.open(f, encoding="utf-8").read(), "@" + f)
     # Seeding ships off; preset=True switches it on, as "/ca preset on" would,
@@ -1407,8 +1412,12 @@ check("so do the characters the format itself uses",
       """) is True)
 
 text = ev("(ns.Share:Export((ns.FindAura('g1'))))")
-check("a group exports to a string", isinstance(text, str) and text.startswith("CA1:"),
-      text and text[:40])
+check("a group exports to a string, made the way WeakAuras makes its own",
+      isinstance(text, str) and text.startswith("!CA:3!"), text and text[:40])
+# Strings from before 1.2 still read: the same group in the old CA1: form.
+old = ev("(function() local b = { v = 1, auras = { ns.FindAura('g1') } } return 'CA1:' .. ns.Share.__Encode(ns.Share.Serialise(b)) end)()")
+check("and a CA1: string from before still imports",
+      ev("(function() local b = ns.Share:Peek(%s) return b and b.auras[1].id end)()" % ("'" + old + "'")) == "g1")
 
 bundle = ev("(ns.Share:Peek(%s))" % ("'" + text + "'"))
 check("which says what is in it before anything is added",
@@ -4060,6 +4069,168 @@ L.execute("PRINTED = {} SlashCmdList['CHAIRAURAS']('where')")
 check("/chair auras where says the IDs to use",
       "1429" in " ".join(str(v) for v in (ev("PRINTED") or {}).values())
       and "409" in " ".join(str(v) for v in (ev("PRINTED") or {}).values()))
+
+
+# --- phase 10: WeakAuras import, custom options, templates ----------------------------
+print("-- phase 10: WeakAuras strings are not read")
+L = boot("ChairAurasDB = { version = 3, profiles = { account = { auras = {} } } }")
+ev = L.eval
+check("a !WA:2! string is refused as not a ChairAuras string",
+      ev("select(2, ns.Share:Peek('!WA:2!abcdef'))") == "that is not a ChairAuras string")
+check("and the converter is gone", ev("ns.WAImport") is None)
+
+print("-- phase 10: free groups, templates, the Options tab")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "fg", type = "group", growth = "FREE" },
+    { id = "f1", parent = "fg", pos = { x = 10, y = 20, pivot = "CENTER" }, triggers = { { trigger = { spellID = 774 } } } },
+    { id = "f2", parent = "fg", pos = { x = -30, y = 0, pivot = "CENTER" }, triggers = { { trigger = { spellID = 8936 } } } },
+    { id = "op", triggers = { { trigger = { spellID = 774 } } },
+      authorOptions = { { type = "toggle", key = "loud", name = "Loud", default = true },
+                        { type = "header", text = "More" },
+                        { type = "select", key = "mode", name = "Mode", values = { "A", "B" }, default = 1 } } },
+    { id = "cp", triggers = { { trigger = { spellID = 8936 } } } },
+} } } }
+function GetNumSpellTabs() return 1 end
+function GetSpellTabInfo() return "General", nil, 0, 3 end
+BOOK = { 774, 8936, 5487 }
+function GetSpellBookItemInfo(i) return "SPELL", BOOK[i] end
+function IsPassiveSpell(id) return id == 5487 end
+""")
+ev = L.eval
+L.execute("ns.Engine:UpdateAll()")
+check("a free group puts each child where its own position says",
+      ev("rawget(ns.Display.__regions.f1, '_point').x") == 10
+      and ev("rawget(ns.Display.__regions.f1, '_point').y") == 20
+      and ev("rawget(ns.Display.__regions.f2, '_point').x") == -30)
+check("templates list your spellbook's active spells",
+      ev("#ns.Templates:Spells()") == 2 and ev("ns.Templates:Spells()[1].text") == "Regrowth")
+L.execute("ns.Config:Open() ns.Config:Select('op') ns.Config:AddFromTemplate('cooldown', 8936)")
+check("and make the aura for one",
+      ev("ns.FindAura(ns.Config.__selected()).triggers[1].trigger.type") == "cooldown"
+      and ev("ns.FindAura(ns.Config.__selected()).name") == "Regrowth cooldown")
+L.execute("ns.Config:OpenTemplates()")
+check("the template picker opens with your spells", ev("#ns.Config.__templates.spells") == 2)
+
+L.execute("ns.Config:Select('op') ns.Config:SetTab('options')")
+L.execute("FIND_WIDGET = " + FIND_WIDGET)
+check("the Options tab draws a control for each option",
+      ev("(function() local w = FIND_WIDGET('authorOptions', 'authoroptions', 'options') local n = 0"
+         " for _, r in ipairs(w.rows) do if r.frame:IsShown() then n = n + 1 end end return n end)()") == 3)
+L.execute("FIND_WIDGET('authorOptions', 'authoroptions', 'options').field.set(ns.FindAura('op'), { 'loud' }, false)")
+check("setting one changes aura_env.config",
+      ev("ns.FindAura('op').config.loud") is False and ev("ns.Env:For(ns.FindAura('op')).config.loud") is False
+      and ev("ns.Env:For(ns.FindAura('op')).config.mode") == 1)
+L.execute("ns.Config.__optionCursor(nil, true) ns.Config:Refresh()"
+          " FIND_WIDGET('optionStrip', 'strip', 'options').field.add(ns.FindAura('op')) ns.Config:Refresh()"
+          " FIND_WIDGET('optType', 'choice', 'options').field.set(ns.FindAura('op'), 'range')")
+check("author mode adds options and sets their type",
+      ev("#ns.FindAura('op').authorOptions") == 4 and ev("ns.FindAura('op').authorOptions[4].type") == "range"
+      and ev("ns.FindAura('op').authorOptions[4].max") == 100
+      and ev("ns.Env:For(ns.FindAura('op')).config.option4") == 0)
+
+print("-- phase 11: search, several at once, Run")
+L.execute("ns.Config.search = 'regrowth' ns.Config:Refresh()")
+check("search narrows the list to what matches, with its group",
+      ev("(function() local n = 0 for _, r in ipairs(ns.Config.__rowList()) do if r:IsShown() then n = n + 1 end end return n end)()") == 4,
+      ev("(function() local n = 0 for _, r in ipairs(ns.Config.__rowList()) do if r:IsShown() then n = n + 1 end end return n end)()"))
+L.execute("ns.Config.search = '' ns.Config:Select('op') ns.Config.__multi().cp = true ns.Config:SetTab('display')"
+          " ns.FindAura('op').display = { size = 55 } ns.Config:Refresh()")
+check("ctrl-clicked auras join the selection", ev("#ns.Config:SelectedList()") == 2)
+L.execute("ns.Config:CopyTabToSelected()")
+check("and the open tab copies onto them", ev("ns.FindAura('cp').display.size") == 55)
+L.execute("ns.Config:SetTab('actions') local w = FIND_WIDGET('initCode', 'code', 'actions')"
+          " w.box:SetText('function() return 42 end') rawget(w.run, '_scripts').OnClick()")
+check("Run runs code once and says what it returned",
+      "42" in str(ev("FIND_WIDGET('initCode', 'code', 'actions').ran")),
+      str(ev("FIND_WIDGET('initCode', 'code', 'actions').ran")))
+
+
+# --- the gaps: aura lists, group units, match counts, formatters, grid order ----------
+print("-- aura triggers: more names, group units, match counts")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "also", triggers = { { trigger = { spellID = 774, also = "Regrowth, 1126" } } } },
+    { id = "party", triggers = { { trigger = { spellID = 1126, unit = "party" } } },
+      display = { textFormat = "%{unitName}" }, type = "text" },
+    { id = "count3", triggers = { { trigger = { spellID = 1126, unit = "party", matchCount = 3 } } },
+      display = { textFormat = "%{matchCount}" }, type = "text" },
+    { id = "few", triggers = { { trigger = { spellID = 1126, unit = "party", matchCount = 1, matchOp = "<=" } } } },
+    { id = "dg", type = "dynamic", growth = "RIGHT", spacing = 0 },
+    { id = "each", parent = "dg", display = { iconText = "%{unitName:upper}" },
+      triggers = { { trigger = { spellID = 1126, unit = "party", cloneMatches = true } } } },
+} } } }
+PARTY = { player = true, party1 = true, party2 = true }
+NAMES = { player = "Tester", party1 = "Ann-Otherrealm", party2 = "Bob" }
+function UnitExists(unit) return PARTY[unit] == true or unit == "target" end
+function UnitName(unit) return NAMES[unit] or "Tester" end
+""")
+ev = L.eval
+L.execute("AURAS.player = { { name = 'Regrowth', spellId = 8936 } } ns.Engine:UpdateAll()")
+check("also match: another name counts as the aura", ev("ns.Engine.states.also.shown") is True)
+L.execute("AURAS.player = { { name = 'Something', spellId = 1126 } } ns.Engine:UpdateAll()")
+check("and so does another ID", ev("ns.Engine.states.also.shown") is True)
+L.execute("AURAS.player = {} AURAS.party2 = { { name = 'Mark of the Wild', spellId = 1126 } } ns.Engine:UpdateAll()")
+check("a party trigger finds it on anyone in the party, and says whose",
+      ev("ns.Engine.states.party.shown") is True
+      and ev("ns.Display.__regions.party.text:GetText()") == "Bob")
+check("a count of three is not met by one", ev("ns.Engine.states.count3.shown") is False)
+check("at most one is", ev("ns.Engine.states.few.shown") is True)
+L.execute("AURAS.player = { { name = 'Mark of the Wild', spellId = 1126 } }"
+          " AURAS.party1 = { { name = 'Mark of the Wild', spellId = 1126 } } ns.Engine:UpdateAll()")
+check("three matches meet it, and %{matchCount} says so",
+      ev("ns.Engine.states.count3.shown") is True
+      and ev("ns.Display.__regions.count3.text:GetText()") == "3")
+check("at most one no longer holds", ev("ns.Engine.states.few.shown") is False)
+check("one region per match inside a group",
+      ev("#ns.Engine.states.each.clones") == 3
+      and ev("ns.Display.__regions['each::party1:01'] ~= nil") is True)
+check("each naming its own unit, formatted",
+      ev("ns.Display.__regions['each::party1:01'].overlay:GetText()") == "ANN-OTHERREALM")
+check("group units' aura events are listened to once a trigger watches them",
+      ev("ns.watchesGroupUnits") is True)
+
+print("-- text formatters")
+L.execute("""
+RAID_CLASS_COLORS = { DRUID = { r = 1, g = 0.49, b = 0.04, colorStr = "ffff7c0a" } }
+FMT_STATE = { source = { chosenState = { unit = "party1" }, big = 12345, frac = 2.6, who = "Ann-Otherrealm" } }
+""")
+fmt = lambda t: ev("ns.Engine:FormatText(%r, nil, FMT_STATE)" % t)
+check("abbr shortens big numbers", fmt("%{big:abbr}") == "12.3k", fmt("%{big:abbr}"))
+check("round, floor and ceil", fmt("%{frac:round} %{frac:floor} %{frac:ceil}") == "3 2 3")
+check("norealm drops the realm, and they chain", fmt("%{who:norealm:upper}") == "ANN")
+check("max cuts it short", fmt("%{who:max3}") == "Ann")
+check("class colors a name by its unit's class", fmt("%{who:norealm:class}") == "|cffff7c0aAnn|r",
+      fmt("%{who:norealm:class}"))
+check("an unknown formatter leaves the text alone", fmt("%{big:sparkle}") == "12345")
+
+print("-- grid order and reputation")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "grid", type = "group", growth = "RIGHT", spacing = 0, columns = 2, wrapReverse = true },
+    { id = "g1", parent = "grid", triggers = { { trigger = { spellID = 774 } } } },
+    { id = "g2", parent = "grid", triggers = { { trigger = { spellID = 774 } } } },
+    { id = "g3", parent = "grid", triggers = { { trigger = { spellID = 774 } } } },
+    { id = "rep", type = "bar", triggers = { { trigger = { type = "reputation", standing = 6 } } } },
+    { id = "rep2", triggers = { { trigger = { type = "reputation", faction = "Darnassus", standing = 7, standingOp = "==" } } } },
+} } } }
+function GetWatchedFactionInfo() return "Thunder Bluff", 6, 9000, 21000, 15000 end
+function GetNumFactions() return 2 end
+FACTIONS = { { "Orgrimmar", nil, 5, 3000, 9000, 4000 }, { "Darnassus", nil, 7, 21000, 42000, 30000 } }
+function GetFactionInfo(i) return unpack(FACTIONS[i]) end
+""")
+ev = L.eval
+L.execute("ns.Engine:UpdateAll()")
+check("wrapping upward: the third starts a line above the first",
+      ev("rawget(ns.Display.__regions.g3, '_point').point") == "BOTTOMLEFT"
+      and ev("rawget(ns.Display.__regions.g3, '_point').y") == 40
+      and ev("ns.Display:PivotFor(ns.FindAura('grid'))") == "BOTTOMLEFT")
+check("reputation: the watched faction, at honored or better",
+      ev("ns.Engine.states.rep.shown") is True and ev("ns.Engine.states.rep.name") == "Thunder Bluff"
+      and ev("ns.Engine.states.rep.count") == 6)
+check("its bar fills through the standing",
+      ev("ns.Display.__regions.rep.bar:GetValue()") == 6000)
+check("or a faction by name", ev("ns.Engine.states.rep2.shown") is True)
 
 print("ALL OK" if not failures else "%d FAILED" % len(failures))
 sys.exit(1 if failures else 0)

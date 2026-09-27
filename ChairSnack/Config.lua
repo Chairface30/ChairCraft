@@ -316,6 +316,19 @@ local function CreateSlider(parent, min, max, step, getValue, setValue, label, n
     return frame
 end
 
+-- A hover explanation for a setting whose label cannot say it all.
+local function Tip(frame, title, text)
+    if not (frame and text) then return end
+    pcall(frame.HookScript, frame, "OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(title, 1, 0.82, 0)
+        GameTooltip:AddLine(text, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    pcall(frame.HookScript, frame, "OnLeave", function() GameTooltip:Hide() end)
+end
+addon.ConfigTip = Tip
+
 local function CreateCheckbox(parent, label, getValue, setValue, noGridUpdate)
     local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     check:SetSize(24, 24)
@@ -687,7 +700,10 @@ end
 
 local APPEARANCE_HEIGHT = 250
 
-local function CreateAppearanceControls(parent, getGrid)
+-- lowRange: { max, step } for the low-supply warning. Most bars count single
+-- items; ammo counts in hundreds, and a 0-20 slider could not even hold its
+-- own default of 200.
+local function CreateAppearanceControls(parent, getGrid, lowRange)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(ROW_WIDTH + 20, APPEARANCE_HEIGHT)
 
@@ -728,6 +744,18 @@ local function CreateAppearanceControls(parent, getGrid)
         function(v) local g = Grid() if g then g.warnOnInstanceEntry = v end end)
     frame.warnCheck:SetPoint("TOPLEFT", 0, -50)
 
+    Tip(frame.enableCheck, "Enable Bar", "Show this bar.")
+    Tip(frame.combatCheck, "Show in Combat",
+        "Keep the bar on screen during combat. Its buttons cannot change in combat, so it "
+        .. "shows what it had when the fight began; counts and cooldowns still update.")
+    Tip(frame.tooltipCheck, "Show Tooltips", "The item's tooltip when you hover a button.")
+    Tip(frame.deadCheck, "Hide When Dead", "Hide the bar while you are dead or a ghost.")
+    Tip(frame.instanceCheck, "Only In Instances", "Only inside dungeons, raids and battlegrounds.")
+    Tip(frame.groupCheck, "Only In A Group", "Only while you are in a party or raid.")
+    Tip(frame.warnCheck, "Warn On Entering",
+        "When you enter a dungeon or raid, say in chat what on this bar is at or below its "
+        .. "low-supply count, and how many more are in your bank.")
+
     frame.colSlider = CreateSlider(frame, 1, 12, 1,
         function() local g = Grid() return g and g.columns end,
         function(v) local g = Grid() if g then g.columns = v end end, "Columns")
@@ -743,11 +771,13 @@ local function CreateAppearanceControls(parent, getGrid)
         function(v) local g = Grid() if g then g.padding = v end end, "Padding")
     frame.padSlider:SetPoint("TOPLEFT", 0, -130)
 
-    frame.lowSlider = CreateSlider(frame, 0, 20, 1,
+    frame.lowSlider = CreateSlider(frame, 0, lowRange and lowRange[1] or 20, lowRange and lowRange[2] or 1,
         function() local g = Grid() return g and g.lowSupply end,
         function(v) local g = Grid() if g then g.lowSupply = v end end,
         "Low Supply Warning")
     frame.lowSlider:SetPoint("TOPLEFT", 200, -130)
+    Tip(frame.lowSlider, "Low Supply Warning",
+        "A count at or below this turns amber on the button. 0 turns the warning off.")
 
     local moveHint = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     moveHint:SetPoint("TOPLEFT", 0, -180)
@@ -1587,7 +1617,7 @@ local function BuildTeleportPanel(parent)
     desc:SetJustifyH("LEFT")
     desc:SetText("Shows every teleport you are carrying or wearing. Mage teleports and " ..
                  "portals each collapse into a button of their own that fans out when " ..
-                 "clicked. Anything not recognised can be added to the list at the bottom.")
+                 "clicked. Anything not recognized can be added to the list at the bottom.")
 
     local slotsTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     slotsTitle:SetPoint("TOPLEFT", 10, -95)
@@ -1719,7 +1749,7 @@ local function BuildAmmoPanel(parent)
         panel:Refresh()
     end)
 
-    panel.appearance = CreateAppearanceControls(content, AmmoGrid)
+    panel.appearance = CreateAppearanceControls(content, AmmoGrid, { 1000, 50 })
     panel.appearance:SetPoint("TOPLEFT", 10, -170)
 
     local pickTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -2081,7 +2111,7 @@ local function BuildProfilesPanel(parent)
     resetBtn:SetText("Reset This Character")
     resetBtn:SetScript("OnClick", function()
         StaticPopupDialogs["SNAPSNACK_RESET_PROFILE"] = {
-            text = "Reset all SnapSnack settings for this character?",
+            text = "Reset all ChairSnack settings for this character?",
             button1 = "Reset",
             button2 = "Cancel",
             OnAccept = function()
@@ -2448,7 +2478,7 @@ local function BuildBuffFoodPanel(parent)
             elseif entry.known then
                 tag = "|cff888888plain food|r"
             else
-                tag = "|cffdd9944unrecognised|r"
+                tag = "|cffdd9944unrecognized|r"
             end
             row.tag:SetText(tag)
             row.check:SetChecked(entry.onBar)
@@ -2638,8 +2668,10 @@ function addon:SetupConfig()
         addon:RefreshConfig()
     end)
 
-    local version = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(addonName, "Version"))
-        or (GetAddOnMetadata and GetAddOnMetadata(addonName, "Version"))
+    -- The suite's version: this has been part of Chaircraft since the merge,
+    -- and asking for "SnapSnack" found no addon at all.
+    local version = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(suiteName, "Version"))
+        or (GetAddOnMetadata and GetAddOnMetadata(suiteName, "Version"))
         or "?"
     local versionText = configFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     versionText:SetPoint("BOTTOMRIGHT", configFrame, "BOTTOMRIGHT", -10, 10)

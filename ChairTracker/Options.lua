@@ -1,5 +1,5 @@
 ----------------------------------------------------------------------
--- Options.lua  v1.0
+-- Options.lua
 -- GUI configuration: appearance, sort modes, custom order, auto-hide
 ----------------------------------------------------------------------
 
@@ -152,12 +152,25 @@ local function MakeSlider(parent, label, minVal, maxVal, step, xOff, yOff, width
     return s
 end
 
-local function MakeCheckbox(parent, label, xOff, yOff, onClick)
+-- A hover explanation for a setting whose label cannot say it all.
+local function Tip(frame, title, text)
+    if not (frame and text) then return end
+    pcall(frame.HookScript, frame, "OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(title, 1, 0.82, 0)
+        GameTooltip:AddLine(text, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    pcall(frame.HookScript, frame, "OnLeave", function() GameTooltip:Hide() end)
+end
+
+local function MakeCheckbox(parent, label, xOff, yOff, onClick, tip)
     local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     cb:SetPoint("TOPLEFT", parent, "TOPLEFT", xOff, yOff)
     cb.text:SetText(label)
     cb.text:SetFontObject("GameFontHighlightSmall")
     if onClick then cb:SetScript("OnClick", onClick) end
+    Tip(cb, label, tip)
     return cb
 end
 
@@ -299,21 +312,35 @@ local headerCB = MakeCheckbox(opt, "Show title bar", colLeft, cbY - 48, function
     end
 end)
 
+local fadeSlider, showTimeSlider
+-- The fade and linger sliders only mean something with auto-hide on.
+local function ShowAutoHideSliders(on)
+    for _, slider in ipairs({ fadeSlider, showTimeSlider }) do
+        if slider then
+            pcall(slider.SetEnabled, slider, on and true or false)
+            pcall(slider.SetAlpha, slider, on and 1 or 0.4)
+        end
+    end
+end
+
 local autoHideCB = MakeCheckbox(opt, "Auto-hide (show on hover)", colLeft, cbY - 72, function(self)
     if WOWFTrackerDB and WOWFTrackerDB.settings then
         WOWFTrackerDB.settings.autoHide = self:GetChecked() and true or false
         WOWFTrackerNS.RebuildAppearance()
     end
-end)
+    ShowAutoHideSliders(self:GetChecked())
+end, "The window hides itself and comes back while the mouse is over where it sits.")
 
 local exaltedCB = MakeCheckbox(opt, "Show total progress to Exalted", colLeft, cbY - 96, function(self)
     if WOWFTrackerDB and WOWFTrackerDB.settings then
         WOWFTrackerDB.settings.showTotalToExalted = self:GetChecked() and true or false
         WOWFTrackerNS.UpdateReputation()
     end
-end)
+end, "Each reputation bar measures the whole way from Neutral to Exalted, rather than the standing it is in.")
 
-local fadeSlider = MakeSlider(opt, "Fade Speed", 10, 100, 5, colLeft + 30, cbY - 134, 160)
+-- A time, not a speed: higher is a slower fade.
+fadeSlider = MakeSlider(opt, "Fade Time", 10, 100, 5, colLeft + 30, cbY - 134, 160)
+Tip(fadeSlider, "Fade Time", "How long the window takes to fade out once the mouse leaves it.")
 fadeSlider:SetScript("OnValueChanged", function(self, val)
     val = math.floor(val + 0.5)
     self.valText:SetText(string.format("%.1fs", val / 100))
@@ -322,7 +349,8 @@ fadeSlider:SetScript("OnValueChanged", function(self, val)
     end
 end)
 
-local showTimeSlider = MakeSlider(opt, "Hover Linger", 1, 15, 1, colLeft + 30, cbY - 182, 160)
+showTimeSlider = MakeSlider(opt, "Hover Linger", 1, 15, 1, colLeft + 30, cbY - 182, 160)
+Tip(showTimeSlider, "Hover Linger", "How long the window stays after the mouse leaves, before it starts to fade.")
 showTimeSlider:SetScript("OnValueChanged", function(self, val)
     val = math.floor(val + 0.5)
     self.valText:SetText(val .. "s")
@@ -383,12 +411,12 @@ end
 ----------------------------------------------------------------------
 local factionLabel = opt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 factionLabel:SetPoint("TOPLEFT", colRight, sortY - (#WOWFTracker_SortModes * 18) - 10)
-factionLabel:SetText("Tracked Factions")
+factionLabel:SetText("Tracked Factions and Skills")
 
 local factionDescY = sortY - (#WOWFTracker_SortModes * 18) - 24
 local factionDesc = opt:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 factionDesc:SetPoint("TOPLEFT", colRight, factionDescY)
-factionDesc:SetText("Check factions to display. Use Custom Order sort to reorder.")
+factionDesc:SetText("Check the factions and skills to display. Use Custom Order sort to reorder.")
 
 local btnRowY = factionDescY - 16
 local selAllBtn = CreateFrame("Button", nil, opt, "UIPanelButtonTemplate")
@@ -576,7 +604,7 @@ function RefreshCustomOrder()
             orderRows[1].emptyText = orderRows[1]:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
             orderRows[1].emptyText:SetPoint("LEFT", 8, 0)
         end
-        orderRows[1].emptyText:SetText("No tracked factions to reorder.")
+        orderRows[1].emptyText:SetText("Nothing tracked to reorder.")
         orderRows[1].emptyText:Show()
         scrollChild:SetHeight(20)
         return
@@ -872,6 +900,7 @@ local function RefreshPanel()
     exaltedCB:SetChecked(s.showTotalToExalted)
     fadeSlider:SetValue((s.fadeTime or 0.3) * 100)
     showTimeSlider:SetValue(s.showTime or 5)
+    ShowAutoHideSliders(s.autoHide)
 
     for _, b in ipairs(texButtons) do
         if b.texturePath == s.barTexture then b.selected:Show() else b.selected:Hide() end

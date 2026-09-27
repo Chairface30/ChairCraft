@@ -189,11 +189,54 @@ apiSource.BuffData = rawGetBuffData and "C_UnitAuras"
 -- apart -- an empty slot ends a scan, a refusal invalidates it -- so the
 -- refusal is the second return rather than a nil that looks like the end of
 -- the list.
+-- The fields callers key tables by and compare, made plain: a field that
+-- comes back secret throws the moment it is used as a key or compared, inside
+-- UNIT_AURA in combat. One that cannot be read makes the whole aura a refusal,
+-- which the callers already handle by keeping their last good answer.
+local function PlainText(value)
+    if value == nil then return nil, true end
+    local ok, text = pcall(function()
+        local s = "" .. tostring(value)
+        if s == "" then return nil end
+        return s
+    end)
+    if not ok then return nil, false end
+    return text, true
+end
+
+local function PlainNumber(value)
+    if value == nil then return nil, true end
+    if type(value) ~= "number" then return nil, false end
+    local ok, n = pcall(function()
+        local plain = tonumber(string.format("%.14g", value))
+        if not (plain >= 0 or plain < 0) then return nil end
+        return plain
+    end)
+    if not ok then return nil, false end
+    return n, true
+end
+
+local function Launder(aura)
+    if type(aura) ~= "table" then return aura end
+    local name, okName = PlainText(aura.name)
+    local spellId, okID = PlainNumber(aura.spellId)
+    local duration, okDur = PlainNumber(aura.duration)
+    local expires, okExp = PlainNumber(aura.expirationTime)
+    if not (okName and okID) then return nil, true end
+    local clean = {}
+    for key, value in pairs(aura) do clean[key] = value end
+    clean.name, clean.spellId = name, spellId
+    clean.duration = okDur and duration or nil
+    clean.expirationTime = okExp and expires or nil
+    return clean
+end
+addon.LaunderAura = Launder
+
 function addon.BuffData(unit, index)
     if rawGetBuffData then
         local ok, aura = pcall(rawGetBuffData, unit, index)
         if not ok then return nil, true end
-        return aura
+        return Launder(aura)
     end
     if _G.UnitBuff then
         local ok, name, icon, applications, dispelName, duration,
@@ -201,13 +244,13 @@ function addon.BuffData(unit, index)
               spellId = pcall(_G.UnitBuff, unit, index)
         if not ok then return nil, true end
         if not name then return nil end
-        return {
+        return Launder({
             name = name, icon = icon, applications = applications,
             dispelName = dispelName, duration = duration,
             expirationTime = expirationTime, sourceUnit = sourceUnit,
             isStealable = isStealable,
             nameplateShowPersonal = nameplateShowPersonal, spellId = spellId,
-        }
+        })
     end
     return nil
 end

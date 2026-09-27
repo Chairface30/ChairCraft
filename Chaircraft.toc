@@ -3,7 +3,7 @@
 ## Notes: ChairPlus, ChairAuras, ChairSnack and ChairTracker in one addon, under one menu. Type /chair.
 ## Author: Chairface
 ## IconTexture: Interface\AddOns\Chaircraft\ChairSnack\minimap
-## Version: 1.1.0
+## Version: 1.2.0
 ## SavedVariables: ChairPlusDB, ChairAurasDB, SnapSnackDB, WOWFTrackerAccountDB
 ## SavedVariablesPerCharacter: WOWFTrackerDB
 
@@ -16,6 +16,8 @@
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDeflate\LibDeflate.lua
+Libs\LibSerialize\LibSerialize.lua
 
 # Must load first: it creates the per-addon tables every file below reaches for.
 Suite\Namespace.lua
@@ -34,10 +36,14 @@ ChairPlus\Flight.lua
 ChairPlus\Camera.lua
 ChairPlus\Arrow.lua
 ChairPlus\Threat.lua
+ChairPlus\Nameplates.lua
+ChairPlus\Tooltips.lua
+ChairPlus\Mail.lua
 ChairPlus\Social.lua
 ChairPlus\Invite.lua
 ChairPlus\LFG.lua
 ChairPlus\Movers.lua
+ChairPlus\Backup.lua
 ChairPlus\Commands.lua
 
 # ChairAuras. Order unchanged from the standalone addon.
@@ -58,6 +64,7 @@ ChairAuras\SubRegions.lua
 ChairAuras\Animations.lua
 ChairAuras\Icons.lua
 ChairAuras\Share.lua
+ChairAuras\Templates.lua
 ChairAuras\Sounds.lua
 ChairAuras\Config.lua
 ChairAuras\Probe.lua

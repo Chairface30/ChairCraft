@@ -1657,10 +1657,18 @@ function addon:UpdateTeleportBar()
 end
 
 -- What is loaded in the ammo slot, for hunters.
+--
+-- Running out empties the slot, which is exactly when the bar matters most, so
+-- the last ammo seen is remembered and shown at 0 -- the low-supply warning
+-- then marks it -- rather than the bar vanishing as the last arrow flies.
 function addon:AmmoInfo()
     local slot = _G.INVSLOT_AMMO or 0
     local itemID = GetInventoryItemID("player", slot)
-    if not itemID then return nil end
+    if not itemID then
+        local last = self.lastAmmo
+        if not last then return nil end
+        return { itemID = last.itemID, name = last.name, icon = last.icon, count = 0 }
+    end
 
     local name, _, _, _, _, _, _, _, _, icon = GetItemInfo(itemID)
     if not name then return nil end
@@ -1668,6 +1676,7 @@ function addon:AmmoInfo()
     local count = GetInventoryItemCount and GetInventoryItemCount("player", slot)
         or GetItemCount(itemID)
 
+    self.lastAmmo = { itemID = itemID, name = name, icon = icon }
     return { itemID = itemID, name = name, icon = icon, count = count or 0 }
 end
 

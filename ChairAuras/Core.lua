@@ -304,9 +304,13 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 
     -- UNIT_AURA fires for every unit in the group. Only the four a trigger can
     -- name are worth a rescan; the other thirty-six are pure waste.
+    -- A trigger watching a party, raid or the bosses (ns.watchesGroupUnits)
+    -- wants theirs too.
     if event == "UNIT_AURA" and arg1 ~= "player" and arg1 ~= "target"
        and arg1 ~= "focus" and arg1 ~= "pet" then
-        return
+        local groupUnit = type(arg1) == "string" and (arg1:match("^party%d") or arg1:match("^raid%d")
+                                                      or arg1:match("^boss%d"))
+        if not (groupUnit and ns.watchesGroupUnits) then return end
     end
 
     if event == "SPELLS_CHANGED" then

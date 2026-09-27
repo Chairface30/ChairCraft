@@ -148,12 +148,17 @@ end
 -------------------------------------------------------------------------------
 -- Error spam
 -------------------------------------------------------------------------------
--- The client's UIErrorsFrame is left to do all its own drawing. While the
--- filter is on, it stops hearing UI_ERROR_MESSAGE itself and this module
--- hears it instead, dropping the spam and handing everything else straight
--- to the frame's own handler -- so a real error ("Inventory is full") still
--- shows exactly as it always did. Switching the filter off hands the event
--- back.
+-- While the filter is on, UIErrorsFrame stops hearing UI_ERROR_MESSAGE and
+-- this module hears it instead, dropping the spam and writing everything else
+-- onto the frame with its plain AddMessage, in the red it uses -- so a real
+-- error ("Inventory is full") still shows. Switching the filter off hands the
+-- event back.
+--
+-- It used to hand those on to the frame's own Lua handler instead, which is
+-- Blizzard's code run from ours: the kind of call that taints a frame on this
+-- client (removed 2026-09-26). AddMessage is the widget's own method, not
+-- Blizzard Lua. What that costs: the error's spoken "not enough rage" is not
+-- replayed while filtering.
 --
 -- Matched against the client's own strings, so it works in any language.
 local SPAM = {
@@ -182,15 +187,12 @@ function ns.IsErrorSpam(message)
 end
 
 local filtering = false
-local errorsHandler
 
 local function ErrorFilter(on)
     local errors = _G.UIErrorsFrame
     if not errors or on == filtering then return end
     if on then
-        local ok, handler = pcall(errors.GetScript, errors, "OnEvent")
-        if not ok or type(handler) ~= "function" then return end
-        errorsHandler = handler
+        if type(errors.AddMessage) ~= "function" then return end
         pcall(errors.UnregisterEvent, errors, "UI_ERROR_MESSAGE")
         pcall(driver.RegisterEvent, driver, "UI_ERROR_MESSAGE")
     else
@@ -209,8 +211,9 @@ local function OnError(...)
     local message = (type(b) == "string" and b) or a
     if ns.IsErrorSpam(message) then return end
     local errors = _G.UIErrorsFrame
-    if errors and errorsHandler then
-        pcall(errorsHandler, errors, "UI_ERROR_MESSAGE", ...)
+    local text = ns.Text(message)
+    if errors and text then
+        pcall(errors.AddMessage, errors, text, 1.0, 0.1, 0.1, 1.0)
     end
 end
 

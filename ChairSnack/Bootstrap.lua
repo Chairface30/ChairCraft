@@ -322,24 +322,33 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
         end)
 
     elseif event == "BAG_UPDATE" then
-        addon:ScanBags()
-        addon:UpdateAutoBars()
-        -- Counts and cooldowns are not protected, so they are refreshed
-        -- straight away. RequestUpdate below defers the parts that are, which
-        -- is why using a potion in combat used to leave a stale number.
-        addon:RefreshLiveState()
-        addon:RequestUpdate()
+        -- One loot or one sale fires this once per bag it touched, several
+        -- in the same frame, and each used to rescan every bag and rebuild
+        -- every auto bar. They are gathered into one pass on the next frame.
+        if addon.bagScanPending then return end
+        addon.bagScanPending = true
+        C_Timer.After(0, function()
+            addon.bagScanPending = false
+            addon:ScanBags()
+            addon:UpdateAutoBars()
+            -- Counts and cooldowns are not protected, so they are refreshed
+            -- straight away. RequestUpdate defers the parts that are, which
+            -- is why using a potion in combat used to leave a stale number.
+            addon:RefreshLiveState()
+            addon:RequestUpdate()
 
-        -- A just-looted item often has no item data yet, so it is skipped and
-        -- only reappears on the next pass -- which is why something picked up
-        -- would show up only after a reload. GET_ITEM_INFO_RECEIVED usually
-        -- covers it; this is the backstop for when it does not fire.
-        if addon:AutoBarNeedsRetry() then
-            C_Timer.After(0.5, function()
-                addon:UpdateAutoBars()
-                addon:RequestUpdate()
-            end)
-        end
+            -- A just-looted item often has no item data yet, so it is skipped
+            -- and only reappears on the next pass -- which is why something
+            -- picked up would show up only after a reload.
+            -- GET_ITEM_INFO_RECEIVED usually covers it; this is the backstop
+            -- for when it does not fire.
+            if addon:AutoBarNeedsRetry() then
+                C_Timer.After(0.5, function()
+                    addon:UpdateAutoBars()
+                    addon:RequestUpdate()
+                end)
+            end
+        end)
 
     elseif event == "BAG_UPDATE_COOLDOWN" then
         addon:RefreshLiveState()
@@ -598,7 +607,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         else
             local _, class = UnitClass("player")
             if class == "WARLOCK" or class == "MAGE" then
-                print("|cffFFD100Make your own|r |cffff5555none recognised|r")
+                print("|cffFFD100Make your own|r |cffff5555none recognized|r")
             end
         end
 
@@ -1023,7 +1032,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
     elseif msg == "api" then
         -- Which client API each compatibility shim landed on. Anything marked
         -- MISSING is a call that will error the moment it is reached.
-        print("|cffFFFF00=== SnapSnack API ===|r")
+        print("|cffFFFF00=== ChairSnack API ===|r")
         local names = {}
         for name in pairs(addon.apiSource) do names[#names + 1] = name end
         table.sort(names)
@@ -1040,7 +1049,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         -- consumable is missing from the bar, this says whether its zone list
         -- is wrong or the zone text here simply reads differently than the
         -- list expects -- which is the only way to write that list correctly.
-        print("|cffFFFF00=== SnapSnack zone ===|r")
+        print("|cffFFFF00=== ChairSnack zone ===|r")
         for _, name in ipairs(addon.CurrentZoneNames()) do
             print("  |cff808080here:|r " .. name)
         end
@@ -1067,7 +1076,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         -- Where each bar is saved, against where it actually is. If the two
         -- disagree the bar was moved after layout ran, and the frame it is
         -- anchored to says by what.
-        print("|cffFFFF00=== SnapSnack Positions ===|r")
+        print("|cffFFFF00=== ChairSnack Positions ===|r")
         local cx, cy = UIParent:GetCenter()
         print(string.format("UIParent %.0f x %.0f, center %.1f, %.1f, scale %.3f",
             UIParent:GetWidth(), UIParent:GetHeight(), cx or 0, cy or 0,
@@ -1107,7 +1116,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         -- Enough to tell "it was never saved" from "it was saved and then
         -- not found again", which is the only question worth asking when a
         -- layout comes back as the default one.
-        print("|cffFFFF00=== SnapSnack Profiles ===|r")
+        print("|cffFFFF00=== ChairSnack Profiles ===|r")
         print("Character: " .. addon:CharLabel())
         print("Profile key: |cff808080" .. addon:CharKey() .. "|r")
         if SnapSnackDB and SnapSnackDB.sentinel then
@@ -1138,7 +1147,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         end
 
     elseif msg == "debug" then
-        print("|cffFFFF00=== SnapSnack Debug ===|r")
+        print("|cffFFFF00=== ChairSnack Debug ===|r")
         print("Profile: " .. addon:CharLabel() ..
               " |cff808080(" .. addon:CharKey() .. ")|r")
         print("InCombatLockdown: " .. tostring(InCombatLockdown()))

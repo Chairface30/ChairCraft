@@ -48,14 +48,52 @@ local auraEnvs = {}
 -- One per aura, made on first use and kept for the session. WeakAuras' fields:
 -- id, and config (author options, filled in by a later phase). saved is kept
 -- across sessions by a later phase too.
+-- Custom options (WeakAuras' author options): what aura_env.config holds is
+-- each option's default, overlaid by what the user set. A simple group is a
+-- table of its own options; an array group, the list the user made.
+local SKIP = { header = true, description = true, space = true }
+local function OptionValues(options, saved)
+    local out = {}
+    saved = type(saved) == "table" and saved or {}
+    for _, option in ipairs(type(options) == "table" and options or {}) do
+        local key = option.key
+        if key ~= nil and not SKIP[option.type] then
+            if option.type == "group" then
+                if option.groupType == "array" then
+                    out[key] = type(saved[key]) == "table" and saved[key] or {}
+                else
+                    out[key] = OptionValues(option.subOptions, saved[key])
+                end
+            else
+                local value = saved[key]
+                if value == nil then value = option.default end
+                if type(value) == "table" then
+                    local copy = {}
+                    for k, v in pairs(value) do copy[k] = v end
+                    value = copy
+                end
+                out[key] = value
+            end
+        end
+    end
+    return out
+end
+Env.OptionValues = OptionValues
+
 function Env:For(aura)
     local id = aura and aura.id or "?"
     local env = auraEnvs[id]
     if not env then
-        env = { id = id, config = {} }
+        env = { id = id, config = OptionValues(aura and aura.authorOptions, aura and aura.config) }
         auraEnvs[id] = env
     end
     return env
+end
+
+-- After an option changes.
+function Env:RefreshConfig(aura)
+    local env = self:For(aura)
+    env.config = OptionValues(aura.authorOptions, aura.config)
 end
 
 function Env:Forget(id)

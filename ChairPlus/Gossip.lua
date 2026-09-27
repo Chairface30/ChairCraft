@@ -62,6 +62,16 @@ do
     end
 end
 
+-- Classic-shaped options carry no type, only the icon beside them. These are
+-- the costly kinds' icons (Interface/GossipFrame): banker, battlemaster,
+-- innkeeper, healer, petition, tabard, flight master, trainer, unlearn and
+-- vendor. The plain speech bubble (132053) is the ordinary "talk" option and
+-- is left out on purpose.
+for _, fileID in ipairs({ 132050, 132051, 132052, 132054, 132055, 132056,
+                          132057, 132058, 132059, 132060 }) do
+    blockedTypes[fileID] = true
+end
+
 local function IsBlockedOption(option)
     if type(option) ~= "table" then return true end
 

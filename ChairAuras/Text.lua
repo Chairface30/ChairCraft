@@ -176,6 +176,58 @@ local function Resolve(token, aura, state, now, weakauras, custom)
     return Show(value)
 end
 
+-- Formatters, after a colon inside braces: %{stacks:abbr}, %{unitName:norealm:class}.
+local function Abbreviate(n)
+    local a = math.abs(n)
+    if a >= 1e9 then return string.format("%.1fb", n / 1e9) end
+    if a >= 1e6 then return string.format("%.1fm", n / 1e6) end
+    if a >= 1e3 then return string.format("%.1fk", n / 1e3) end
+    return tostring(math.floor(n + 0.5))
+end
+
+-- The unit a value came from, for class colors: a clone's, or the trigger's.
+local function UnitOf(state)
+    local source = state and state.source
+    local chosen = source and source.chosenState
+    return (chosen and chosen.unit) or (source and source.unit) or (state and state.unit)
+end
+
+local FORMATTERS = {
+    abbr = function(text) local n = tonumber(text) return n and Abbreviate(n) or text end,
+    round = function(text) local n = tonumber(text) return n and tostring(math.floor(n + 0.5)) or text end,
+    floor = function(text) local n = tonumber(text) return n and tostring(math.floor(n)) or text end,
+    ceil = function(text) local n = tonumber(text) return n and tostring(math.ceil(n)) or text end,
+    norealm = function(text) return (text:gsub("%-.*$", "")) end,
+    upper = function(text) return text:upper() end,
+    lower = function(text) return text:lower() end,
+    time = function(text, aura) local n = tonumber(text) return n and FormatTime(n, aura) or text end,
+    class = function(text, aura, state)
+        local unit = UnitOf(state)
+        if not unit or text == "" then return text end
+        local ok, _, token = pcall(UnitClass, unit)
+        token = ok and ns.SafeText(token)
+        local colours = _G.RAID_CLASS_COLORS
+        local colour = token and colours and colours[token]
+        if type(colour) ~= "table" then return text end
+        local hex = colour.colorStr or string.format("ff%02x%02x%02x", math.floor((colour.r or 1) * 255 + 0.5),
+            math.floor((colour.g or 1) * 255 + 0.5), math.floor((colour.b or 1) * 255 + 0.5))
+        return "|c" .. hex .. text .. "|r"
+    end,
+}
+Engine.FORMATTERS = FORMATTERS
+
+local function Format(text, mods, aura, state)
+    for mod in mods:gmatch("[^:]+") do
+        local most = tonumber(mod:match("^max(%d+)$"))
+        if most then
+            text = text:sub(1, most)
+        elseif FORMATTERS[mod:lower()] then
+            text = FORMATTERS[mod:lower()](text, aura, state) or text
+        end
+    end
+    return text
+end
+
 function Engine:FormatText(template, aura, state, now)
     if not template or template == "" then return "" end
     now = now or GetTime()
@@ -199,8 +251,12 @@ function Engine:FormatText(template, aura, state, now)
                     out[#out + 1] = template:sub(i)
                     break
                 end
-                local token = template:sub(i + 2, close - 1)
-                out[#out + 1] = Resolve(token, aura, state, now, weakauras, custom) or ("%{" .. token .. "}")
+                local inside = template:sub(i + 2, close - 1)
+                local token, mods = inside:match("^([^:]*):(.*)$")
+                token = token or inside
+                local resolved = Resolve(token, aura, state, now, weakauras, custom)
+                if resolved and mods then resolved = Format(resolved, mods, aura, state) end
+                out[#out + 1] = resolved or ("%{" .. inside .. "}")
                 i = close + 1
             else
                 -- %2.p, %c2, %stacks, %n: digits-dot-word, or a word.

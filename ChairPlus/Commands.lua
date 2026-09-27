@@ -24,8 +24,13 @@ local ROWS = {
     -- The items on the line (money, bags, durability...) are not rows here:
     -- they are the ordered list built from ns.OSD_ITEMS in BuildPanel.
     { header = "On-screen display", tab = "osd" },
-    { key = "osd",              label = "Show the display",             tab = "osd" },
-    { key = "osdBackground",    label = "Dark background",              tab = "osd", sub = "osd" },
+    { key = "osd",              label = "Show the display",             tab = "osd",
+      tip = "One slim line of information you can put anywhere. Pick what it shows in the list below." },
+    { key = "osdBackground",    label = "Dark background",              tab = "osd", sub = "osd",
+      tip = "A dark panel behind the display's text, so it reads over anything." },
+    { slider = "osdBgAlpha",    label = "Background opacity", tab = "osd", sub = "osdBackground", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
+    { slider = "osdMaxWidth",   label = "Wrap past",          tab = "osd", sub = "osd", min = 0, max = 2000, step = 50, zero = "never",
+      tip = "Items past this width start a second line. While you drag items on this page the display stays one line." },
     { slider = "osdFontSize",   label = "Text size", tab = "osd", sub = "osd", min = 8, max = 32, step = 1 },
     { slider = "osdScale",      label = "Scale",     tab = "osd", sub = "osd", min = 0.5, max = 3, step = 0.05, fmt = "x" },
     { key = "osdBagsTotal",     label = "Bag space as free/total", tab = "osd", sub = "osd" },
@@ -33,53 +38,81 @@ local ROWS = {
       values = { { value = "pct", text = "percent" }, { value = "num", text = "XP/total" },
                  { value = "both", text = "both" } } },
     -- Not under "osd": it works whether or not the display is on.
-    { key = "hideStatusBars",   label = "Hide game XP bars", tab = "osd" },
+    { key = "hideStatusBars",   label = "Hide game XP bars", tab = "osd",
+      tip = "Makes the game's XP bar and status bar 2 see-through and click-through. The display can show XP instead." },
     { key = "osdHideMinimap",   label = "Hide addons' minimap buttons", tab = "osd", sub = "osd",
       tip = "An addon put on the display loses its minimap button, so there is one way in, not two. Take it off the display, or untick this, and the button comes back." },
     { header = "Clock and alarm", tab = "osd" },
-    { key = "osdClockServer",   label = "Server time",   tab = "osd", sub = "osd" },
+    { key = "osdClockServer",   label = "Realm time",    tab = "osd", sub = "osd",
+      tip = "The realm's time rather than your computer's. Hovering the clock shows both." },
     { key = "osdClock24",       label = "24-hour",       tab = "osd", sub = "osd" },
 
     { header = "Quests" },
     { key = "quests",              label = "Automate quests" },
-    { key = "questsAccept",        label = "Accept regular quests",     sub = "quests" },
+    { key = "questsAccept",        label = "Accept regular quests",     sub = "quests",
+      tip = "Quests offered by the NPC you are talking to. Blocked NPCs and quests are never taken." },
     { key = "questsDaily",         label = "Accept daily quests",       sub = "quests" },
     { key = "questsWeekly",        label = "Accept weekly quests",      sub = "quests" },
-    { key = "questsTurnIn",        label = "Turn in completed quests",  sub = "quests" },
-    { key = "questsShiftOverride", label = "Hold shift to suppress",    sub = "quests" },
+    { key = "questsTurnIn",        label = "Turn in completed quests",  sub = "quests",
+      tip = "Never hands in a quest that costs gold, a currency, a crafting reagent or an account-bound item, and never picks between several rewards: those wait for you." },
+    { key = "questsShiftOverride", label = "Hold shift to suppress",    sub = "quests",
+      tip = "Holding shift while you talk to an NPC leaves everything to you." },
 
     { header = "Gossip" },
-    { key = "autoGossip",              label = "Skip single-option gossip" },
+    { key = "autoGossip",              label = "Skip single-option gossip",
+      tip = "Only when the window has one plain option and no quests. Flight masters, innkeepers, trainers, vendors, bankers and colored options are never picked." },
+    { key = "autoGossipSummary",       label = "Say which option was taken", sub = "autoGossip" },
     { key = "autoGossipShiftOverride", label = "Hold shift to suppress",
                                        sub = "autoGossip" },
 
     { header = "Invites and duels" },
-    { key = "autoInvite",          label = "Accept group invites from..." },
+    { key = "autoInvite",          label = "Accept group invites from...",
+      tip = "Only from the people ticked below. Hold shift when the invite arrives to answer it yourself." },
     { key = "autoInviteFriends",   label = "friends",                   sub = "autoInvite" },
     { key = "autoInviteGuild",     label = "guildmates",                sub = "autoInvite" },
     { key = "keywordInvite",       label = "Invite on keyword",
       button = { "Keywords...", function() ns.ToggleKeywordPanel() end } },
     { key = "declineDuels",        label = "Decline duels" },
     { key = "declineGuildInvites", label = "Decline guild invites" },
-    { key = "autoResurrect",       label = "Accept resurrection" },
-    { key = "autoSummon",          label = "Accept summons" },
+    { key = "autoResurrect",       label = "Accept resurrection",
+      tip = "Accepts a resurrection as soon as it is offered. Hold shift to answer it yourself." },
+    { key = "autoSummon",          label = "Accept summons",
+      tip = "Accepts a summon as soon as it is offered. Hold shift to answer it yourself." },
+    { key = "socialSummary",       label = "Say in chat what was answered" },
 
     { header = "Merchants", newColumn = true },
-    { key = "sellJunk",         label = "Sell junk automatically" },
+    { key = "sellJunk",         label = "Sell junk automatically",
+      tip = "Sells gray items when you open a merchant: twelve at most per visit, so everything sold can still be bought back." },
     { key = "sellJunkSummary",  label = "Report the take in chat",      sub = "sellJunk" },
-    { key = "sellJunkKeepGear", label = "Keep unbound gray gear",       sub = "sellJunk" },
+    { key = "sellJunkKeepGear", label = "Keep unbound gray gear",       sub = "sellJunk",
+      tip = "Gray weapons and armor that are not soulbound can still go on the auction house, so they are kept." },
     { key = "repairGear",       label = "Repair automatically" },
     { key = "repairSummary",    label = "Report the cost in chat",      sub = "repairGear" },
-    { key = "repairGuildFunds", label = "Use guild funds first",        sub = "repairGear" },
+    { key = "repairGuildFunds", label = "Use guild funds first",        sub = "repairGear",
+      tip = "The guild bank pays first, and your own gold covers what the guild's daily limit does not." },
 
     { header = "World" },
-    { key = "fasterLoot",       label = "Faster auto loot" },
-    { key = "maxCameraZoom",    label = "Max camera zoom" },
+    { key = "fasterLoot",       label = "Faster auto loot",
+      tip = "Takes the whole corpse the moment the loot is ready. With your bags full, only coin and currency are taken." },
+    { slider = "fasterLootDelay", label = "Loot again after", sub = "fasterLoot", min = 0.1, max = 1, step = 0.05, fmt = "sec",
+      tip = "How soon a second loot window is handled; lower is faster. Too low can take the same corpse twice." },
+    { key = "maxCameraZoom",    label = "Max camera zoom",
+      tip = "Lets the camera zoom out further than the game's own slider allows. Left off, the game's setting is not touched." },
     { key = "flight",           label = "Flight path timer" },
     { key = "flightCountdown",  label = "Countdown while flying",  sub = "flight" },
     { key = "flightTooltip",    label = "Time on the flight map",  sub = "flight" },
-    { key = "filterErrors",     label = "Hide \"Not enough rage\" spam" },
+    { key = "flightSummary",    label = "Say the time in chat on landing", sub = "flight" },
+    { key = "filterErrors",     label = "Hide \"Not enough rage\" spam",
+      tip = "Hides the red text you get while mashing a button (not enough rage, not ready yet). Real errors still show." },
     { key = "lfgFilters",       label = "Player filters in the group finder" },
+    { key = "tooltipExtras",    label = "Tooltip extras" },
+    { key = "tooltipSellPrice", label = "Sell price",          sub = "tooltipExtras",
+      tip = "What an item sells to a merchant for; a stack's worth for a stack in your bags." },
+    { key = "tooltipIDs",       label = "Item and spell IDs",  sub = "tooltipExtras" },
+    { key = "mailOpenAll",      label = "Open all mail button" },
+    { key = "autoReleaseBG",    label = "Release in battlegrounds" },
+    { key = "skipCinematics",   label = "Skip cinematics" },
+    { key = "autoDismount",     label = "Dismount and stand when needed" },
 
     -- The waypoint arrow's page. A row with `choice` steps through a list of
     -- values with < and > buttons.
@@ -122,7 +155,8 @@ local ROWS = {
     { key = "threatRaid",         label = "In a raid",                  tab = "threat", sub = "threat" },
     { key = "threatOutOfCombat",  label = "Out of combat too",          tab = "threat", sub = "threat" },
     { key = "threatShowEmpty",    label = "Before anyone has threat",   tab = "threat", sub = "threat" },
-    { key = "threatTargetTarget", label = "Friend targeted: their target", tab = "threat", sub = "threat" },
+    { key = "threatTargetTarget", label = "Friend targeted: their target", tab = "threat", sub = "threat",
+      tip = "With a friendly player targeted, show threat on whatever they are fighting." },
     { slider = "threatShowAbove", label = "Only once my threat is over", tab = "threat", sub = "threat", min = 0, max = 100, step = 5, fmt = "%", zero = "always" },
     { slider = "threatLinger",    label = "Stay up after the fight",     tab = "threat", sub = "threat", min = 0, max = 30, step = 1, fmt = "s" },
     { header = "Where", tab = "threat" },
@@ -133,13 +167,69 @@ local ROWS = {
     { header = "Look and warning", tab = "threat" },
     { slider = "threatAlpha",     label = "Opacity",           tab = "threat", sub = "threat", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
     { slider = "threatBgAlpha",   label = "Background",        tab = "threat", sub = "threat", min = 0, max = 1, step = 0.05, fmt = "pct" },
-    { key = "threatWarn",         label = "Warn before I pull aggro",   tab = "threat", sub = "threat" },
+    { key = "threatWarn",         label = "Warn before I pull aggro",   tab = "threat", sub = "threat",
+      tip = "A warning as your threat nears the tank's. Quiet whenever your group role is Tank." },
     { key = "threatWarnSound",    label = "With a sound",               tab = "threat", sub = "threatWarn" },
     { sound = "threatWarnSoundID", label = "Sound", tab = "threat", sub = "threatWarnSound",
       default = "Raid warning", play = function() if ns.PlayThreatWarning then ns.PlayThreatWarning() end end,
       stop = function() if ns.StopThreatWarning then ns.StopThreatWarning() end end },
-    { slider = "threatWarnAt",    label = "Warn at",           tab = "threat", sub = "threatWarn", min = 50, max = 130, step = 5, fmt = "%" },
+    -- The General page: what belongs to the whole suite rather than a part.
+    { header = "Chaircraft", tab = "general" },
+    { key = "chairMinimapHidden", label = "Hide the minimap icon", tab = "general",
+      get = function()
+          local snack = Chaircraft.ChairSnack
+          return snack and snack.GetMinimapDB and snack:GetMinimapDB().hide and true or false
+      end,
+      set = function(value)
+          local snack = Chaircraft.ChairSnack
+          if snack and snack.SetMinimapButtonHidden then snack:SetMinimapButtonHidden(value) end
+      end,
+      tip = "The chair on the minimap. /chair still opens the menu." },
+    { key = "osdLocked",  label = "Lock the on-screen display", tab = "general",
+      tip = "Unlocked, the display can be dragged anywhere." },
+    { slider = "threatWarnAt",    label = "Warn at",           tab = "threat", sub = "threatWarn", min = 50, max = 100, step = 5, fmt = "%" },
+    { header = "Nameplates", tab = "threat" },
+    { key = "nameplateThreat",  label = "Color enemy nameplates by aggro", tab = "threat",
+      tip = "Enemy nameplates take a color for who has aggro. Pick each color; untick one to leave that case alone. "
+         .. "/chair threat nameplates probe says whether this client can read it in combat." },
+    { key = "npMine",      label = "I have aggro",           tab = "threat", sub = "nameplateThreat",
+      swatch = { "npMineR", "npMineG", "npMineB" } },
+    { key = "npChanging",  label = "Aggro changing",         tab = "threat", sub = "nameplateThreat",
+      swatch = { "npChangingR", "npChangingG", "npChangingB" },
+      tip = "Someone is about to take it, or about to lose it." },
+    { key = "npNonTank",   label = "A non-tank has aggro",   tab = "threat", sub = "nameplateThreat",
+      swatch = { "npNonTankR", "npNonTankG", "npNonTankB" },
+      tip = "On a group member whose role is not Tank." },
+    { key = "npOtherTank", label = "Another tank has aggro", tab = "threat", sub = "nameplateThreat",
+      swatch = { "npOtherTankR", "npOtherTankG", "npOtherTankB" } },
 }
+
+-- A row's tooltip: its own tip, or the description of the module it switches.
+local function RowTip(row)
+    if row.tip then return row.tip end
+    local key = row.key or row.slider or row.choice
+    local module = key and ns.modules and ns.modules[key]
+    return module and module.desc or nil
+end
+
+local function AttachTip(frame, row)
+    local text = RowTip(row)
+    if not (frame and text) then return end
+    pcall(frame.HookScript, frame, "OnEnter", function(self)
+        local tip = _G.GameTooltip
+        if not tip then return end
+        pcall(function()
+            tip:SetOwner(self, "ANCHOR_RIGHT")
+            tip:AddLine(row.label, 1, 0.82, 0)
+            tip:AddLine(text, 1, 1, 1, true)
+            tip:Show()
+        end)
+    end)
+    pcall(frame.HookScript, frame, "OnLeave", function()
+        if _G.GameTooltip then pcall(_G.GameTooltip.Hide, _G.GameTooltip) end
+    end)
+end
+ns.RowTip = RowTip
 
 -- What a slider's label says about its value.
 local function SliderText(row, value)
@@ -153,6 +243,8 @@ local function SliderText(row, value)
         shown = math.floor(value + 0.5) .. "%"
     elseif row.fmt == "s" then
         shown = math.floor(value + 0.5) .. "s"
+    elseif row.fmt == "sec" then
+        shown = string.format("%.2fs", value)
     elseif row.fmt == "x" then
         shown = string.format("%.2f", value)
     else
@@ -175,7 +267,7 @@ local plusOnlyWidgets = {}
 local threatOnlyWidgets = {}
 -- Widgets that belong to one page, by page. The older per-page lists above
 -- work the same way; new pages use this.
-local pageWidgets = { plus = {}, osd = {}, threat = {}, arrow = {} }
+local pageWidgets = { plus = {}, osd = {}, threat = {}, arrow = {}, general = {} }
 local choices = {}
 local soundRows = {}
 local swatches = {}
@@ -238,7 +330,7 @@ local function MakeSlider(parent, width, low, high, step)
         local track = slider:CreateTexture(nil, "BACKGROUND")
         track:SetAllPoints()
         track:SetColorTexture(0.18, 0.15, 0.26, 1)
-        slider:SetThumbTexture("Interface\Buttons\UI-SliderBar-Button-Horizontal")
+        slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
     end
     slider:SetOrientation("HORIZONTAL")
     slider:SetSize(width, 16)
@@ -287,7 +379,12 @@ local function RefreshPanel()
         entry.label:SetShown(onThisTab)
 
         if onThisTab then
-            entry.check:SetChecked(ns.IsEnabled(key))
+            if entry.get then
+                local ok, value = pcall(entry.get)
+                entry.check:SetChecked(ok and value and true or false)
+            else
+                entry.check:SetChecked(ns.IsEnabled(key))
+            end
 
             -- A sub-option of a feature that is off still holds its own value,
             -- but it is not doing anything, and showing it bright white
@@ -550,8 +647,8 @@ local function BuildPanel()
     end
 
     for _, page in ipairs({ { "plus", "Plus" }, { "osd", "OSD" },
-                            { "threat", "Threat" }, { "arrow", "Arrow" } }) do
-        tabButtons[page[1]] = NavButton(54, page[2], function()
+                            { "threat", "Threat" }, { "arrow", "Arrow" }, { "general", "General", 62 } }) do
+        tabButtons[page[1]] = NavButton(page[3] or 54, page[2], function()
             currentTab = page[1]
             RefreshPanel()
         end)
@@ -570,7 +667,7 @@ local function BuildPanel()
 
         for _, part in ipairs(Chaircraft.parts) do
             if part.key ~= "chairplus" then
-                NavButton(72, (part.title:gsub("^Chair", "")), function()
+                NavButton(66, (part.title:gsub("^Chair", "")), function()
                     local ok, opened = pcall(part.Open)
                     if not ok or not opened then
                         ns.Print("|cffff5555" .. part.title .. " did not answer.|r "
@@ -589,8 +686,8 @@ local function BuildPanel()
     local COL_X = { 16, 250 }
     local TOP = -72
     local tabY = { plus = { TOP, TOP }, osd = { TOP, TOP }, threat = { TOP, TOP },
-                   arrow = { TOP, TOP } }
-    local tabCol = { plus = 1, osd = 1, threat = 1, arrow = 1 }
+                   arrow = { TOP, TOP }, general = { TOP, TOP } }
+    local tabCol = { plus = 1, osd = 1, threat = 1, arrow = 1, general = 1 }
 
     for _, row in ipairs(ROWS) do
         local tab = row.tab or "plus"
@@ -675,6 +772,8 @@ local function BuildPanel()
             end
             prev:SetScript("OnClick", function() Step(-1) end)
             nextButton:SetScript("OnClick", function() Step(1) end)
+            AttachTip(prev, row)
+            AttachTip(nextButton, row)
             choices[key] = { label = label, prev = prev, next = nextButton, row = row,
                              sub = row.sub, tab = tab }
             y[col] = y[col] - 26
@@ -691,6 +790,7 @@ local function BuildPanel()
                 slider.labelText:SetText(SliderText(row, value))
                 if value ~= ns.Get(key) then ns.Set(key, value) end
             end)
+            AttachTip(slider, row)
             sliders[key] = { slider = slider, label = slider.labelText, row = row,
                              sub = row.sub, tab = tab }
             y[col] = y[col] - 40
@@ -715,31 +815,19 @@ local function BuildPanel()
 
             local key = row.key
             check:SetScript("OnClick", function(self)
-                ns.Set(key, self:GetChecked() and true or false)
+                local value = self:GetChecked() and true or false
+                if row.set then pcall(row.set, value) else ns.Set(key, value) end
                 RefreshPanel()
             end)
 
             -- A row with more to say than fits in its label says it on hover.
-            if row.tip then
-                check:SetScript("OnEnter", function(self)
-                    local tip = _G.GameTooltip
-                    if not tip then return end
-                    pcall(function()
-                        tip:SetOwner(self, "ANCHOR_RIGHT")
-                        tip:AddLine(row.label, 1, 0.82, 0)
-                        tip:AddLine(row.tip, 1, 1, 1, true)
-                        tip:Show()
-                    end)
-                end)
-                check:SetScript("OnLeave", function()
-                    if _G.GameTooltip then pcall(_G.GameTooltip.Hide, _G.GameTooltip) end
-                end)
-            end
+            AttachTip(check, row)
 
             -- A color swatch after the label, for a row that switches a color
             -- on: clicking it opens the game's color picker.
             if row.swatch then
                 local swatch = CreateFrame("Button", nil, panel)
+                swatch.settingKey = row.key
                 swatch:SetSize(18, 18)
                 swatch:SetPoint("LEFT", label, "RIGHT", 8, 0)
                 local edge = swatch:CreateTexture(nil, "BACKGROUND")
@@ -770,7 +858,7 @@ local function BuildPanel()
             end
 
             checkboxes[key] = { check = check, label = label, sub = row.sub, tab = tab,
-                                blockedBy = row.blockedBy }
+                                blockedBy = row.blockedBy, get = row.get }
             y[col] = y[col] - 22
         end
     end
@@ -796,7 +884,7 @@ local function BuildPanel()
     resetButton:SetPoint("BOTTOMLEFT", moveButton, "BOTTOMRIGHT", 8, 0)
     resetButton:SetScript("OnClick", function()
         ns.SetMany(ns.DefaultOSDPosition())
-        ns.Print("Display moved back to the top right.")
+        ns.Print("Display moved back to the center of the screen.")
     end)
 
     osdOnlyWidgets[#osdOnlyWidgets + 1] = moveButton
@@ -1139,7 +1227,21 @@ local function BuildPanel()
             if pick then ns.ConfirmCopyCharacter(pick) end
         end)
         for _, widget in ipairs({ header, prev, nextButton, label, copy }) do
-            pageWidgets.plus[#pageWidgets.plus + 1] = widget
+            pageWidgets.general[#pageWidgets.general + 1] = widget
+        end
+
+        -- Every setting of this character as one line of text, and back.
+        local backupHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        backupHeader:SetPoint("BOTTOMLEFT", x, 96)
+        backupHeader:SetText("Back up every setting as one line of text:")
+        local export = MakeButton(panel, 140, "Export settings")
+        export:SetPoint("BOTTOMLEFT", x, 70)
+        export:SetScript("OnClick", function() if ns.OpenBackup then ns.OpenBackup("export") end end)
+        local import = MakeButton(panel, 140, "Import settings")
+        import:SetPoint("LEFT", export, "RIGHT", 8, 0)
+        import:SetScript("OnClick", function() if ns.OpenBackup then ns.OpenBackup("import") end end)
+        for _, widget in ipairs({ backupHeader, export, import }) do
+            pageWidgets.general[#pageWidgets.general + 1] = widget
         end
     end
 
@@ -1149,7 +1251,7 @@ local function BuildPanel()
     for _, ys in pairs(tabY) do
         tallest = math.min(tallest, ys[1], ys[2])
     end
-    baseWidth, baseHeight = 500, -tallest + 54
+    baseWidth, baseHeight = 540, -tallest + 54
     panel:SetSize(baseWidth, baseHeight)
 
     -- Hosted pages: the page's name where the title was, and the way back.
@@ -1196,7 +1298,7 @@ local function BuildPanel()
     return panel
 end
 
-local PAGES = { plus = true, osd = true, threat = true, arrow = true }
+local PAGES = { plus = true, osd = true, threat = true, arrow = true, general = true }
 
 -- Open the menu, optionally on a named page. This is what "/chair" and every
 -- nav button go through.
@@ -1667,15 +1769,15 @@ local function PrintHelp()
     ns.Print("commands:")
     print("  |cffffd100/chair plus|r - open the options panel")
     print("  |cffffd100/chair plus status|r - list every option and its value")
-    print("  |cffffd100/chair plus on|off|toggle <option>|r - change one option")
-    print("  |cffffd100/chair plus osd lock|unlock|r - let the display be dragged")
-    print("  |cffffd100/chair plus osd reset|r - put the display back at the top")
+    print("  |cffffd100/chair plus on||off||toggle <option>|r - change one option")
+    print("  |cffffd100/chair plus osd lock||unlock|r - let the display be dragged")
+    print("  |cffffd100/chair plus osd reset|r - put the display back in the center of the screen")
     print("  |cffffd100/chair plus font <8-32>|r, |cffffd100/chair plus scale <0.5-3>|r")
     print("  |cffffd100/chair plus delay <0.1-1>|r - seconds between auto loot sweeps")
     print("  |cffffd100/chair arrow|r - the waypoint arrow's options; "
-        .. "|cffffd100on|off|toggle|lock|unlock|reset|probe|r, |cffffd100scale <0.5-3>|r")
+        .. "|cffffd100on||off||toggle||lock||unlock||reset||probe|r, |cffffd100scale <0.5-3>|r")
     print("  |cffffd100/chair threat|r - the threat meter's options; "
-        .. "|cffffd100on|off|toggle|lock|unlock|reset|preview|r")
+        .. "|cffffd100on||off||toggle||lock||unlock||reset||preview||nameplates|r")
     print("  |cffffd100/chair plus movers reset|r - forget where every dragged Blizzard window was put")
     print("  |cffffd100/chair plus bake|r - print current settings as code that survives a restart")
     print("  |cffffd100/chair plus keywords|r - the invite-on-keyword window")
@@ -1766,6 +1868,8 @@ local function Handler(input)
             -- Both have a page of their own now, and that is where the bare
             -- command lands, the same as "/chair osd".
             ns.TogglePanel(cmd)
+        elseif sub == "nameplates" and cmd == "threat" then
+            if ns.ProbeNameplates then ns.ProbeNameplates() end
         elseif sub == "preview" and cmd == "threat" then
             if not ns.IsEnabled("threat") then ns.Set("threat", true) end
             ns.SetThreatPreview(not ns.threatPreview)
@@ -1837,7 +1941,7 @@ local function Handler(input)
             ns.Print("Display locked.")
         elseif sub == "reset" then
             ns.SetMany(ns.DefaultOSDPosition())
-            ns.Print("Display moved back to the top right.")
+            ns.Print("Display moved back to the center of the screen.")
         else
             ns.Print("Use |cffffd100/chair plus osd lock|r, |cffffd100unlock|r or |cffffd100reset|r.")
         end

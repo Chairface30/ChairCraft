@@ -46,7 +46,7 @@ function Conditions.KindOf(variable) return KIND[variable] or "number" end
 Conditions.PROPERTIES = {
     { value = "alpha",      text = "Transparency",   kind = "percent" },
     { value = "color",      text = "Color",          kind = "color" },
-    { value = "desaturate", text = "Greyed out",     kind = "bool" },
+    { value = "desaturate", text = "Grayed out",     kind = "bool" },
     { value = "glow",       text = "Glow",           kind = "bool" },
     { value = "scale",      text = "Size",           kind = "scale" },
     { value = "text",       text = "Text",           kind = "text" },

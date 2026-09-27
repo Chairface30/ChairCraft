@@ -48,9 +48,31 @@ local function FastLoot()
     local okNum, count = pcall(getNum)
     count = okNum and (ns.Num(count) or 0) or 0
 
+    -- Bags full: coin and currency still go (they take no slot), items are
+    -- left in the window rather than tried one by one, each answered with
+    -- "Inventory is full". Whatever might stack or fit a profession bag is
+    -- the player's to pick.
+    local full = false
+    if ns.FreeBagSlots then
+        -- Full means slots exist and none is free; no slots at all is a bag
+        -- count this client did not give, not a full bag.
+        local okFree, free, _, _, total = pcall(ns.FreeBagSlots)
+        full = okFree and free ~= nil and (total or 0) > 0 and free <= 0
+    end
+    local slotType = _G.GetLootSlotType
+    local lootTypes = _G.Enum and _G.Enum.LootSlotType
+    local MONEY = lootTypes and lootTypes.Money or 2
+    local CURRENCY = lootTypes and lootTypes.Currency or 3
+
     -- Backwards, because taking a slot renumbers the ones after it.
     for i = count, 1, -1 do
-        pcall(lootSlot, i)
+        local take = true
+        if full then
+            local okType, kind = pcall(slotType or function() return nil end, i)
+            kind = okType and ns.Num(kind) or nil
+            take = kind == MONEY or kind == CURRENCY
+        end
+        if take then pcall(lootSlot, i) end
     end
 
     lastLoot = ns.Num(GetTime()) or lastLoot

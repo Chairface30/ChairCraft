@@ -332,7 +332,9 @@ local function Warn(list)
     for _, entry in ipairs(list) do
         if entry.isMe then me = entry break end
     end
-    local at = Clamp(ns.Get("threatWarnAt"), 50, 130)
+    -- The threat read here is already scaled: 100% is the point of pulling
+    -- aggro, so a warning set past it could never fire.
+    local at = Clamp(ns.Get("threatWarnAt"), 50, 100)
     if not me or me.tanking or ns.PlayerIsTank() then
         warned = false
         return
