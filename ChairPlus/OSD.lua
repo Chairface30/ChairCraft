@@ -1501,6 +1501,37 @@ local ITEMS = {
         end,
     },
     {
+        -- Profession cooldowns on every character: how many are ready. Hover
+        -- for each character's, with the time left. Hidden until one has
+        -- been cast (Cooldowns.lua records them).
+        key = "cooldowns", setting = "osdCooldowns", label = "Profession cooldowns",
+        ticks = true,
+        tooltip = function(tip)
+            tip:AddLine("Profession cooldowns", 1, 0.82, 0)
+            local all = ns.AllCooldowns and ns.AllCooldowns() or {}
+            if #all == 0 then
+                tip:AddLine("None recorded yet. They are picked up when you cast one.", 1, 1, 1, true)
+                return
+            end
+            for _, char in ipairs(all) do
+                tip:AddLine(char.name, 0.6, 0.8, 1)
+                for _, cd in ipairs(char.list) do
+                    local ready = cd.left <= 0
+                    tip:AddDoubleLine("  " .. cd.name, ns.CooldownLeftText(cd.left),
+                        1, 1, 1, ready and 0.3 or 1, ready and 1 or 1, ready and 0.3 or 1)
+                end
+            end
+        end,
+        build = function(size)
+            if not ns.CooldownCounts then return nil end
+            local ready, total = ns.CooldownCounts()
+            if total == 0 then return nil end
+            local text = " " .. ready .. " ready"
+            if ready == 0 then text = Coloured(text, 0.6, 0.6, 0.6) end
+            return IconOnly(ns.COOLDOWN_ICON, size, true) .. text
+        end,
+    },
+    {
         -- ChairIgnore: its icon. Hover for how many are on the list and what
         -- it has hidden this session; click to open its page.
         key = "ignore", setting = "osdIgnore", label = "ChairIgnore",

@@ -147,6 +147,8 @@ end
 local function MerchantOpen()
     return merchantOpen
 end
+-- The same answer for Restock.lua.
+ns.MerchantIsOpen = MerchantOpen
 
 -- One sweep of the bags. Split out from SellPass so the whole body can be run
 -- inside a pcall without the control flow around it also being protected.
@@ -371,10 +373,19 @@ local function OnEvent(_, event)
 
         if ns.Get("sellJunk") then StartSelling() end
 
+        -- Restock last, a moment later: after the junk has started going
+        -- and the repair is paid, so its gold floor sees the money you have.
+        if ns.Get("restock") and ns.StartRestock then
+            ns.After(1, function()
+                if merchantOpen then pcall(ns.StartRestock) end
+            end)
+        end
+
     elseif event == "MERCHANT_CLOSED" then
         merchantOpen = false
         repairedThisVisit = false
         StopSelling(true)
+        if ns.StopRestock then pcall(ns.StopRestock) end
     end
 end
 
@@ -390,7 +401,7 @@ local function UpdateRegistration()
         vendorFrame = CreateFrame("Frame")
         vendorFrame:SetScript("OnEvent", OnEvent)
     end
-    if ns.Get("sellJunk") or ns.Get("repairGear") then
+    if ns.Get("sellJunk") or ns.Get("repairGear") or ns.Get("restock") then
         vendorFrame:RegisterEvent("MERCHANT_SHOW")
         vendorFrame:RegisterEvent("MERCHANT_CLOSED")
     else

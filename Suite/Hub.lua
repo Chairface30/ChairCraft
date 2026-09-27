@@ -251,6 +251,7 @@ local function Help()
     print("  |cffffd100/chair threat|r - the threat meter's options (|cffffd100on|r, "
         .. "|cffffd100off|r, |cffffd100lock|r, |cffffd100unlock|r, |cffffd100reset|r, "
         .. "|cffffd100preview|r)")
+    print("  |cffffd100/chair cooldowns|r - profession cooldowns on every character (|cffffd100probe|r to check spell IDs)")
     print("  |cffffd100/chair setup|r - the welcome page's quick setup")
     print("  |cffffd100/chair whatsnew|r - what changed in this version")
     print("  |cffffd100/chair status|r - which parts loaded")
@@ -335,7 +336,7 @@ local function Handler(input)
 
     -- The arrow and the threat meter belong to ChairPlus but are reached from
     -- the top level, the same as the display.
-    if token == "arrow" or token == "threat" then
+    if token == "arrow" or token == "threat" or token == "cooldowns" then
         local plus = Chaircraft.FindPart("plus")
         if plus then Forward(plus, token .. (rest ~= "" and (" " .. rest) or "")) end
         return

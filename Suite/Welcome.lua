@@ -37,6 +37,29 @@ Chaircraft.QUICK_SETUP = QUICK
 
 local function Plus() return Chaircraft.ChairPlus end
 
+-- A window opened from the menu takes the menu's place while it is up, so
+-- the two never sit on top of each other: the menu hides, and comes back on
+-- the page it was on when the window closes. Opened with the menu closed
+-- (at login, or by command), it leaves the menu alone.
+function Chaircraft.StandInForMenu(frame)
+    local plus = Plus()
+    local menu = _G.ChairPlusPanel
+    frame.menuPage = nil
+    if menu and menu:IsShown() then
+        frame.menuPage = (plus and plus.CurrentPage and plus.CurrentPage()) or "plus"
+        menu:Hide()
+    end
+    if not frame.standInHooked then
+        frame.standInHooked = true
+        frame:HookScript("OnHide", function(self)
+            local page = self.menuPage
+            self.menuPage = nil
+            local p = Plus()
+            if page and p and p.OpenPanel then pcall(p.OpenPanel, page) end
+        end)
+    end
+end
+
 local function RowFor(key)
     local plus = Plus()
     for _, row in ipairs(plus and plus.ROWS or {}) do
@@ -143,8 +166,9 @@ local function Build()
     local menu = plus.MakeButton(window, 150, "Open the full menu")
     menu:SetPoint("RIGHT", done, "LEFT", -8, 0)
     menu:SetScript("OnClick", function()
+        -- Back to the menu, on its first page, whether or not it was open.
+        window.menuPage = "plus"
         window:Hide()
-        if plus.OpenPanel then pcall(plus.OpenPanel, "plus") end
     end)
     window.menu = menu
 
@@ -160,6 +184,8 @@ end
 function Chaircraft.ShowWelcome()
     local frame = Build()
     if not frame then return false end
+    if frame:IsShown() then return true end
+    Chaircraft.StandInForMenu(frame)
     frame:Show()
     return true
 end

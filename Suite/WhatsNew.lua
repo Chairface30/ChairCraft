@@ -11,6 +11,14 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.5.0"] = {
+        title = "Restock and profession cooldowns",
+        lines = {
+            "Restock: at any merchant, buy back up to a count you set of ammo, reagents, food and water (Plus page, Merchants, Items...).",
+            "Profession cooldowns on every character: an OSD item, a ready notice, and /chair cooldowns.",
+            "This window has a Don't show after updates box, and Quick setup and What's new now take the menu's place while they are up.",
+        },
+    },
     ["1.4.0"] = {
         title = "Finding things, and ChairIgnore round two",
         lines = {
@@ -63,12 +71,23 @@ local function Build()
     close:SetPoint("BOTTOMRIGHT", -18, 14)
     close:SetScript("OnClick", function() window:Hide() end)
     window.close = close
-    local menu = plus.MakeButton(window, 150, "Open the menu")
+    local menu = plus.MakeButton(window, 130, "Open the menu")
     menu:SetPoint("RIGHT", close, "LEFT", -8, 0)
     menu:SetScript("OnClick", function()
+        window.menuPage = "plus"
         window:Hide()
-        if plus.OpenPanel then pcall(plus.OpenPanel, "plus") end
     end)
+
+    -- For those who would rather not see it: it stays in the General page
+    -- and /chair whatsnew either way.
+    local never = plus.MakeCheckButton(window)
+    never:SetSize(22, 22)
+    never:SetPoint("BOTTOMLEFT", 14, 14)
+    local neverLabel = window:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    neverLabel:SetPoint("LEFT", never, "RIGHT", 2, 0)
+    neverLabel:SetText("Don't show after updates")
+    never:SetScript("OnClick", function(self) Chaircraft.SetWhatsNewOff(self:GetChecked() and true or false) end)
+    window.never = never
     return window
 end
 
@@ -88,8 +107,24 @@ function Chaircraft.ShowWhatsNew(version)
     local ok, height = pcall(frame.body.GetStringHeight, frame.body)
     height = (ok and tonumber(height)) or (#lines * 18)
     frame:SetHeight(math.max(160, 62 + height + 56))
-    frame:Show()
+    frame.never:SetChecked(Chaircraft.WhatsNewOff())
+    if not frame:IsShown() then
+        Chaircraft.StandInForMenu(frame)
+        frame:Show()
+    end
     return true
+end
+
+-- Whether What's new stays shut after updates. Account-wide, like the
+-- version it remembers.
+function Chaircraft.WhatsNewOff()
+    local db = _G.ChairPlusDB
+    return type(db) == "table" and db.whatsNewOff == true
+end
+
+function Chaircraft.SetWhatsNewOff(off)
+    local db = _G.ChairPlusDB
+    if type(db) == "table" then db.whatsNewOff = off and true or nil end
 end
 
 -- Once per account per version. A first run (the welcome page just opened)
@@ -99,7 +134,7 @@ function Chaircraft.MaybeWhatsNew(firstRun)
     local version = Chaircraft.version
     if type(db) ~= "table" or not version or db.lastSeenVersion == version then return false end
     db.lastSeenVersion = version
-    if firstRun then return false end
+    if firstRun or db.whatsNewOff then return false end
     return Chaircraft.ShowWhatsNew(version)
 end
 

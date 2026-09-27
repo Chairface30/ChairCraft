@@ -3,7 +3,7 @@
 ## Notes: ChairPlus, ChairAuras, ChairSnack, ChairTracker and ChairIgnore in one addon, under one menu. Type /chair.
 ## Author: Chairface
 ## IconTexture: Interface\AddOns\Chaircraft\ChairSnack\minimap
-## Version: 1.4.0
+## Version: 1.5.0
 ## SavedVariables: ChairPlusDB, ChairAurasDB, SnapSnackDB, WOWFTrackerAccountDB, ChairIgnoreDB
 ## SavedVariablesPerCharacter: WOWFTrackerDB, ChairIgnoreCharDB
 
@@ -30,6 +30,8 @@ ChairPlus\StatusBars.lua
 ChairPlus\Quests.lua
 ChairPlus\Gossip.lua
 ChairPlus\Vendor.lua
+ChairPlus\Restock.lua
+ChairPlus\Cooldowns.lua
 ChairPlus\Loot.lua
 ChairPlus\FlightData.lua
 ChairPlus\Flight.lua

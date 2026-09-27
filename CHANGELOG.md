@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.0: restock and profession cooldowns
+
+**New**
+- **Restock** (Plus page, Merchants): at any merchant, buy back up to a count you set of ammo, reagents, food and water.
+  - The **Items...** window keeps the list, with suggestions to add in one click: your equipped ammo, and at a merchant whatever in your bags they sell. An item ID box covers the rest.
+  - Bought in the merchant's own lots (arrows by the 200, water by the 5), never past a per-visit spending limit or under a gold floor you set, and never an item that costs tokens or honor.
+  - It stops when your bags are full or the merchant closes, and never orders twice while a slow server delivers. One line in chat says what it bought and what it cost. Hold shift to skip it.
+- **Profession cooldowns** on every character: transmutes, Mooncloth and the Salt Shaker, recorded when you cast them.
+  - An **OSD item** with how many are ready; hover for each character's and the time left.
+  - An optional **ready notice** in chat, once per cooldown.
+  - `/chair cooldowns` lists them; `/chair cooldowns probe` prints the next casts' spell IDs and what the game says about their cooldowns.
+
+**Changed**
+- **What's new** has a **Don't show after updates** box (also on the General page).
+- **Quick setup and What's new** take the menu's place while they are up, and hand it back on the same page when they close.
+
 ## 1.4.0: finding things, and ChairIgnore round two
 
 **New**

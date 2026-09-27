@@ -46,6 +46,7 @@ Nearly every item is interactive. **Hover** for detail and **click** to act. Som
 | Friends online | How many friends are online, Battle.net included | Who is online, and where | Opens the friends list |
 | Guild online | How many guildmates are online (only in a guild) | Your guild, who is online, and where | Opens the guild window |
 | Casino table | The running Chairface's Casino game and its host | | Opens the casino lobby |
+| Profession cooldowns | How many are ready, once one has been cast | Every character's, with the time left | |
 | ChairIgnore | Its icon | How many are on your ignore list, and what it has hidden this session | Opens ChairIgnore |
 
 ### Other addons on the OSD
@@ -80,6 +81,10 @@ Chaircraft also publishes its own launcher, so other bar addons can show a chair
 **Merchants**
 - Sell gray items on arrival, with the option to keep unbound gray gear. The total is reported in chat.
 - Repair automatically, guild funds first if you like, with the cost reported in chat.
+- **Restock** ammo, reagents, food and water up to a count you set, in the merchant's own lots, within a per-visit spending limit and above a gold floor. Suggestions come from your equipped ammo and what in your bags the merchant sells.
+
+**Profession cooldowns**
+- Transmutes, Mooncloth and the Salt Shaker on every character, recorded when you cast them. An OSD item, an optional ready notice, and `/chair cooldowns`.
 
 **Flight paths**
 - A countdown while flying, and the flight time on each destination on the flight map.

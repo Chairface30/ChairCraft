@@ -89,8 +89,19 @@ local ROWS = {
     { key = "repairSummary",    label = "Report the cost in chat",      sub = "repairGear" },
     { key = "repairGuildFunds", label = "Use guild funds first",        sub = "repairGear",
       tip = "The guild bank pays first, and your own gold covers what the guild's daily limit does not." },
+    { key = "restock",          label = "Restock consumables",
+      tip = "Buys back up to the count you set of ammo, reagents, food and water, at any merchant that sells them. Hold shift to skip it.",
+      button = { "Items...", function() ns.ToggleRestockPanel() end } },
+    { key = "restockSummary",   label = "Report what was bought",       sub = "restock" },
+    { slider = "restockCap",    label = "Spend at most per visit", sub = "restock", min = 0, max = 100, step = 1,
+      fmt = "g", zero = "no limit" },
+    { slider = "restockFloor",  label = "Keep at least", sub = "restock", min = 0, max = 500, step = 5, fmt = "g",
+      zero = "no floor", tip = "Stops buying before your gold would drop under this." },
 
     { header = "World" },
+    { key = "cooldownNotify",   label = "Say when a profession cooldown is ready",
+      tip = "Transmutes, Mooncloth and the Salt Shaker, on every character, recorded when you cast them. "
+         .. "The OSD page has an item for them too. /chair cooldowns lists them." },
     { key = "fasterLoot",       label = "Faster auto loot",
       tip = "Takes the whole corpse the moment the loot is ready. With your bags full, only coin and currency are taken." },
     { slider = "fasterLootDelay", label = "Loot again after", sub = "fasterLoot", min = 0.1, max = 1, step = 0.05, fmt = "sec",
@@ -193,6 +204,10 @@ local ROWS = {
     { action = "What's new...", tab = "general",
       run = function() if Chaircraft.ShowWhatsNew then Chaircraft.ShowWhatsNew() end end,
       tip = "What changed in this version." },
+    { key = "whatsNewOff", label = "Don't show What's new after updates", tab = "general",
+      get = function() return Chaircraft.WhatsNewOff and Chaircraft.WhatsNewOff() or false end,
+      set = function(value) if Chaircraft.SetWhatsNewOff then Chaircraft.SetWhatsNewOff(value) end end,
+      tip = "The list stays here and in /chair whatsnew either way." },
     { slider = "threatWarnAt",    label = "Warn at",           tab = "threat", sub = "threatWarn", min = 50, max = 100, step = 5, fmt = "%" },
     { header = "Nameplates", tab = "threat" },
     { key = "nameplateThreat",  label = "Color enemy nameplates by aggro", tab = "threat",
@@ -255,6 +270,8 @@ local function SliderText(row, value)
         shown = math.floor(value + 0.5) .. "s"
     elseif row.fmt == "sec" then
         shown = string.format("%.2fs", value)
+    elseif row.fmt == "g" then
+        shown = math.floor(value + 0.5) .. "g"
     elseif row.fmt == "x" then
         shown = string.format("%.2f", value)
     else
@@ -2056,6 +2073,9 @@ local function Handler(input)
                 .. "|cffffd100unlock|r, |cffffd100reset|r, |cffffd100new|r or "
                 .. "|cffffd100probe|r (with a flight map open).")
         end
+
+    elseif cmd == "cooldowns" or cmd == "cd" then
+        if ns.CooldownsCommand then ns.CooldownsCommand(rest) end
 
     elseif cmd == "arrow" or cmd == "threat" then
         local sub, arg = (rest or ""):lower():match("^(%S*)%s*(.-)$")

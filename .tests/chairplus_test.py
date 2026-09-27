@@ -29,7 +29,22 @@ local function Method(k)
             if k == "SetText" then rawset(self, "_text", (...))
             elseif k == "GetText" then return rawget(self, "_text")
             elseif k == "Show" then rawset(self, "_shown", true)
-            elseif k == "Hide" then rawset(self, "_shown", false)
+            elseif k == "Hide" then
+                -- As the client does: OnHide and anything hooked on it run,
+                -- but only when the frame was showing.
+                local was = rawget(self, "_shown")
+                rawset(self, "_shown", false)
+                if was then
+                    local hooks = rawget(self, "_hideHooks")
+                    for _, fn in ipairs(hooks or {}) do fn(self) end
+                end
+            elseif k == "HookScript" then
+                local name, fn = ...
+                if name == "OnHide" then
+                    local hooks = rawget(self, "_hideHooks") or {}
+                    hooks[#hooks + 1] = fn
+                    rawset(self, "_hideHooks", hooks)
+                end
             elseif k == "SetShown" then rawset(self, "_shown", (...) and true or false)
             elseif k == "IsShown" then return rawget(self, "_shown") == true
             elseif k == "SetChecked" then rawset(self, "_checked", (...) and true or false)
@@ -364,7 +379,7 @@ NS = {}
 SUITE_TABLE = { ChairPlus = NS }
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "Quests.lua", "Gossip.lua",
-    "Vendor.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "Arrow.lua",
+    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "Arrow.lua",
     "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
 for _, file in ipairs(files) do
@@ -4199,6 +4214,174 @@ check("the toggle is on the OSD page, not under the display's own switch",
           if r.key == "hideStatusBars" then return r.tab == "osd" and r.sub == nil end end
           return "no ROWS" end)()""") in (True, "no ROWS"))
 
+print("\nRestock")
+RESTOCK_SETUP = """
+-- A merchant: arrows by the 200, water by the 5, and a token-cost item.
+GOODS = {
+    { id = 2512, name = "Rough Arrow", price = 10, lot = 200 },
+    { id = 159, name = "Refreshing Spring Water", price = 25, lot = 5 },
+    { id = 999, name = "Badge Item", price = 0, lot = 1, token = true },
+}
+HAVE = { [2512] = 50, [159] = 0, [999] = 0 }
+BUYS = {}
+BAGS_FULL = false
+MONEY = 100000
+function GetMoney() return MONEY end
+function GetMerchantNumItems() return #GOODS end
+function GetMerchantItemID(i) return GOODS[i] and GOODS[i].id end
+function GetMerchantItemInfo(i)
+    local g = GOODS[i]
+    return g.name, 1, g.price, g.lot, -1, true, true, g.token or false
+end
+function BuyMerchantItem(i)
+    local g = GOODS[i]
+    table.insert(BUYS, g.id)
+    MONEY = MONEY - g.price
+    if not BAGS_FULL then HAVE[g.id] = HAVE[g.id] + g.lot end
+end
+C_Item = C_Item or {}
+C_Item.GetItemNameByID = function(id) for _, g in ipairs(GOODS) do if g.id == id then return g.name end end end
+"""
+def restock_rt(setup=""):
+    rt, g = fresh()
+    rt.execute(RESTOCK_SETUP + setup)
+    rt.execute("BOOT() NS.GetItemCount = function(id) return HAVE[id] or 0 end")
+    return rt, g
+def visit(rt, passes=12):
+    rt.execute("PRINTED = {} BUYS = {} MerchantFrame:Show() FireEvent('MERCHANT_SHOW')")
+    rt.execute("RUN_TIMERS(%d)" % passes)
+    return "\n".join(str(v) for v in rt.eval("PRINTED").values())
+
+rt, g = restock_rt()
+check("restock ships off", g.NS.Get("restock") is False)
+rt.execute("NS.SetRestock(2512, 1000) NS.SetRestock(159, 20) NS.SetRestock(2512, 800)")
+check("the list keeps one count per item, changed in place",
+      rt.eval("NS.Get('restockList')") == "2512:800,159:20")
+check("a bad count is refused", rt.eval("select(2, NS.SetRestock(159, 0))") == "the count must be 1 to 5000")
+rt.execute("NS.RemoveRestock(159) NS.SetRestock(159, 20)")
+check("remove, then add again", rt.eval("NS.Get('restockList')") == "2512:800,159:20")
+
+rt, g = restock_rt()
+rt.execute("NS.Set('restock', true) NS.SetRestock(2512, 1000) NS.SetRestock(159, 20) NS.SetRestock(999, 5)")
+said = visit(rt)
+check("it buys whole lots until you hold the count", rt.eval("HAVE[2512]") == 1050 and rt.eval("HAVE[159]") == 20,
+      (rt.eval("HAVE[2512]"), rt.eval("HAVE[159]")))
+check("never an item that costs more than gold", rt.eval("HAVE[999]") == 0)
+check("and says what it bought and what it cost",
+      "Restocked: 1000 Rough Arrow, 20 Refreshing Spring Water" in said and "150 copper" in said, said[-200:])
+said = visit(rt)
+check("a second visit with everything held buys nothing", len(list(rt.eval("BUYS").values())) == 0)
+
+rt, g = restock_rt()
+rt.execute("NS.Set('restock', true) NS.Set('restockCap', 1) NS.SetRestock(2512, 5000) GOODS[1].price = 4000")
+said = visit(rt)
+check("the per-visit limit stops it", rt.eval("HAVE[2512]") == 450 and "spending limit" in said, said[-200:])
+
+rt, g = restock_rt()
+rt.execute("NS.Set('restock', true) NS.Set('restockCap', 0) NS.Set('restockFloor', 5) NS.SetRestock(2512, 5000)"
+           " MONEY = 70000 GOODS[1].price = 15000")
+said = visit(rt)
+check("and so does the gold floor", rt.eval("MONEY") == 55000 and "gold floor" in said, said[-200:])
+
+rt, g = restock_rt()
+rt.execute("NS.Set('restock', true) NS.SetRestock(2512, 1000) BAGS_FULL = true")
+said = visit(rt, passes=20)
+buys = len(list(rt.eval("BUYS").values()))
+check("with full bags it gives up after one pass of orders, not buying forever",
+      0 < buys <= 4 and "bags are full" in said, (buys, said[-200:]))
+
+# A slow server: bought lots show up a pass later. It must not order again
+# for what is already on its way.
+rt, g = restock_rt('''
+LATE = {}
+function BuyMerchantItem(i)
+    local g = GOODS[i]
+    table.insert(BUYS, g.id)
+    MONEY = MONEY - g.price
+    table.insert(LATE, g)
+end
+function DELIVER() for _, g in ipairs(LATE) do HAVE[g.id] = HAVE[g.id] + g.lot end LATE = {} end
+''')
+rt.execute("NS.Set('restock', true) NS.SetRestock(2512, 450)")
+rt.execute("PRINTED = {} BUYS = {} MerchantFrame:Show() FireEvent('MERCHANT_SHOW')")
+for _ in range(8):
+    rt.execute("RUN_TIMERS(1) DELIVER()")
+check("with a slow server it never orders twice for the same count",
+      rt.eval("HAVE[2512]") == 450 and len(list(rt.eval("BUYS").values())) == 2,
+      (rt.eval("HAVE[2512]"), len(list(rt.eval("BUYS").values()))))
+
+rt, g = restock_rt()
+rt.execute("NS.Set('restock', true) NS.SetRestock(2512, 5000)")
+rt.execute("MerchantFrame:Show() FireEvent('MERCHANT_SHOW') RUN_TIMERS(2) FireEvent('MERCHANT_CLOSED')")
+before = rt.eval("HAVE[2512]")
+rt.execute("RUN_TIMERS(10)")
+check("closing the merchant stops it", rt.eval("HAVE[2512]") == before and before < 5000)
+
+rt, g = restock_rt()
+rt.execute("NS.Set('restock', true) NS.SetRestock(2512, 1000) SHIFT = true")
+visit(rt)
+check("holding shift leaves it to you", rt.eval("HAVE[2512]") == 50)
+
+rt, g = restock_rt("""
+function GetInventoryItemID(unit, slot) if slot == 0 then return 2512 end end
+""")
+rt.execute("""
+NS.GetContainerNumSlots = function(bag) return bag == 0 and 2 or 0 end
+NS.GetContainerItemInfo = function(bag, slot) return ({ { itemID = 159 }, { itemID = 4242 } })[slot] end
+MerchantFrame:Show() FireEvent('MERCHANT_SHOW')
+""")
+s_ = rt.eval("NS.RestockSuggestions()")
+ids = [s_[i].id for i in range(1, len(s_) + 1)]
+check("suggestions: your ammo, and what in your bags this merchant sells", ids == [2512, 159], ids)
+rt.execute("NS.SetRestock(159, 20)")
+s_ = rt.eval("NS.RestockSuggestions()")
+check("and not what is already on the list", [s_[i].id for i in range(1, len(s_) + 1)] == [2512])
+rt.execute("NS.ToggleRestockPanel()")
+check("the Items window opens beside the menu", rt.eval("ChairPlusRestockPanel:IsShown()") is True)
+
+print("\nProfession cooldowns")
+rt, g = fresh()
+rt.execute("""
+CLOCK = 1700000000
+time = function() return CLOCK end
+C_Spell = nil
+GetSpellCooldown = function() error("secret") end
+BOOT()
+""")
+rt.execute("FireEvent('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-1', 18560) RUN_TIMERS(2)")
+mine = "(function() for _, r in pairs(ChairPlusDB.cooldowns) do return r end end)()"
+check("a tracked cast is recorded, with the table's duration when the game keeps it secret",
+      rt.eval(mine + ".spells[18560]") == 1700000000 + 4 * 86400)
+rt.execute("FireEvent('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-2', 133)")
+check("an untracked spell is not", rt.eval(mine + ".spells[133]") is None)
+rt.execute("FireEvent('UNIT_SPELLCAST_SUCCEEDED', 'party1', 'Cast-3', 17187)")
+check("nor someone else's cast", rt.eval(mine + ".spells[17187]") is None)
+rt.execute("""
+GetSpellCooldown = function(id) return NOW - 1, 36 * 3600 end
+FireEvent('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-4', 17187) RUN_TIMERS(2)
+""")
+check("the game's own cooldown is used when it can be read",
+      abs(rt.eval(mine + ".spells[17187]") - (1700000000 + 36 * 3600 - 1)) <= 1, rt.eval(mine + ".spells[17187]"))
+rt.execute("""
+ChairPlusDB.cooldowns["guid:alt"] = { name = "Sewer Urchin", spells = { [19566] = CLOCK - 5 } }
+""")
+check("counts span every character: one ready of three", tuple(rt.eval("{ NS.CooldownCounts() }").values()) == (1, 3))
+rt.execute("NS.Set('osd', true) NS.SetMany({ osdMoney = false, osdBags = false, osdCooldowns = true })")
+text = line(rt)
+check("the OSD item shows the icon and how many are ready", "Trade_Alchemy" in text and " 1 ready" in text, text)
+rt.execute("PRINTED = {} NS.AnnounceReadyCooldowns()")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("the ready notice is off out of the box", "Salt Shaker" not in said)
+rt.execute("NS.Set('cooldownNotify', true) PRINTED = {} NS.AnnounceReadyCooldowns() NS.AnnounceReadyCooldowns()")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("switched on, it says so once", said.count("Salt Shaker is ready on Sewer Urchin") == 1, said)
+rt.execute("CLOCK = CLOCK + 5 * 86400 PRINTED = {} SlashCmdList['CHAIRPLUS']('cooldowns')")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("/chair cooldowns lists every character's", "Sewer Urchin" in said and "Mooncloth: ready" in said, said)
+rt.execute("PRINTED = {} SlashCmdList['CHAIRPLUS']('cooldowns probe') FireEvent('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-5', 12345) RUN_TIMERS(2)")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("the probe prints the next cast's spell ID and what the game said", "cast 12345" in said, said)
+
 print("\nWelcome page and What's new")
 # Suite/Welcome.lua and Suite/WhatsNew.lua ride on ChairPlus's widgets and
 # settings; loaded here before BOOT so What's new hears PLAYER_LOGIN.
@@ -4239,6 +4422,50 @@ check("but What's new, once", rt.eval("ChaircraftWhatsNew and ChaircraftWhatsNew
       and rt.eval("ChairPlusDB.lastSeenVersion") == "1.4.0")
 rt.execute("ChaircraftWhatsNew:Hide()")
 check("and not again for the same version", rt.eval("SUITE_TABLE.MaybeWhatsNew(false)") is False)
+print("\nPopups stand in for the menu")
+rt, g = fresh(stock=True)
+rt.execute("""ChairPlusDB = { profiles = { ["guid:alt"] = { settings = { sellJunk = true } } },
+                              lastSeenVersion = "1.4.0" }""")
+rt.execute(SUITE_FILES)
+rt.execute("BOOT() RUN_TIMERS(1) NS.OpenPanel('general')")
+rt.execute("SUITE_TABLE.ShowWelcome()")
+check("Quick setup from the menu hides the menu while it is up",
+      rt.eval("ChaircraftWelcome:IsShown()") is True and rt.eval("ChairPlusPanel:IsShown()") is False)
+rt.execute("ChaircraftWelcome:Hide()")
+check("and closing it brings the menu back, on the page it was on",
+      rt.eval("ChairPlusPanel:IsShown()") is True and rt.eval("NS.CurrentPage()") == "general")
+rt.execute("ChairPlusPanel:Hide() SUITE_TABLE.ShowWelcome() ChaircraftWelcome:Hide()")
+check("opened with the menu closed, closing it leaves the menu closed",
+      rt.eval("ChairPlusPanel:IsShown()") is False)
+rt.execute("SUITE_TABLE.ShowWelcome() rawget(ChaircraftWelcome.menu, '_scripts').OnClick()")
+check("its Open the full menu button opens the menu",
+      rt.eval("ChaircraftWelcome:IsShown()") is False and rt.eval("ChairPlusPanel:IsShown()") is True)
+rt.execute("NS.OpenPanel('general') SUITE_TABLE.ShowWhatsNew()")
+check("What's new stands in for the menu the same way",
+      rt.eval("ChaircraftWhatsNew:IsShown()") is True and rt.eval("ChairPlusPanel:IsShown()") is False)
+rt.execute("ChaircraftWhatsNew:Hide()")
+check("and hands it back", rt.eval("ChairPlusPanel:IsShown()") is True)
+
+print("\nWhat's new can be switched off")
+rt, g = fresh(stock=True)
+rt.execute("""ChairPlusDB = { profiles = { ["guid:alt"] = { settings = { sellJunk = true } } },
+                              lastSeenVersion = "1.3.0", whatsNewOff = true }""")
+rt.execute(SUITE_FILES)
+rt.execute("BOOT() RUN_TIMERS(1)")
+check("switched off, an update does not open it",
+      rt.eval("ChaircraftWhatsNew == nil or not ChaircraftWhatsNew:IsShown()") is True
+      and rt.eval("ChairPlusDB.lastSeenVersion") == "1.4.0")
+check("but it still opens by hand", rt.eval("SUITE_TABLE.ShowWhatsNew()") is True)
+check("with its box ticked", rt.eval("ChaircraftWhatsNew.never:GetChecked()") is True)
+rt.execute("""
+local c = ChaircraftWhatsNew.never
+c:SetChecked(false) rawget(c, "_scripts").OnClick(c)
+""")
+check("unticking it there switches it back on", rt.eval("ChairPlusDB.whatsNewOff") is None)
+check("and the General page has the same switch",
+      rt.eval("""(function() for _, r in ipairs(NS.ROWS) do
+          if r.key == "whatsNewOff" then return r.tab end end end)()""") == "general")
+
 print("\nSearching the menu")
 rt, g = fresh()
 rt.execute('''

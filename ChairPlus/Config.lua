@@ -50,12 +50,13 @@ ns.defaults = {
     osdMaxWidth         = 0,         -- wrap onto another line past this; 0 never
     osdCasino           = false,     -- a Chairface's Casino table in your group
     osdIgnore           = false,     -- ChairIgnore: the list's size, click to open
+    osdCooldowns        = false,     -- profession cooldowns ready, every character
     osdBrokers          = "",        -- other addons' feeds that are on, by key
     hideStatusBars      = false,     -- hide the game's XP bar and status bar 2
     osdHideMinimap      = false,     -- hide minimap buttons of addons on the display
     -- Display order, left to right. Items missing from it (a new one, or a
     -- hand-edited list) are added at the end in their default place.
-    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,rep,threat,clock,alarm,tracker,latency,session,gph,sessiongold,speed,pet,mail,social,guild,casino,ignore",
+    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,rep,threat,clock,alarm,tracker,latency,session,gph,sessiongold,speed,pet,mail,social,guild,casino,ignore,cooldowns",
     osdLocked           = true,     -- click-through until "/chair plus osd unlock"
     osdFontSize         = 14,
     osdScale            = 1.0,
@@ -136,6 +137,12 @@ ns.defaults = {
     autoInviteGuild     = true,     -- ... guildmates
     keywordInvite       = false,    -- invite players who send a keyword
     keywordInviteWords  = "inv,invite", -- the keywords, comma separated
+    restock             = false,    -- buy back your consumables at merchants
+    restockList         = "",       -- "itemID:count,..." per character
+    restockSummary      = true,     -- say in chat what was bought
+    restockCap          = 10,       -- gold per visit at most (0: no limit)
+    restockFloor        = 0,        -- never spend below this much gold
+    cooldownNotify      = false,    -- say when a profession cooldown is ready
     keywordInviteWhisper = true,    -- ... in a whisper
     keywordInviteBNet   = true,     -- ... in a Battle.net whisper
     keywordInviteGuild  = false,    -- ... in guild chat
