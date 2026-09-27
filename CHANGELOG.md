@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+**Changed**
+- **The name is spelled ChairCraft** everywhere you read it: the AddOns list, the menu, chat, the minimap and options-page tooltips, the welcome page and the README. Nothing else changes: the folder, `/chair`, and your saved settings stay as they are.
+- **The version reads "ChairCraft v1.5.0"** in the menu title, `/chair status`, What's new and the options page.
+
 ## 1.5.0: restock and profession cooldowns
 
 **New**

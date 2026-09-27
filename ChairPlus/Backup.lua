@@ -71,7 +71,7 @@ end
 -- What a string holds, without applying any of it.
 function ns.PeekSettings(text)
     text = tostring(text or ""):gsub("%s", "")
-    if text:sub(1, #PREFIX) ~= PREFIX then return nil, "that is not a Chaircraft settings string" end
+    if text:sub(1, #PREFIX) ~= PREFIX then return nil, "that is not a ChairCraft settings string" end
     local serialize, deflate = Lib("LibSerialize"), Lib("LibDeflate")
     if not (serialize and deflate) then return nil, "this copy is missing LibSerialize or LibDeflate" end
     local decoded = deflate:DecodeForPrint(text:sub(#PREFIX + 1))
@@ -242,7 +242,7 @@ local function Build()
                 tostring(data.who or "someone"), table.concat(data.parts, ", ")))
         else
             window.hint:SetText(window.box:GetText() ~= "" and ("|cffff5555" .. tostring(err) .. "|r")
-                or "Paste a Chaircraft settings string here.")
+                or "Paste a ChairCraft settings string here.")
         end
     end
     return window

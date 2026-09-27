@@ -2018,9 +2018,9 @@ function addon:CreateMinimapButton()
 
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("Chaircraft", 1, 0.82, 0)
+        GameTooltip:AddLine("ChairCraft", 1, 0.82, 0)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click: Open the Chaircraft menu", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Left-click: Open the ChairCraft menu", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Right-click: Toggle ChairSnack keybind mode",
             0.8, 0.8, 0.8)
         GameTooltip:AddLine("Drag to move it around the minimap", 0.8, 0.8, 0.8)

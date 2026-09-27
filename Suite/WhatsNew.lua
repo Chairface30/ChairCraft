@@ -104,7 +104,7 @@ function Chaircraft.ShowWhatsNew(version)
     if not entry then return false end
     local frame = Build()
     if not frame then return false end
-    frame.title:SetText("What's new in Chaircraft " .. version)
+    frame.title:SetText("What's new in ChairCraft v" .. version)
     frame.subtitle:SetText(entry.title or "")
     local lines = {}
     for _, line in ipairs(entry.lines or {}) do lines[#lines + 1] = "- " .. line end

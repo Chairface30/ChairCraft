@@ -3500,7 +3500,7 @@ check("and importing it puts the settings back",
 check("leaving no temporary profile behind",
       rt.eval('ChairPlusDB.profiles["import:backup"]') is None)
 check("a string that is not one is refused, not an error",
-      rt.eval("select(2, NS.PeekSettings('hello'))") == "that is not a Chaircraft settings string")
+      rt.eval("select(2, NS.PeekSettings('hello'))") == "that is not a ChairCraft settings string")
 
 # Auras from a backup string are someone else's as far as we know: their code
 # waits for approval, whatever the string says, and they land in the table

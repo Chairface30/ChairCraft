@@ -144,8 +144,8 @@ for p in lua_files:
 check("no stale display names left", not stale, str(stale[:6]))
 
 grid_src = io.open("ChairSnack/Grid.lua", encoding="utf-8").read()
-check("the minimap icon is titled Chaircraft",
-      'AddLine("Chaircraft"' in grid_src)
+check("the minimap icon is titled ChairCraft",
+      'AddLine("ChairCraft"' in grid_src)
 check("and opens the suite menu rather than one part's config",
       "plus.TogglePanel" in grid_src, "left click still goes to OpenConfig")
 

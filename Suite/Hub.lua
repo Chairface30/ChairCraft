@@ -12,7 +12,7 @@
 local suiteName, Chaircraft = ...
 
 local function Print(...)
-    local parts = { "|cff9d7cffChaircraft|r:" }
+    local parts = { "|cff9d7cffChairCraft|r:" }
     for i = 1, select("#", ...) do
         -- Pulled into a local first. A nested function cannot see the enclosing
         -- one's "...", and reaching for it there is a compile error, not a
@@ -22,7 +22,7 @@ local function Print(...)
         parts[#parts + 1] = ok and text or "<unreadable>"
     end
     local ok, line = pcall(table.concat, parts, " ")
-    print(ok and line or "|cff9d7cffChaircraft|r: <unprintable message>")
+    print(ok and line or "|cff9d7cffChairCraft|r: <unprintable message>")
 end
 
 Chaircraft.Print = Print
@@ -150,7 +150,7 @@ end
 -- something in and press the button".
 function Chaircraft.ShowTextBox(title, text, onAccept, hint, acceptLabel)
     BuildTextBox()
-    textBox.title:SetText("Chaircraft " .. tostring(title))
+    textBox.title:SetText("ChairCraft " .. tostring(title))
     textBox.edit:SetText(text or "")
 
     if onAccept then
@@ -221,7 +221,7 @@ local function Witness(part)
 end
 
 function Chaircraft.Report()
-    Print("v" .. (Chaircraft.version or "?") .. " -- parts:")
+    Print("ChairCraft v" .. (Chaircraft.version or "?") .. " -- parts:")
     for _, part in ipairs(Chaircraft.parts) do
         local ok, present = pcall(part.Present)
         local loaded = (ok and present)
@@ -329,7 +329,7 @@ local function Handler(input)
     end
     if token == "whatsnew" or token == "news" then
         if not (Chaircraft.ShowWhatsNew and Chaircraft.ShowWhatsNew()) then
-            Print("Nothing listed for v" .. tostring(Chaircraft.version) .. ".")
+            Print("Nothing listed for ChairCraft v" .. tostring(Chaircraft.version) .. ".")
         end
         return
     end
@@ -387,7 +387,7 @@ end
 
 local function BuildOptionsPage()
     local panel = CreateFrame("Frame", "ChaircraftOptionsPage")
-    panel.name = "|T" .. ICON .. ":16:16|t Chaircraft"
+    panel.name = "|T" .. ICON .. ":16:16|t ChairCraft"
 
     local icon = panel:CreateTexture(nil, "ARTWORK")
     icon:SetSize(32, 32)
@@ -396,7 +396,7 @@ local function BuildOptionsPage()
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("LEFT", icon, "RIGHT", 8, 0)
-    title:SetText("Chaircraft")
+    title:SetText("ChairCraft v" .. tostring(Chaircraft.version or "?"))
 
     local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     desc:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -12)
@@ -407,7 +407,7 @@ local function BuildOptionsPage()
 
     local open = MakeButton(panel, 180, 28)
     open:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -16)
-    open.labelText:SetText("Open Chaircraft menu")
+    open.labelText:SetText("Open ChairCraft menu")
     open:SetScript("OnClick", OpenMenu)
 
     local settings = _G.Settings
@@ -433,11 +433,11 @@ do
     if ok and ldb and not ldb:GetDataObjectByName("Chaircraft") then
         pcall(ldb.NewDataObject, ldb, "Chaircraft", {
             type = "launcher",
-            label = "Chaircraft",
+            label = "ChairCraft",
             icon = ICON,
             OnClick = function() OpenMenu() end,
             OnTooltipShow = function(tip)
-                tip:AddLine("Chaircraft")
+                tip:AddLine("ChairCraft v" .. tostring(Chaircraft.version or "?"))
                 tip:AddLine("Click to open the menu.", 1, 1, 1)
             end,
         })

@@ -1,10 +1,10 @@
-# Chaircraft
+# ChairCraft
 
-**One addon, one menu, one command.** Chaircraft brings together five quality-of-life parts (ChairPlus, ChairAuras, ChairSnack, ChairTracker and ChairIgnore) under a single `/chair` menu. It is made for **WoW Forever 1.60.1** (interface 16001) only, the client that runs classic content on the modern engine. Other versions of WoW are not supported.
+**One addon, one menu, one command.** ChairCraft brings together five quality-of-life parts (ChairPlus, ChairAuras, ChairSnack, ChairTracker and ChairIgnore) under a single `/chair` menu. It is made for **WoW Forever 1.60.1** (interface 16001) only, the client that runs classic content on the modern engine. Other versions of WoW are not supported.
 
 Everything ships **switched off**. Nothing changes about your game until you turn it on, and each feature has its own switch.
 
-- **Open the menu:** type `/chair`, click the chair on the minimap, or go to *Options > AddOns > Chaircraft*.
+- **Open the menu:** type `/chair`, click the chair on the minimap, or go to *Options > AddOns > ChairCraft*.
 - **Find an option:** type part of its name in the search box at the top of the menu.
 - **New here?** `/chair setup` opens a page of the most-used switches. `/chair whatsnew` lists what changed in this version.
 - **Commands:** `/chair help` lists every command.
@@ -51,11 +51,11 @@ Nearly every item is interactive. **Hover** for detail and **click** to act. Som
 
 ### Other addons on the OSD
 
-Chaircraft includes **LibDataBroker**, the standard that Titan Panel-style bars use. Any addon that publishes a data feed or a launcher appears at the end of the OSD item list, ready to tick on. Examples are BugSack's error count, Nova Instance Tracker's lockouts, and the Questie and AtlasLoot buttons. Their text updates live, and clicks and tooltips go straight to the addon.
+ChairCraft includes **LibDataBroker**, the standard that Titan Panel-style bars use. Any addon that publishes a data feed or a launcher appears at the end of the OSD item list, ready to tick on. Examples are BugSack's error count, Nova Instance Tracker's lockouts, and the Questie and AtlasLoot buttons. Their text updates live, and clicks and tooltips go straight to the addon.
 
 Tick **Hide addons' minimap buttons** and an addon you put on the display loses its minimap button, so there is one way in, not two. Take the addon off the display, or untick the setting, and the button comes back. This works with any addon that uses LibDBIcon for its minimap button. Chairface's Casino always keeps its minimap button, since its OSD item only shows while a table is up.
 
-Chaircraft also publishes its own launcher, so other bar addons can show a chair button that opens the menu.
+ChairCraft also publishes its own launcher, so other bar addons can show a chair button that opens the menu.
 
 ---
 
@@ -164,7 +164,7 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 ## Installing
 
 1. Put the `Chaircraft` folder in your WoW Forever client's `Interface/AddOns/` folder.
-2. If you still have the standalone ChairPlus, ChairAuras, SnapSnack or WOW Forever Tracker, disable them. Chaircraft warns you if they are running alongside it.
+2. If you still have the standalone ChairPlus, ChairAuras, SnapSnack or WOW Forever Tracker, disable them. ChairCraft warns you if they are running alongside it.
 3. Log in and type `/chair`.
 
 Saved settings from the standalone addons carry over: the saved-variable names are unchanged. Settings are per character, except auras and ChairIgnore, which are account-wide.
@@ -181,4 +181,4 @@ To rebuild the flight times from the source list, run `.tests/tools/import_fligh
 
 ## Credits
 
-By **Chairface**. LibStub, CallbackHandler-1.0 (Ace3, see `Libs/Ace3-LICENSE.txt`) and LibDataBroker-1.1 are embedded under their own licenses. Chaircraft is released under the GNU GPL v3; see `LICENSE`.
+By **Chairface**. LibStub, CallbackHandler-1.0 (Ace3, see `Libs/Ace3-LICENSE.txt`) and LibDataBroker-1.1 are embedded under their own licenses. ChairCraft is released under the GNU GPL v3; see `LICENSE`.

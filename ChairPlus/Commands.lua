@@ -184,7 +184,7 @@ local ROWS = {
       default = "Raid warning", play = function() if ns.PlayThreatWarning then ns.PlayThreatWarning() end end,
       stop = function() if ns.StopThreatWarning then ns.StopThreatWarning() end end },
     -- The General page: what belongs to the whole suite rather than a part.
-    { header = "Chaircraft", tab = "general" },
+    { header = "ChairCraft", tab = "general" },
     { key = "chairMinimapHidden", label = "Hide the minimap icon", tab = "general",
       get = function()
           local snack = Chaircraft.ChairSnack
@@ -200,7 +200,7 @@ local ROWS = {
     { header = "Getting started", tab = "general" },
     { action = "Quick setup...", tab = "general",
       run = function() if Chaircraft.ShowWelcome then Chaircraft.ShowWelcome() end end,
-      tip = "The most-used switches on one page, as shown the first time Chaircraft loads." },
+      tip = "The most-used switches on one page, as shown the first time ChairCraft loads." },
     { action = "What's new...", tab = "general",
       run = function() if Chaircraft.ShowWhatsNew then Chaircraft.ShowWhatsNew() end end,
       tip = "What changed in this version." },
@@ -814,7 +814,7 @@ local function BuildPanel()
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -14)
-    title:SetText("Chaircraft " .. ((Chaircraft and Chaircraft.version) or ""))
+    title:SetText("ChairCraft v" .. ((Chaircraft and Chaircraft.version) or "?"))
     mainTitle = title
 
     local close = CreateFrame("Button", nil, panel)
@@ -1688,7 +1688,7 @@ function ns.OpenPage(part)
     local w = ns.Num(frame:GetWidth()) or baseWidth
     local h = ns.Num(frame:GetHeight()) or baseHeight
     panel:SetSize(math.max(w, 300), h + EMBED_TOP)
-    pageTitle:SetText("Chaircraft  |cff808080>|r  " .. (part.pageTitle or part.title or ""))
+    pageTitle:SetText("ChairCraft  |cff808080>|r  " .. (part.pageTitle or part.title or ""))
 
     -- Swap the window for the stand-in in the Escape list, so Escape means
     -- Back while a page is up.
@@ -1744,7 +1744,7 @@ function ns.ConfirmCopyCharacter(pick)
         return
     end
     StaticPopupDialogs["CHAIRCRAFT_COPY_CHARACTER"] = {
-        text = "Replace this character's Chaircraft settings with " .. pick.label
+        text = "Replace this character's ChairCraft settings with " .. pick.label
             .. "'s? The interface reloads afterwards.",
         button1 = "Copy",
         button2 = "Cancel",

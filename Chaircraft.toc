@@ -1,5 +1,5 @@
 ## Interface: 16001
-## Title: Chaircraft
+## Title: ChairCraft
 ## Notes: ChairPlus, ChairAuras, ChairSnack, ChairTracker and ChairIgnore in one addon, under one menu. Type /chair.
 ## Author: Chairface
 ## IconTexture: Interface\AddOns\Chaircraft\ChairSnack\minimap

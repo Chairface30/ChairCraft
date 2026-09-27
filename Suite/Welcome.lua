@@ -119,7 +119,7 @@ local function Build()
 
     local title = window:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -14)
-    title:SetText("Welcome to Chaircraft")
+    title:SetText("Welcome to ChairCraft")
 
     local intro = window:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     intro:SetPoint("TOPLEFT", 18, -42)
