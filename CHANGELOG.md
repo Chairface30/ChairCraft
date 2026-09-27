@@ -4,7 +4,7 @@
 
 **New**
 - **Restock** (Plus page, Merchants): at any merchant, buy back up to a count you set of ammo, reagents, food and water.
-  - The **Items...** window keeps the list, with suggestions to add in one click: your equipped ammo, and at a merchant whatever in your bags they sell. An item ID box covers the rest.
+  - The **Items...** window keeps the list, with suggestions to add in one click: your equipped ammo, and at a merchant whatever in your bags they sell. An item ID box covers the rest, with a **Show item IDs in tooltips** switch beside it (the same switch as the menu's).
   - Bought in the merchant's own lots (arrows by the 200, water by the 5), never past a per-visit spending limit or under a gold floor you set, and never an item that costs tokens or honor.
   - It stops when your bags are full or the merchant closes, and never orders twice while a slow server delivers. One line in chat says what it bought and what it cost. Hold shift to skip it.
 - **Profession cooldowns** on every character: transmutes, Mooncloth and the Salt Shaker, recorded when you cast them.

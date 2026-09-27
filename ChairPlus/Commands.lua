@@ -1023,6 +1023,8 @@ local function BuildPanel()
                 local value = self:GetChecked() and true or false
                 if row.set then pcall(row.set, value) else ns.Set(key, value) end
                 RefreshPanel()
+                -- A window beside the menu may show the same switch.
+                if ns.RefreshRestockPanel then pcall(ns.RefreshRestockPanel) end
             end)
 
             -- A row with more to say than fits in its label says it on hover.
@@ -1527,6 +1529,11 @@ function ns.OpenPanel(tab)
 end
 
 -- Which of this window's own pages is showing ("plus", "osd", ...).
+-- Redraws the menu, for windows beside it that change its settings.
+function ns.RefreshPanel()
+    RefreshPanel()
+end
+
 function ns.CurrentPage()
     return currentTab
 end

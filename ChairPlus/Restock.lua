@@ -345,13 +345,14 @@ function ns.RefreshRestockPanel()
         end
     end
     window.noSuggest:SetShown(#suggestions == 0)
+    window.showIDs:SetChecked(ns.Get("tooltipExtras") == true and ns.Get("tooltipIDs") == true)
 end
 
 local function Build(menu)
     if window then return window end
     local MakeButton = ns.MakeButton
     window = CreateFrame("Frame", "ChairPlusRestockPanel", menu or UIParent)
-    window:SetSize(320, 470)
+    window:SetSize(320, 510)
     window:EnableMouse(true)
     window:SetScript("OnShow", function() ns.RefreshRestockPanel() end)
     if type(_G.UISpecialFrames) == "table" then table.insert(_G.UISpecialFrames, "ChairPlusRestockPanel") end
@@ -461,6 +462,27 @@ local function Build(menu)
     add:SetPoint("LEFT", window.countBox, "RIGHT", 8, 0)
     add:SetScript("OnClick", AddTyped)
     window.addTyped = add
+
+    -- The same switch as the menu's "Item and spell IDs", here because an
+    -- item's ID is what the box above wants. It sits under Tooltip extras in
+    -- the menu, so ticking it here turns that on too; unticking takes only
+    -- the IDs off.
+    local ids = ns.MakeCheckButton(window)
+    ids:SetSize(22, 22)
+    ids:SetPoint("TOPLEFT", idLabel, "BOTTOMLEFT", -4, -14)
+    local idsLabel = window:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    idsLabel:SetPoint("LEFT", ids, "RIGHT", 2, 0)
+    idsLabel:SetText("Show item IDs in tooltips")
+    ids:SetScript("OnClick", function(self)
+        if self:GetChecked() then
+            ns.SetMany({ tooltipExtras = true, tooltipIDs = true })
+        else
+            ns.Set("tooltipIDs", false)
+        end
+        if ns.RefreshPanel then pcall(ns.RefreshPanel) end
+        ns.RefreshRestockPanel()
+    end)
+    window.showIDs = ids
 
     window:Hide()
     return window

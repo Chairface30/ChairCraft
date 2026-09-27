@@ -4338,6 +4338,22 @@ s_ = rt.eval("NS.RestockSuggestions()")
 check("and not what is already on the list", [s_[i].id for i in range(1, len(s_) + 1)] == [2512])
 rt.execute("NS.ToggleRestockPanel()")
 check("the Items window opens beside the menu", rt.eval("ChairPlusRestockPanel:IsShown()") is True)
+check("it has the tooltip item ID switch, off like the menu's",
+      rt.eval("ChairPlusRestockPanel.showIDs:GetChecked()") is False)
+rt.execute("""
+local c = ChairPlusRestockPanel.showIDs
+c:SetChecked(true) rawget(c, "_scripts").OnClick(c)
+""")
+check("ticking it there shows IDs in tooltips, Tooltip extras and all",
+      g.NS.Get("tooltipIDs") is True and g.NS.Get("tooltipExtras") is True)
+rt.execute("""
+local c = ChairPlusRestockPanel.showIDs
+c:SetChecked(false) rawget(c, "_scripts").OnClick(c)
+""")
+check("unticking takes only the IDs off",
+      g.NS.Get("tooltipIDs") is False and g.NS.Get("tooltipExtras") is True)
+rt.execute("NS.Set('tooltipIDs', true) NS.RefreshRestockPanel()")
+check("and it follows the menu's switch", rt.eval("ChairPlusRestockPanel.showIDs:GetChecked()") is True)
 
 print("\nProfession cooldowns")
 rt, g = fresh()
