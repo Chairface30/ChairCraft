@@ -181,4 +181,4 @@ To rebuild the flight times from the source list, run `.tests/tools/import_fligh
 
 ## Credits
 
-By **Chairface**. LibStub, CallbackHandler-1.0 (Ace3, see `Libs/Ace3-LICENSE.txt`) and LibDataBroker-1.1 are embedded under their own licenses. ChairCraft is released under the GNU GPL v3; see `LICENSE`.
+By **Chairface Chippendale**. LibStub, CallbackHandler-1.0 (Ace3, see `Libs/Ace3-LICENSE.txt`) and LibDataBroker-1.1 are embedded under their own licenses. ChairCraft is released under the GNU GPL v3; see `LICENSE`.

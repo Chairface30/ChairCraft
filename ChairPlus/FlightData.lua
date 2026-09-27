@@ -1,5 +1,5 @@
 -- ChairPlus FlightData.lua
--- Flight times, in seconds at normal flight speed, gathered by Chairface.
+-- Flight times, in seconds at normal flight speed, gathered by Chairface Chippendale.
 -- Written by .tests/tools/import_flight_times.py -- rerun that rather than
 -- editing here.
 --

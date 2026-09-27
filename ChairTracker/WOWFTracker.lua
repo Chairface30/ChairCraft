@@ -2564,7 +2564,7 @@ anchor:SetScript("OnEvent", function(self, event, arg1)
         local meta = (_G.C_AddOns and _G.C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
         local okV, version = pcall(meta or function() return nil end, "Chaircraft", "Version")
         version = okV and type(version) == "string" and version or "?"
-        print("|cff88aaddChairTracker|r v" .. version .. " loaded — by |cff00ccffChairface|r. Type /chair tracker for options.")
+        print("|cff88aaddChairTracker|r v" .. version .. " loaded — by |cff00ccffChairface Chippendale|r. Type /chair tracker for options.")
     end
     if self.dbReady then
         WOWFTrackerNS.UpdateReputation()

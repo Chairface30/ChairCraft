@@ -82,7 +82,7 @@ header:SetText("|cff88aaddChairTracker|r Options")
 
 local credit = opt:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 credit:SetPoint("TOP", header, "BOTTOM", 0, -2)
-credit:SetText("by |cff00ccffChairface|r — Enjoy the addon? Mail me a tip in-game!")
+credit:SetText("by |cff00ccffChairface Chippendale|r")
 
 local closeBtn = CreateFrame("Button", nil, opt, "UIPanelCloseButton")
 closeBtn:SetPoint("TOPRIGHT", -4, -4)

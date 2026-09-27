@@ -208,6 +208,12 @@ local ROWS = {
       get = function() return Chaircraft.WhatsNewOff and Chaircraft.WhatsNewOff() or false end,
       set = function(value) if Chaircraft.SetWhatsNewOff then Chaircraft.SetWhatsNewOff(value) end end,
       tip = "The list stays here and in /chair whatsnew either way." },
+    -- Last on the page, and quiet: a credit and a thank-you, not a pitch.
+    { header = "About", tab = "general" },
+    { note = "ChairCraft is made by Chairface Chippendale.", tab = "general" },
+    { note = "If it has earned a place in your UI and you'd like to say thanks, "
+          .. "in-game gold mailed to Chairface Chippendale is always appreciated, "
+          .. "and never expected.", tab = "general" },
     { slider = "threatWarnAt",    label = "Warn at",           tab = "threat", sub = "threatWarn", min = 50, max = 100, step = 5, fmt = "%" },
     { header = "Nameplates", tab = "threat" },
     { key = "nameplateThreat",  label = "Color enemy nameplates by aggro (tanking)", tab = "threat",
@@ -1000,6 +1006,17 @@ local function BuildPanel()
             AttachTip(button, row)
             pageWidgets[tab][#pageWidgets[tab] + 1] = button
             y[col] = y[col] - 28
+        elseif row.note then
+            -- A line of small gray text, wrapped to the column.
+            local fs = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+            fs:SetPoint("TOPLEFT", COL_X[col] + 4, y[col] - 2)
+            fs:SetWidth(220)
+            fs:SetJustifyH("LEFT")
+            fs:SetText(row.note)
+            local ok, h = pcall(fs.GetStringHeight, fs)
+            h = ok and ns.Num(h) or 12
+            y[col] = y[col] - math.max(14, h) - 6
+            headers[#headers + 1] = { fs = fs, tab = tab }
         elseif row.header then
             local h = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
             h:SetPoint("TOPLEFT", COL_X[col], y[col] - 4)
