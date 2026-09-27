@@ -126,7 +126,6 @@ local function MakeRoom()
     local party = _G.C_PartyInfo
     local convert = (party and party.ConvertToRaid) or _G.ConvertToRaid
     if not Call(convert) then return false, "the party is full and could not become a raid" end
-    if ns.Get("socialSummary") then ns.Print("Party full -- turned it into a raid.") end
     return true, "converted"
 end
 
@@ -159,9 +158,7 @@ local function Invite(name, word)
     local function Send()
         local party = _G.C_PartyInfo
         local invite = (party and party.InviteUnit) or _G.InviteUnit
-        if Call(invite, name) and ns.Get("socialSummary") then
-            ns.Print(string.format("Invited %s (\"%s\").", name, word))
-        end
+        Call(invite, name)
     end
     lastInvited[name] = now
     if why == "converted" and ns.After then

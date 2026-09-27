@@ -7,7 +7,8 @@ local suiteName, Chaircraft = ...
 local addonName = "ChairPlus"
 local ns = Chaircraft.ChairPlus
 ns.name = addonName
-ns.version = "0.1"
+-- The suite's release version (Suite/Namespace.lua reads it from the TOC).
+ns.version = Chaircraft.version
 
 _G.ChairPlusNS = ns
 

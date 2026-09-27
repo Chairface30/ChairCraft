@@ -41,6 +41,16 @@ end
 local opening = false
 local taken = { money = 0, items = 0 }
 local STEP = 0.35
+-- A take is only a request: the server can refuse it (a unique item you
+-- already carry, gold over the cap) and say nothing to us. So the last one
+-- asked for waits in `pending` and is counted only once it has left the
+-- inbox; one that has not left after a few looks goes into `refused` and is
+-- not asked for again.
+local pending
+local refused = {}
+local SETTLE_LOOKS = 3
+local steps = 0
+local MAX_STEPS = 200
 
 local function BagsFull()
     if not ns.FreeBagSlots then return false end
@@ -50,6 +60,8 @@ end
 
 local function Finish(reason)
     opening = false
+    pending = nil
+    wipe(refused)
     local parts = {}
     if taken.money > 0 then
         local text = tostring(taken.money) .. "c"
@@ -67,26 +79,83 @@ local function Finish(reason)
     end
 end
 
--- One letter's worth: its gold, or one attachment. Returns whether it acted.
+local function InboxCount()
+    local ok, count = pcall(_G.GetInboxNumItems)
+    return ok and ns.Num(count) or 0
+end
+
+-- A letter by what it says rather than where it sits: the list closes up as
+-- emptied letters go, so an index from one step is not the same letter the
+-- next.
+local function Header(index)
+    local ok, _, _, sender, subject, money, cod, daysLeft, itemCount, _, _, _, _, isGM = pcall(_G.GetInboxHeaderInfo, index)
+    if not ok then return nil end
+    return {
+        key = tostring(ns.Text(sender) or "") .. "\0" .. tostring(ns.Text(subject) or "")
+            .. "\0" .. tostring(ns.Num(daysLeft) or ""),
+        money = ns.Num(money) or 0,
+        cod = ns.Num(cod) or 0,
+        itemCount = ns.Num(itemCount) or 0,
+        isGM = ns.Bool(isGM),
+    }
+end
+
+local function ItemName(index, attachment)
+    local ok, name = pcall(_G.GetInboxItem, index, attachment)
+    return ok and ns.Text(name) or nil
+end
+
+-- Whether the last take is still sitting in the inbox.
+local function StillThere(p)
+    for index = 1, InboxCount() do
+        local header = Header(index)
+        if header and header.key == p.key then
+            if p.attachment then
+                if ItemName(index, p.attachment) == p.name then return true end
+            elseif header.money > 0 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Counts the last take if it went. Returns true while it is still worth
+-- waiting for.
+local function Settle()
+    local p = pending
+    if not p then return false end
+    if StillThere(p) then
+        p.looks = p.looks + 1
+        if p.looks < SETTLE_LOOKS then return true end
+        refused[p.key .. "\0" .. (p.attachment or "money")] = true
+    elseif p.attachment then
+        taken.items = taken.items + 1
+    else
+        taken.money = taken.money + p.money
+    end
+    pending = nil
+    return false
+end
+
+-- One letter's worth: its gold, or one attachment. Returns whether it asked.
 local function TakeOne()
-    local okN, count = pcall(_G.GetInboxNumItems)
-    count = okN and ns.Num(count) or 0
-    for index = count, 1, -1 do
-        local ok, _, _, _, _, money, cod, _, itemCount, _, _, _, _, isGM = pcall(_G.GetInboxHeaderInfo, index)
-        money, cod, itemCount = ok and ns.Num(money) or 0, ok and ns.Num(cod) or 0, ok and ns.Num(itemCount) or 0
-        if ok and cod == 0 and not ns.Bool(isGM) then
-            if money > 0 then
+    for index = InboxCount(), 1, -1 do
+        local header = Header(index)
+        if header and header.cod == 0 and not header.isGM then
+            local key = header.key
+            if header.money > 0 and not refused[key .. "\0money"] then
                 if Call("TakeInboxMoney", index) then
-                    taken.money = taken.money + money
+                    pending = { key = key, money = header.money, looks = 0 }
                     return true
                 end
-            elseif itemCount > 0 then
-                if BagsFull() then return false, "your bags are full" end
+            elseif header.itemCount > 0 then
                 for attachment = 1, 16 do
-                    local okI, name = pcall(_G.GetInboxItem, index, attachment)
-                    if okI and ns.Text(name) then
+                    local name = ItemName(index, attachment)
+                    if name and not refused[key .. "\0" .. attachment] then
+                        if BagsFull() then return false, "your bags are full" end
                         if Call("TakeInboxItem", index, attachment) then
-                            taken.items = taken.items + 1
+                            pending = { key = key, attachment = attachment, name = name, looks = 0 }
                             return true
                         end
                     end
@@ -99,6 +168,12 @@ end
 
 local function Step()
     if not opening then return end
+    steps = steps + 1
+    if steps > MAX_STEPS then
+        Settle()
+        return Finish("stopped")
+    end
+    if Settle() then return ns.After(STEP, Step) end
     local acted, why = TakeOne()
     if acted then
         ns.After(STEP, Step)
@@ -111,6 +186,8 @@ function ns.OpenAllMail()
     if opening then return end
     opening = true
     taken.money, taken.items = 0, 0
+    pending, steps = nil, 0
+    wipe(refused)
     Step()
 end
 

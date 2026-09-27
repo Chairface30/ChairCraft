@@ -4128,6 +4128,30 @@ check("author mode adds options and sets their type",
       ev("#ns.FindAura('op').authorOptions") == 4 and ev("ns.FindAura('op').authorOptions[4].type") == "range"
       and ev("ns.FindAura('op').authorOptions[4].max") == 100
       and ev("ns.Env:For(ns.FindAura('op')).config.option4") == 0)
+# A new range clamps the thumb, and the client says so through OnValueChanged.
+# Drawing the tab must not save that as the player's choice.
+L.execute("""
+local op = ns.FindAura('op')
+op.authorOptions[4].min, op.authorOptions[4].max = 10, 50
+op.config.option4 = 30
+ns.Config:Refresh()
+for _, row in ipairs(FIND_WIDGET('authorOptions', 'authoroptions', 'options').rows) do
+    if row.slider then
+        row.slider:SetValue(0)
+        rawset(row.slider, "SetMinMaxValues", function(self, low, high)
+            local value = self:GetValue()
+            if value < low or value > high then
+                value = math.max(low, math.min(high, value))
+                self:SetValue(value)
+                rawget(self, "_scripts").OnValueChanged(self, value)
+            end
+        end)
+    end
+end
+ns.Config:Refresh()
+""")
+check("drawing a slider option leaves its saved value alone",
+      ev("ns.FindAura('op').config.option4") == 30, ev("ns.FindAura('op').config.option4"))
 
 print("-- phase 11: search, several at once, Run")
 L.execute("ns.Config.search = 'regrowth' ns.Config:Refresh()")
@@ -4144,6 +4168,17 @@ L.execute("ns.Config:SetTab('actions') local w = FIND_WIDGET('initCode', 'code',
 check("Run runs code once and says what it returned",
       "42" in str(ev("FIND_WIDGET('initCode', 'code', 'actions').ran")),
       str(ev("FIND_WIDGET('initCode', 'code', 'actions').ran")))
+
+# A selection left over from before must not ride along into the next Delete.
+L.execute("ns.Config:Select('op') ns.Config.__multi().cp = true"
+          " ns.Config:AddFromTemplate('cooldown', 8936) NEW_ID = ns.Config.__selected()")
+check("a new aura from a template is selected on its own", ev("#ns.Config:SelectedList()") == 1)
+L.execute("ns.Config:DeleteSelected()")
+check("so Delete takes only it",
+      ev("ns.FindAura(NEW_ID)") is None and ev("ns.FindAura('op') ~= nil") is True
+      and ev("ns.FindAura('cp') ~= nil") is True)
+L.execute("ns.Config:Select('op') ns.Config.__multi().cp = true ns.Config:Delete('op')")
+check("deleting the open aura drops the rest of the selection", ev("next(ns.Config.__multi())") is None)
 
 
 # --- the gaps: aura lists, group units, match counts, formatters, grid order ----------

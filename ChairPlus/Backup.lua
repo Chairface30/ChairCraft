@@ -115,7 +115,32 @@ function ns.ImportSettings(text, withAuras)
 
     local auras = _G.ChairAurasDB
     if withAuras and type(data.auras) == "table" and type(auras) == "table" and type(auras.profiles) == "table" then
-        auras.profiles.account = DeepCopy(data.auras)
+        -- Into the table ChairAuras already holds, not a new one: edits made
+        -- before the /reload would otherwise go to a table then thrown away.
+        local profile = auras.profiles.account
+        if type(profile) ~= "table" then
+            profile = {}
+            auras.profiles.account = profile
+        end
+        wipe(profile)
+        for key, value in pairs(DeepCopy(data.auras)) do profile[key] = value end
+        -- The string is someone else's as far as we know: its custom Lua waits
+        -- for approval, as it does coming in through the aura Import. With
+        -- ChairAuras missing there is nothing to read the code with, so every
+        -- aura waits.
+        local A = Chaircraft.ChairAuras
+        for _, aura in ipairs(type(profile.auras) == "table" and profile.auras or {}) do
+            if type(aura) == "table" then
+                aura.untrusted = true
+                if A and A.Custom and A.NormalizeTriggers then
+                    local ok, code = pcall(function()
+                        A.NormalizeTriggers(aura)
+                        return A.Custom:CodeOf(aura)
+                    end)
+                    if ok and #code == 0 then aura.untrusted = nil end
+                end
+            end
+        end
         copied[#copied + 1] = "Auras"
     end
     return copied, data

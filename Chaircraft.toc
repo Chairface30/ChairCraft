@@ -1,11 +1,11 @@
 ## Interface: 16001
 ## Title: Chaircraft
-## Notes: ChairPlus, ChairAuras, ChairSnack and ChairTracker in one addon, under one menu. Type /chair.
+## Notes: ChairPlus, ChairAuras, ChairSnack, ChairTracker and ChairIgnore in one addon, under one menu. Type /chair.
 ## Author: Chairface
 ## IconTexture: Interface\AddOns\Chaircraft\ChairSnack\minimap
-## Version: 1.2.0
-## SavedVariables: ChairPlusDB, ChairAurasDB, SnapSnackDB, WOWFTrackerAccountDB
-## SavedVariablesPerCharacter: WOWFTrackerDB
+## Version: 1.3.0
+## SavedVariables: ChairPlusDB, ChairAurasDB, SnapSnackDB, WOWFTrackerAccountDB, ChairIgnoreDB
+## SavedVariablesPerCharacter: WOWFTrackerDB, ChairIgnoreCharDB
 
 # The SavedVariables names above are deliberately NOT renamed to match the
 # display names. They are what the client keys the saved file by: renaming them
@@ -85,6 +85,11 @@ ChairSnack\Bootstrap.lua
 ChairTracker\Config.lua
 ChairTracker\WOWFTracker.lua
 ChairTracker\Options.lua
+
+# ChairIgnore: the account-wide ignore list and chat filters.
+ChairIgnore\Core.lua
+ChairIgnore\Filters.lua
+ChairIgnore\Window.lua
 
 # Must load last: it captures every part's slash handler before replacing them
 # all with /chair, so every file above must already have registered.

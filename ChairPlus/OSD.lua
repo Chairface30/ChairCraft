@@ -870,7 +870,18 @@ local ITEMS = {
             if delta then
                 tip:AddDoubleLine("This session", (delta < 0 and "-" or "+") .. Coins(delta, 12), 1, 1, 1, 1, 1, 1)
             end
-            Hint(tip, "Click to open your bags. Right-click for every character's gold.")
+            -- Every character this account has logged in with Chaircraft,
+            -- richest first, and what they hold between them.
+            local okAll, list, total = pcall(ns.AllCharacterGold)
+            if okAll and type(list) == "table" and #list > 0 then
+                tip:AddLine(" ")
+                tip:AddLine("Characters", 1, 0.82, 0)
+                for _, entry in ipairs(list) do
+                    tip:AddDoubleLine(entry[1], Coins(entry[2], 12), 1, 1, 1, 1, 1, 1)
+                end
+                tip:AddDoubleLine("Account total", Coins(total or 0, 12), 1, 0.82, 0, 1, 1, 1)
+            end
+            Hint(tip, "Click to open your bags. Right-click to print this in chat.")
         end,
         rightClick = function()
             local list, total = ns.AllCharacterGold()
@@ -1487,6 +1498,38 @@ local ITEMS = {
             if not game then return nil end
             return IconOnly(CASINO_ICON, size, false) .. " " .. game
                 .. (host and Coloured(" (" .. host .. ")", 0.6, 0.6, 0.6) or "")
+        end,
+    },
+    {
+        -- ChairIgnore: its icon. Hover for how many are on the list and what
+        -- it has hidden this session; click to open its page.
+        key = "ignore", setting = "osdIgnore", label = "ChairIgnore",
+        ticks = true,
+        click = function()
+            local part = Chaircraft.FindPart and Chaircraft.FindPart("ignore")
+            if part and part.Open then pcall(part.Open) end
+        end,
+        tooltip = function(tip)
+            local ci = Chaircraft.ChairIgnore
+            tip:AddLine("ChairIgnore", 1, 0.82, 0)
+            if not (ci and ci.Count) then
+                tip:AddLine("Did not load.", 1, 0.3, 0.3)
+                return
+            end
+            tip:AddLine(string.format("%d on the list", ci.Count()), 1, 1, 1)
+            if ci.On() then
+                tip:AddLine(string.format("Hidden this session: %d from listed players, %d by chat filters",
+                    ci.session.listed, ci.session.filtered), 1, 1, 1, true)
+            else
+                tip:AddLine("Switched off.", 0.6, 0.6, 0.6)
+            end
+            Hint(tip, "Click to open ChairIgnore.")
+        end,
+        build = function(size)
+            local ci = Chaircraft.ChairIgnore
+            -- The icon alone; the count and whether it is on are in the tooltip.
+            if not (ci and ci.ICON) then return nil end
+            return IconOnly(ci.ICON, size, false)
         end,
     },
 }

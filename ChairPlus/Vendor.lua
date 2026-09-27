@@ -276,6 +276,41 @@ end
 -- Repair
 -------------------------------------------------------------------------------
 
+local REPAIR_CHECK_INTERVAL = 0.3
+local REPAIR_CHECKS = 6
+
+-- Said only if something was actually repaired. None of the repair calls
+-- says whether it worked, and the cost read straight after them is still the
+-- old one: the server has not answered yet. So it is read again a little
+-- later, a few times, before anything is said.
+local function ConfirmRepair(cost, usedGuild, tries)
+    -- Once the merchant is gone the cost cannot be trusted either way.
+    if not merchantOpen then return end
+    local okAfter, left = pcall(_G.GetRepairAllCost)
+    left = okAfter and ns.Num(left) or cost
+    if left >= cost then
+        if tries < REPAIR_CHECKS then
+            ns.After(REPAIR_CHECK_INTERVAL, function() ConfirmRepair(cost, usedGuild, tries + 1) end)
+        elseif ns.Get("repairSummary") then
+            ns.Print("|cffff5555Could not repair:|r not enough gold" .. (usedGuild and " or guild funds." or "."))
+        end
+        return
+    end
+    cost = cost - left
+
+    if ns.Get("repairSummary") then
+        local text = nil
+        if type(ns.GetCoinText) == "function" then
+            local okCoin, coin = pcall(ns.GetCoinText, cost)
+            if okCoin then text = ns.Text(coin) end
+        end
+        ns.Print("Repaired for", text or (cost .. "c"),
+            usedGuild and "|cff888888(guild funds first)|r" or "")
+    end
+
+    if ns.RefreshOSD then ns.RefreshOSD() end
+end
+
 local function DoRepair()
     local canRepair = _G.CanMerchantRepair
     if type(canRepair) ~= "function" then return end
@@ -311,29 +346,7 @@ local function DoRepair()
     -- (it used to stop before asking the guild at all).
     if canAfford then pcall(repairAll) end
 
-    -- Said only if something was actually repaired. The cost is read again,
-    -- because none of these calls says whether it worked.
-    local okAfter, left = pcall(getCost)
-    left = okAfter and ns.Num(left) or cost
-    if left >= cost then
-        if ns.Get("repairSummary") then
-            ns.Print("|cffff5555Could not repair:|r not enough gold" .. (usedGuild and " or guild funds." or "."))
-        end
-        return
-    end
-    cost = cost - left
-
-    if ns.Get("repairSummary") then
-        local text = nil
-        if type(ns.GetCoinText) == "function" then
-            local okCoin, coin = pcall(ns.GetCoinText, cost)
-            if okCoin then text = ns.Text(coin) end
-        end
-        ns.Print("Repaired for", text or (cost .. "c"),
-            usedGuild and "|cff888888(guild funds first)|r" or "")
-    end
-
-    if ns.RefreshOSD then ns.RefreshOSD() end
+    ns.After(REPAIR_CHECK_INTERVAL, function() ConfirmRepair(cost, usedGuild, 1) end)
 end
 
 -------------------------------------------------------------------------------

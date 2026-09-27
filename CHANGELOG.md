@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.3.0: ChairIgnore
+
+**New**
+- **ChairIgnore**, a fifth part with its own page in the `/chair` menu (`/chair ignore`). Everything in it ships off.
+  - **One ignore list for the whole account**, with notes, an optional expiry in days, and no 50-name limit.
+  - **Kept in step with each character's game ignore list:** the game's 50 slots are filled from yours, and anyone you ignore or unignore the normal way is picked up.
+  - **Chat from everyone on the list is hidden**, past the game's 50 too.
+  - **Chat filters** you write as lines of words, with a test box, a count of what each has hidden, and a choice of which kinds of chat they cover. Friends and guildmates are spared. Four starter filters come with it, all off.
+  - **The normal Ignore goes to ChairIgnore:** ignoring someone from the right-click menu or with `/ignore` adds them to ChairIgnore's list and asks why.
+  - Built for Forever's names: a first name and a surname ("First Last", or "First Last-Realm" in chat).
+  - `/chair ignore add First Last: reason`, `remove`, `list`, `sync`, and `status` (what it is watching and has seen, for when something does not arrive).
+- **An OSD item for ChairIgnore:** its portrait icon. Hover for the list's size and what it has hidden; click to open the page.
+- **Money on the OSD:** hovering it now lists every character's gold and the account total.
+
+**Changed**
+- **Invites and duels:** the "Say in chat what was answered" option is gone, and answering invites, duels, resurrections and summons (and keyword invites) no longer says anything in chat.
+- **The menu's version number** is read from the TOC, so it always shows the release. It said 1.0.
+- **The menu is as wide as its nav row**, with a margin. The last nav button was cut off at the window's edge.
+
+**Fixed**
+- **Settings import:** auras brought in from a settings string now wait for your approval before any custom code in them runs, as they do through the aura Import. Aura edits made before the `/reload` are no longer lost.
+- **Repair:** a repair that worked is no longer reported as "Could not repair". The result is checked once the server has answered.
+- **Open all mail:** an item or gold the server refuses (a unique item you already carry, for example) is left in the mail instead of being asked for again until the mailbox closes. The "Took..." total counts only what actually came out.
+- **ChairAuras, Options tab:** opening it no longer changes a slider option's saved value.
+- **ChairAuras, several at once:** making, importing or dragging an aura, or deleting the one open, now clears any ctrl-click selection. A leftover selection could make Delete remove auras you had moved on from.
+
 ## 1.2.0: polish, new features, and ChairAuras phases 10 and 11
 
 ### Polish and new features

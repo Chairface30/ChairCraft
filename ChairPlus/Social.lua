@@ -21,10 +21,6 @@ local ns = Chaircraft.ChairPlus
 
 local driver
 
-local function Say(text)
-    if ns.Get("socialSummary") then ns.Print(text) end
-end
-
 local function Shift()
     local ok, down = pcall(_G.IsShiftKeyDown)
     return (ok and down) and true or false
@@ -102,7 +98,6 @@ local function OnPartyInvite(name, guid)
     if Call(_G.AcceptGroup) then
         HidePopup("PARTY_INVITE")
         HidePopup("PARTY_INVITE_XREALM")
-        Say("Joined " .. (name or "their") .. "'s group (" .. why .. ").")
     end
 end
 
@@ -110,7 +105,6 @@ local function OnDuel(name)
     if not ns.Get("declineDuels") or Shift() then return end
     if Call(_G.CancelDuel) then
         HidePopup("DUEL_REQUESTED")
-        Say("Declined a duel from " .. (ns.Text(name) or "someone") .. ".")
     end
 end
 
@@ -118,8 +112,6 @@ local function OnGuildInvite(inviter, guild)
     if not ns.Get("declineGuildInvites") or Shift() then return end
     if Call(_G.DeclineGuild) then
         HidePopup("GUILD_INVITE")
-        Say("Declined an invite to " .. (ns.Text(guild) or "a guild") .. " from "
-            .. (ns.Text(inviter) or "someone") .. ".")
     end
 end
 
@@ -129,7 +121,6 @@ local function OnResurrect(name)
         HidePopup("RESURRECT")
         HidePopup("RESURRECT_NO_SICKNESS")
         HidePopup("RESURRECT_NO_TIMER")
-        Say("Accepted a resurrection from " .. (ns.Text(name) or "someone") .. ".")
     end
 end
 
@@ -141,7 +132,6 @@ local function OnSummon()
     local confirm = (info and info.ConfirmSummon) or _G.ConfirmSummon
     if Call(confirm) then
         HidePopup("CONFIRM_SUMMON")
-        Say("Accepted a summon.")
     end
 end
 

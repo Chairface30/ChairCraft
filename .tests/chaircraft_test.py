@@ -74,6 +74,7 @@ EXPECTED_ORDER = {
                    "AutoBar.lua", "BuffFood.lua", "Grid.lua", "Config.lua",
                    "Bootstrap.lua"],
     "ChairTracker": ["Config.lua", "WOWFTracker.lua", "Options.lua"],
+    "ChairIgnore": ["Core.lua", "Filters.lua", "Window.lua"],
 }
 for part, expected in EXPECTED_ORDER.items():
     check(f"{part} load order preserved", order(part) == expected, str(order(part)))
@@ -82,7 +83,7 @@ sv = " ".join(l for l in toc_lines if l.startswith("## SavedVariables"))
 # Deliberately NOT renamed with the display names: these are the keys the
 # client saves under, and the tracker's is the project's canary.
 for name in ("ChairPlusDB", "ChairAurasDB", "SnapSnackDB",
-             "WOWFTrackerAccountDB", "WOWFTrackerDB"):
+             "WOWFTrackerAccountDB", "WOWFTrackerDB", "ChairIgnoreDB", "ChairIgnoreCharDB"):
     check(f"{name} still declared", name in sv)
 
 # Built for WoW Forever 1.60.1 and nothing else.
@@ -95,7 +96,7 @@ check("the TOC is for WoW Forever 1.60.1 (16001) only",
 # --------------------------------------------------------------------------
 print("")
 print("Namespace isolation")
-REBOUND = {"ChairPlus": 22, "ChairAuras": 22, "ChairSnack": 9}
+REBOUND = {"ChairPlus": 22, "ChairAuras": 22, "ChairSnack": 9, "ChairIgnore": 3}
 for part, expected in REBOUND.items():
     bound, raw = 0, []
     for f in sorted(os.listdir(part)):
@@ -172,7 +173,7 @@ check("no help text points at a removed command", not leftover, str(leftover[:6]
 # Those folders were deleted on 2026-09-22, so there is no upstream left to
 # compare against and the patched copies now live here permanently. Same
 # coverage, one less moving part -- and no silent loss when a folder goes away.
-SUITES = ["chairplus", "chairauras", "chairsnack", "chairtracker", "boot"]
+SUITES = ["chairplus", "chairauras", "chairsnack", "chairtracker", "chairignore", "boot"]
 
 for stem in SUITES:
     print("")
@@ -246,6 +247,8 @@ function LOAD(withTracker)
         CHAIRAURAS  = function(a) table.insert(CALLS, "auras:" .. tostring(a)) end,
         SNAPSNACK   = function(a) table.insert(CALLS, "snack:" .. tostring(a)) end,
         WOWFTRACKER = function(a) table.insert(CALLS, "tracker:" .. tostring(a)) end,
+        -- ChairIgnore registers a handler but no SLASH_ globals of its own.
+        CHAIRIGNORE = function(a) table.insert(CALLS, "ignore:" .. tostring(a)) end,
     }
     SLASH_CHAIRPLUS1, SLASH_CHAIRPLUS2 = "/chairplus", "/cp"
     SLASH_CHAIRAURAS1, SLASH_CHAIRAURAS2 = "/ca", "/chairauras"
@@ -264,6 +267,7 @@ function LOAD(withTracker)
     end
     SUITE.ChairAuras.Config = { Open = function() table.insert(CALLS, "open:auras") end }
     SUITE.ChairSnack.OpenConfig = function() table.insert(CALLS, "open:snack") end
+    SUITE.ChairIgnore.ShowWindow = function() table.insert(CALLS, "open:ignore") end
     if withTracker then
         WOWFTrackerNS = {
             ToggleOptions = function() table.insert(CALLS, "toggle:tracker") end,
@@ -286,7 +290,23 @@ rt = lua51.LuaRuntime(unpack_returned_tuples=True)
 rt.execute(ROUTER_HARNESS)
 rt.execute("LOAD(true)")
 
-check("four parts registered", rt.eval("#SUITE.parts") == 4)
+check("five parts registered", rt.eval("#SUITE.parts") == 5)
+
+# The version shown in the menu and /chair status is the TOC's, not a copy.
+toc_version = [l.split(":", 1)[1].strip() for l in toc_lines if l.startswith("## Version:")][0]
+vrt = lua51.LuaRuntime(unpack_returned_tuples=True)
+vrt.globals().TOC_VERSION = toc_version
+vrt.execute('''
+C_AddOns = { GetAddOnMetadata = function(name, field)
+    if name == "Chaircraft" and field == "Version" then return TOC_VERSION end
+end }
+SUITE = {}
+assert(loadfile("Suite/Namespace.lua"))("Chaircraft", SUITE)
+''')
+check("the version is read from the TOC", vrt.eval("SUITE.version") == toc_version,
+      (vrt.eval("SUITE.version"), toc_version))
+src = io.open("Suite/Namespace.lua", encoding="utf-8").read() + io.open("ChairPlus/Core.lua", encoding="utf-8").read()
+check("and no file keeps a copy of its own", not re.search(r'version\s*=\s*"[0-9]', src))
 check("namespace hands out separate tables",
       rt.eval("SUITE.ChairPlus ~= SUITE.ChairSnack "
               "and SUITE.ChairPlus ~= SUITE.ChairAuras") is True)
@@ -344,6 +364,9 @@ end
 check("/chair auras opens inside the menu when it can",
       calls("auras") == ["page:chairauras"], str(calls("auras")))
 check("/chair tracker too", calls("tracker") == ["page:chairtracker"], str(calls("tracker")))
+check("/chair ignore too", calls("ignore") == ["page:chairignore"], str(calls("ignore")))
+check("and /chair ignore add is forwarded to ChairIgnore",
+      calls("ignore add Troll") == ["ignore:add Troll"], str(calls("ignore add Troll")))
 rt.execute("SUITE.ChairPlus.OpenPage = function() return false end")
 check("and falls back to the part's own window when the menu cannot",
       calls("snack") == ["open:snack"], str(calls("snack")))
@@ -361,8 +384,8 @@ check("an unknown part is reported, not thrown",
 
 rt.execute("PRINTED = {} SUITE.Report()")
 printed = "\n".join(str(v) for v in rt.eval("PRINTED").values())
-check("status reports all four loaded",
-      printed.count("|cff55ff55loaded|r") == 4, printed)
+check("status reports all five loaded",
+      printed.count("|cff55ff55loaded|r") == 5, printed)
 
 # A part that failed to load must be reported, not thrown.
 rt.execute("LOAD(false)")

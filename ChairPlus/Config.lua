@@ -49,12 +49,13 @@ ns.defaults = {
     osdBgAlpha          = 0.45,      -- how dark the background is
     osdMaxWidth         = 0,         -- wrap onto another line past this; 0 never
     osdCasino           = false,     -- a Chairface's Casino table in your group
+    osdIgnore           = false,     -- ChairIgnore: the list's size, click to open
     osdBrokers          = "",        -- other addons' feeds that are on, by key
     hideStatusBars      = false,     -- hide the game's XP bar and status bar 2
     osdHideMinimap      = false,     -- hide minimap buttons of addons on the display
     -- Display order, left to right. Items missing from it (a new one, or a
     -- hand-edited list) are added at the end in their default place.
-    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,rep,threat,clock,alarm,tracker,latency,session,gph,sessiongold,speed,pet,mail,social,guild,casino",
+    osdOrder            = "money,bags,profession,durability,ammo,shards,coords,zone,xp,rep,threat,clock,alarm,tracker,latency,session,gph,sessiongold,speed,pet,mail,social,guild,casino,ignore",
     osdLocked           = true,     -- click-through until "/chair plus osd unlock"
     osdFontSize         = 14,
     osdScale            = 1.0,
@@ -145,7 +146,6 @@ ns.defaults = {
     declineGuildInvites = false,
     autoResurrect       = false,
     autoSummon          = false,
-    socialSummary       = true,     -- say in chat what was answered
     filterErrors        = false,    -- drop "Not enough rage" and friends
 
     -- Group finder player filters (LFG.lua)

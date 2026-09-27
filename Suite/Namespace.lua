@@ -26,12 +26,24 @@ local suiteName, Chaircraft = ...
 -- ADDON_LOADED's argument need this rather than their own addon's old name,
 -- and they were rewritten to use `suiteName` directly.
 Chaircraft.addonName = suiteName
-Chaircraft.version = "1.0"
+
+-- The release version, read from the TOC's "## Version:" line so the menu and
+-- /chair status always show what was released. Nothing else holds a copy.
+local function TocField(field)
+    local addons = _G.C_AddOns
+    local get = (addons and addons.GetAddOnMetadata) or _G.GetAddOnMetadata
+    if type(get) ~= "function" then return nil end
+    local ok, value = pcall(get, suiteName, field)
+    if ok and type(value) == "string" and value ~= "" then return value end
+    return nil
+end
+Chaircraft.version = TocField("Version") or "?"
 
 -- One table per merged addon, created before any of their files load.
 Chaircraft.ChairPlus = {}
 Chaircraft.ChairAuras = {}
 Chaircraft.ChairSnack = {}
+Chaircraft.ChairIgnore = {}
 -- ChairTracker is not listed here: it never used the vararg header. It carries
 -- its own globals (WOWFTrackerNS, WOWFTracker_Defaults), which were already
 -- unique, so its files needed no rebinding at all.
@@ -138,6 +150,28 @@ Chaircraft.parts = {
         Present = function()
             local trackerNS = _G.WOWFTrackerNS
             return (trackerNS and trackerNS.ToggleOptions ~= nil) and true or false
+        end,
+    },
+    {
+        key = "chairignore",
+        title = "ChairIgnore",
+        blurb = "One ignore list for every character, and chat filters.",
+        tokens = { "ignore", "ci" },
+        route = "/chair ignore",
+        -- No slash command of its own: /chair forwards "/chair ignore add ..."
+        -- to the handler it registers under this key.
+        cmdKey = "CHAIRIGNORE",
+        Window = function()
+            local ns = Chaircraft.ChairIgnore
+            return ns and ns.GetWindow and ns.GetWindow()
+        end,
+        Show = function()
+            local ns = Chaircraft.ChairIgnore
+            if ns and ns.ShowWindow then ns.ShowWindow() return true end
+        end,
+        Present = function()
+            local ns = Chaircraft.ChairIgnore
+            return (ns and ns.ShowWindow ~= nil) and true or false
         end,
     },
 }

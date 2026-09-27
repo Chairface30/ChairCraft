@@ -1,6 +1,6 @@
 # Chaircraft
 
-**One addon, one menu, one command.** Chaircraft brings together four quality-of-life addons (ChairPlus, ChairAuras, ChairSnack and ChairTracker) under a single `/chair` menu. It is made for **WoW Forever 1.60.1** (interface 16001) only, the client that runs classic content on the modern engine. Other versions of WoW are not supported.
+**One addon, one menu, one command.** Chaircraft brings together five quality-of-life parts (ChairPlus, ChairAuras, ChairSnack, ChairTracker and ChairIgnore) under a single `/chair` menu. It is made for **WoW Forever 1.60.1** (interface 16001) only, the client that runs classic content on the modern engine. Other versions of WoW are not supported.
 
 Everything ships **switched off**. Nothing changes about your game until you turn it on, and each feature has its own switch.
 
@@ -20,7 +20,7 @@ Nearly every item is interactive. **Hover** for detail and **click** to act. Som
 
 | Item | Shows | Hover | Click |
 |---|---|---|---|
-| Money | Gold, silver, copper | Gold made or lost this session | Opens your bags; right-click lists every character's gold |
+| Money | Gold, silver, copper | Gold made or lost this session, every character's gold and the account total | Opens your bags; right-click prints every character's gold in chat |
 | Free bag slots | General slots free (or free/total) | Every bag's free space | Opens your bags |
 | Profession bags | Their slots, counted separately | Every bag's free space | Opens your bags |
 | Durability | Your most worn piece, colored | Every piece, worst first, and the repair cost | Opens your character; right-click says it in chat |
@@ -44,6 +44,7 @@ Nearly every item is interactive. **Hover** for detail and **click** to act. Som
 | Friends online | How many friends are online, Battle.net included | Who is online, and where | Opens the friends list |
 | Guild online | How many guildmates are online (only in a guild) | Your guild, who is online, and where | Opens the guild window |
 | Casino table | The running Chairface's Casino game and its host | | Opens the casino lobby |
+| ChairIgnore | Its icon | How many are on your ignore list, and what it has hidden this session | Opens ChairIgnore |
 
 ### Other addons on the OSD
 
@@ -139,6 +140,15 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 - A compact, draggable tracker for reputations and skills (weapon skills, Defense, professions and secondary skills) with colored progress bars, sorting and auto-hide. Skills are read at their real rank without opening the Skills window.
 - It can dock into the OSD and drop down when hovered.
 
+## ChairIgnore: one ignore list for every character, and chat filters
+
+- **One list for the whole account**, with a note for each player and an optional number of days before they come off it. No 50-name limit.
+- **Kept in step with the game's own ignore list** on each character: it fills the game's 50 slots from yours, newest first, and picks up anyone you ignore or unignore the normal way.
+- **Hides chat from everyone on the list**, the ones past the game's 50 included.
+- **Chat filters:** hide messages that contain a word from each of a few lines of words you write, with a box to try a message against a filter before you save it. Choose the kinds of chat they cover (channels, say and yell, whispers, group and guild), and friends and guildmates are spared. Each filter counts what it hides. It comes with four starter filters (gold selling, boost ads, guild recruiting, Thunderfury jokes), all off.
+- **Your normal Ignore goes to ChairIgnore:** ignore someone from the game's right-click menu or with `/ignore` and they are added to ChairIgnore's list, and a small window asks why.
+- Commands: `/chair ignore add First Last: reason` (the reason is optional), `/chair ignore remove First Last`, `/chair ignore list`, `/chair ignore sync`, `/chair ignore status`.
+
 ---
 
 ## Installing
@@ -147,7 +157,7 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 2. If you still have the standalone ChairPlus, ChairAuras, SnapSnack or WOW Forever Tracker, disable them. Chaircraft warns you if they are running alongside it.
 3. Log in and type `/chair`.
 
-Saved settings from the standalone addons carry over: the saved-variable names are unchanged. Settings are per character, except auras, which are account-wide.
+Saved settings from the standalone addons carry over: the saved-variable names are unchanged. Settings are per character, except auras and ChairIgnore's list and chat filters, which are account-wide.
 
 ## For developers
 

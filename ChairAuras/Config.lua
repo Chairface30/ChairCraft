@@ -353,6 +353,19 @@ local function Slider(parent, label, low, high, step, onChange)
         self.settingProgrammatically = nil
     end
 
+    -- A new range can move the thumb (the client clamps it, and says so
+    -- through OnValueChanged). That is not the player choosing a value, so
+    -- it is done behind the same guard.
+    function slider:SetRange(newLow, newHigh, newStep)
+        self.settingProgrammatically = true
+        self:SetMinMaxValues(newLow, newHigh)
+        self.step = newStep or self.step
+        self:SetValueStep(self.step)
+        if lowText then lowText:SetText(newLow) end
+        if highText then highText:SetText(newHigh) end
+        self.settingProgrammatically = nil
+    end
+
     return slider
 end
 
@@ -442,6 +455,14 @@ local TYPE_TAG = {
 local multi = {}
 function Config.__multi() return multi end
 
+-- One aura open, and nothing else selected with it. Anything that moves the
+-- editor to another aura goes through here: a selection left over from before
+-- would otherwise ride along into the next Delete or "copy tab".
+local function SelectOnly(id)
+    wipe(multi)
+    selectedID = id
+end
+
 local function TreeOrder()
     local order = {}
 
@@ -530,7 +551,7 @@ local function CreateRow(index)
         local aura = ns.FindAura(dragged)
         if aura and where == "end" then
             if ns.MoveAuraToEnd(aura) then
-                selectedID = dragged
+                SelectOnly(dragged)
                 Commit(true)
                 return
             end
@@ -547,7 +568,7 @@ local function CreateRow(index)
                 end
                 if moved then Commit(true) return end
             elseif aura and onto and ns.MoveAura(aura, onto, where) then
-                selectedID = dragged
+                SelectOnly(dragged)
                 Commit(true)
                 return
             end
@@ -1551,10 +1572,8 @@ local function BuildField(pane, field)
                 row.label:SetText(name)
             elseif kind == "range" then
                 local low, high = tonumber(option.min) or 0, tonumber(option.max) or 100
-                row.slider:SetMinMaxValues(low, high)
-                row.slider.step = tonumber(option.step) or 1
-                row.slider:SetValueStep(row.slider.step)
                 row.slider.prefix = name
+                row.slider:SetRange(low, high, tonumber(option.step) or 1)
                 row.slider:SetDisplayValue(tonumber(value) or low)
             elseif kind == "select" then
                 wipe(row.values)
@@ -4558,6 +4577,7 @@ function Config:Select(id)
         currentCondition, currentCheck, currentChange = 1, 1, 1
         currentText = 1
         currentOption = 1
+        wipe(multi)
     end
     selectedID = id
     self:Refresh()
@@ -4629,7 +4649,7 @@ function Config:AddAura(spellID)
 
     Config:InheritDisplay(aura)
     profile.auras[#profile.auras + 1] = aura
-    selectedID = aura.id
+    SelectOnly(aura.id)
     Commit(true)
 end
 
@@ -4662,7 +4682,7 @@ function Config:AddNamed(text)
 
     Config:InheritDisplay(aura)
     profile.auras[#profile.auras + 1] = aura
-    selectedID = aura.id
+    SelectOnly(aura.id)
     currentTab = "trigger"
     Commit(true)
     return aura
@@ -4685,7 +4705,7 @@ function Config:AddFromTemplate(kind, spellID)
     end
     Config:InheritDisplay(aura)
     profile.auras[#profile.auras + 1] = aura
-    selectedID = aura.id
+    SelectOnly(aura.id)
     Commit(true)
     return aura
 end
@@ -4755,7 +4775,7 @@ function Config:AddGroup(dynamic)
         name = dynamic and "Dynamic group" or "Group",
     }
     profile.auras[#profile.auras + 1] = aura
-    selectedID = aura.id
+    SelectOnly(aura.id)
     Commit(true)
 end
 
@@ -4810,6 +4830,10 @@ function Config:Delete(id)
     end
 
     table.remove(ns.GetAuras(), index)
+    multi[id] = nil
+    -- With the open aura gone, the rest of the selection has nothing to be
+    -- part of.
+    if id == selectedID then wipe(multi) end
     selectedID = nil
     Commit(true)
 end
@@ -4903,7 +4927,7 @@ local function BuildShare()
         end
         ns.Print("imported", #added, "aura(s).")
         shareFrame:Hide()
-        selectedID = added[1] and added[1].id or nil
+        SelectOnly(added[1] and added[1].id or nil)
         Config:Refresh()
     end)
     importButton:SetPoint("BOTTOMLEFT", shareFrame, "BOTTOMLEFT", 16, 12)

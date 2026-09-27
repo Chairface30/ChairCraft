@@ -78,7 +78,6 @@ local ROWS = {
       tip = "Accepts a resurrection as soon as it is offered. Hold shift to answer it yourself." },
     { key = "autoSummon",          label = "Accept summons",
       tip = "Accepts a summon as soon as it is offered. Hold shift to answer it yourself." },
-    { key = "socialSummary",       label = "Say in chat what was answered" },
 
     { header = "Merchants", newColumn = true },
     { key = "sellJunk",         label = "Sell junk automatically",
@@ -1251,7 +1250,10 @@ local function BuildPanel()
     for _, ys in pairs(tabY) do
         tallest = math.min(tallest, ys[1], ys[2])
     end
-    baseWidth, baseHeight = 540, -tallest + 54
+    -- At least as wide as the nav row, with the same 16px margin on the
+    -- right as on the left: a part added to the suite adds a nav button, and
+    -- the window grows to hold it rather than clipping it.
+    baseWidth, baseHeight = math.max(540, navX - 4 + 16), -tallest + 54
     panel:SetSize(baseWidth, baseHeight)
 
     -- Hosted pages: the page's name where the title was, and the way back.

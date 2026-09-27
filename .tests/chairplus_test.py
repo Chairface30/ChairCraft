@@ -676,13 +676,38 @@ BOOT() MerchantFrame:Show() FireEvent('MERCHANT_SHOW')
 """)
 repaired = list(rt.eval("REPAIRED").values())
 check("short of gold, guild funds still repair", repaired == ["guild"], str(repaired))
+rt.execute("RUN_TIMERS(6)")
 check("and the repair is reported", "Repaired for" in "\n".join(str(v) for v in rt.eval("PRINTED").values()))
 
 rt, g = fresh()
-rt.execute("CAN_AFFORD = false BOOT() MerchantFrame:Show() FireEvent('MERCHANT_SHOW')")
+rt.execute("CAN_AFFORD = false BOOT() MerchantFrame:Show() FireEvent('MERCHANT_SHOW') RUN_TIMERS(8)")
 printed = "\n".join(str(v) for v in rt.eval("PRINTED").values())
 check("a repair that cannot be paid for is not reported as done",
       "Repaired for" not in printed, printed[-200:])
+check("but as not done, once the checks run out", "Could not repair" in printed, printed[-200:])
+
+# The server answers a repair a moment later: the cost read straight after
+# RepairAllItems is still the old one.
+rt, g = fresh()
+rt.execute("""
+function RepairAllItems(useGuild)
+    table.insert(REPAIRED, useGuild and "guild" or "self")
+    C_Timer.After(0.5, function() REPAIR_COST = 0 end)
+end
+NS.Set("repairSummary", true)
+BOOT() MerchantFrame:Show() FireEvent('MERCHANT_SHOW')
+""")
+printed = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("nothing is said before the server answers", "repair" not in printed.lower(), printed[-200:])
+rt.execute("RUN_TIMERS(8)")
+printed = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("a repair the server confirms late is reported as done",
+      "Repaired for" in printed and "Could not repair" not in printed, printed[-200:])
+
+rt, g = fresh()
+rt.execute("CAN_AFFORD = false BOOT() MerchantFrame:Show() FireEvent('MERCHANT_SHOW') FireEvent('MERCHANT_CLOSED') RUN_TIMERS(8)")
+printed = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("leaving the merchant before the answer says nothing", "repair" not in printed.lower(), printed[-200:])
 
 print("\nQuest safety gates")
 rt, g = fresh()
@@ -824,6 +849,19 @@ check("and a second invocation closes it again",
 rt.execute('SlashCmdList["CHAIRPLUS"]("")')
 check("and a third opens it once more",
       rt.eval("ChairPlusPanel:IsShown()") is True)
+
+# The nav row holds a button for every other part. With four of them it runs
+# to 600px; the window has to hold that with a 16px margin, not clip it.
+rt, g = fresh()
+rt.execute('''
+SUITE_TABLE.parts = {}
+for _, key in ipairs({ "chairplus", "chairauras", "chairsnack", "chairtracker", "chairignore" }) do
+    table.insert(SUITE_TABLE.parts, { key = key, title = "Chair" .. key, route = "/chair", Open = function() end })
+end
+BOOT() SlashCmdList["CHAIRPLUS"]("")
+''')
+width = rt.eval("rawget(ChairPlusPanel, '_w')")
+check("the menu is wide enough for every nav button, with a margin", width == 616, width)
 rt.execute('SlashCmdList["CHAIRPLUS"]("status")')
 check("status prints without error",
       any("sellJunk" in str(v) for v in rt.eval("PRINTED").values()))
@@ -2751,7 +2789,8 @@ check("duels are declined", rt.eval('DID("cancelduel")') is True)
 check("guild invites are declined", rt.eval('DID("declineguild")') is True)
 check("resurrection is accepted", rt.eval('DID("rez")') is True)
 check("summons are accepted", rt.eval('DID("summon")') is True)
-check("and each says so", "Declined a duel from Rogue" in printed_text(rt), printed_text(rt)[-300:])
+check("and none of it is said in chat", "Declined a duel" not in printed_text(rt)
+      and "Accepted" not in printed_text(rt), printed_text(rt)[-300:])
 
 print("\nQuest turn-in safety")
 QUESTS_SETUP = """
@@ -3263,6 +3302,21 @@ local b = NS.OSDHotspot("money") b._scripts.OnClick(b, "RightButton")
 """)
 said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
 check("right-clicking money lists every character's gold", "Alt-Testrealm" in said and "Total" in said, said[-300:])
+rt.execute("""
+ChairPlusDB.sessions["Player-1-main"] = { name = "Main-Testrealm", lastMoney = 120000 }
+MONEY_TIP = {}
+local tip = {
+    AddLine = function(self, text) table.insert(MONEY_TIP, tostring(text)) end,
+    AddDoubleLine = function(self, a, b) table.insert(MONEY_TIP, tostring(a) .. "=" .. tostring(b)) end,
+}
+for _, it in ipairs(NS.OSD_ITEMS) do if it.key == "money" then it.tooltip(tip) end end
+""")
+tip = [str(v) for v in rt.eval("MONEY_TIP").values()]
+names = [l.split("=")[0] for l in tip if "=" in l]
+check("hovering money lists each character, richest first",
+      "Main-Testrealm" in names and "Alt-Testrealm" in names
+      and names.index("Main-Testrealm") < names.index("Alt-Testrealm"), tip)
+check("and the account total", any(l.startswith("Account total=") for l in tip), tip)
 before = rt.eval('NS.Get("osdClock24")')
 rt.execute('for _, it in ipairs(NS.OSD_ITEMS) do if it.key == "clock" then it.rightClick() end end')
 check("right-clicking the clock switches 12 and 24 hour", rt.eval('NS.Get("osdClock24")') != before)
@@ -3316,6 +3370,38 @@ check("and the items", rt.eval("next(MAIL[3].items)") is None)
 check("but never a cash-on-delivery letter", rt.eval("MAIL[2].items[1]") == "Pricey")
 said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
 check("and says what it took", "from the mail" in said and "2 items" in said, said[-200:])
+
+# The server refuses one attachment (a unique item already carried): it is
+# left, not asked for forever, and not counted.
+rt.execute("""
+MAIL = { { money = 0, items = { "Unique Trinket", "Wool Cloth" } } }
+TAKE_CALLS = 0
+function TakeInboxItem(i, a)
+    TAKE_CALLS = TAKE_CALLS + 1
+    if MAIL[i].items[a] ~= "Unique Trinket" then MAIL[i].items[a] = nil end
+end
+PRINTED = {}
+NS.OpenAllMail()
+RUN_TIMERS(40)
+""")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("a refused attachment is left and the run ends",
+      rt.eval("MAIL[1].items[1]") == "Unique Trinket" and rt.eval("MAIL[1].items[2]") is None
+      and len(list(rt.eval("PENDING").values())) == 0, said[-200:])
+check("it is asked for once, not on every step", rt.eval("TAKE_CALLS") == 2, rt.eval("TAKE_CALLS"))
+check("and only what came out is counted", "1 item " in said and "2 items" not in said, said[-200:])
+
+# Slow server: the gold is still showing on the next look, then goes. It is
+# counted once.
+rt.execute("""
+MAIL = { { money = 900, items = {} } }
+function TakeInboxMoney(i) C_Timer.After(0.5, function() MAIL[i].money = 0 end) end
+PRINTED = {}
+NS.OpenAllMail()
+RUN_TIMERS(20)
+""")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("gold the server hands over late is counted once", "900 copper" in said and "1800" not in said, said[-200:])
 
 rt.execute("""
 RELEASED, STOPPED, DISMOUNTED, STOOD = 0, 0, 0, 0
@@ -3390,6 +3476,36 @@ check("leaving no temporary profile behind",
       rt.eval('ChairPlusDB.profiles["import:backup"]') is None)
 check("a string that is not one is refused, not an error",
       rt.eval("select(2, NS.PeekSettings('hello'))") == "that is not a Chaircraft settings string")
+
+# Auras from a backup string are someone else's as far as we know: their code
+# waits for approval, whatever the string says, and they land in the table
+# ChairAuras already holds.
+rt.execute("""
+HELD = { auras = {} }
+ChairAurasDB = { profiles = { account = HELD } }
+SUITE_TABLE.ChairAuras = {
+    NormalizeTriggers = function(aura) end,
+    Custom = { CodeOf = function(self, aura)
+        return (aura.code and { { "trigger", aura.code } }) or {}
+    end },
+}
+""")
+rt.execute("""
+local serialize = LibStub("LibSerialize")
+local deflate = LibStub("LibDeflate")
+local data = { v = 1, who = "Other", plus = { settings = {}, movers = {} },
+               auras = { auras = { { id = 1, code = "return true" }, { id = 2 } } } }
+AURA_BACKUP = "!CC:1!" .. deflate:EncodeForPrint(deflate:CompressDeflate(serialize:Serialize(data)))
+NS.ImportSettings(AURA_BACKUP, true)
+""")
+check("a backup's aura with code comes in waiting for approval",
+      rt.eval("ChairAurasDB.profiles.account.auras[1].untrusted") is True)
+check("one without code comes in as it is", rt.eval("ChairAurasDB.profiles.account.auras[2].untrusted") is None)
+check("into the table ChairAuras already holds", rt.eval("ChairAurasDB.profiles.account == HELD") is True)
+rt.execute("SUITE_TABLE.ChairAuras = nil NS.ImportSettings(AURA_BACKUP, true)")
+check("with ChairAuras missing, every aura waits",
+      rt.eval("ChairAurasDB.profiles.account.auras[1].untrusted") is True
+      and rt.eval("ChairAurasDB.profiles.account.auras[2].untrusted") is True)
 
 print("\nArrow custom color")
 rt, g = arrow_rt('PIN = { map = 1, x = 0.5, y = 0.4 }')
@@ -3686,6 +3802,18 @@ check("clicking it starts the count again", "UI-CopperIcon:14:14:0:0|t 0" in lin
 check("standing still, the run speed shows dimmed", "|cff999999 100%|r" in line(rt), line(rt))
 rt.execute("SPEED = 14")
 check("moving, the speed right now", " 200%" in line(rt), line(rt))
+
+# ChairIgnore's item: its portrait icon and nothing else.
+rt.execute("""
+SUITE_TABLE.ChairIgnore = { ICON = "Interface\\\\FriendsFrame\\\\Battlenet-Portrait",
+    Count = function() return 7 end, On = function() return IGNORE_ON end,
+    session = { listed = 0, filtered = 0 } }
+IGNORE_ON = true
+NS.Set('osdIgnore', true)
+""")
+text = line(rt)
+check("the ChairIgnore item is its portrait icon alone, no text",
+      "Battlenet-Portrait" in text and "Ignore" not in text and " 7" not in text, text)
 text = line(rt)
 check("an unhappy hunter pet shows its name and the unhappy face",
       "UI-PetHappiness:14:14:0:0:128:64:48:72:0:23|t Fang" in text, text)
