@@ -689,7 +689,7 @@ Register("health", {
         local unit = Field(trigger, "unit", "player")
         ts.met = Try(_G.UnitExists, unit) and true or false
         ts.live = ts.met and { kind = "health", unit = unit } or nil
-        ts.name = ns.SafeText(Try(_G.UnitName, unit)) or ts.name
+        ts.name = ns.SafeText(Chaircraft.UnitFullName(unit)) or ts.name
     end,
 })
 
@@ -702,7 +702,7 @@ Register("power", {
         local unit = Field(trigger, "unit", "player")
         ts.met = Try(_G.UnitExists, unit) and true or false
         ts.live = ts.met and { kind = "power", unit = unit } or nil
-        ts.name = ns.SafeText(Try(_G.UnitName, unit)) or ts.name
+        ts.name = ns.SafeText(Chaircraft.UnitFullName(unit)) or ts.name
     end,
 })
 

@@ -388,7 +388,7 @@ local function EvaluateMatches(trigger, ts, now, unit)
         FillFromAura(ts, first.data, now)
         ts.met = CountSatisfied(trigger, #matches)
         ts.unit = first.unit
-        local okN, name = pcall(UnitName, first.unit)
+        local okN, name = true, Chaircraft.UnitFullName(first.unit)
         ts.unitName = okN and ns.SafeText(name) or nil
     else
         local met = ts.met
@@ -402,7 +402,7 @@ local function EvaluateMatches(trigger, ts, now, unit)
         local clones = {}
         for i, match in ipairs(matches) do
             local data = match.data
-            local okN, unitName = pcall(UnitName, match.unit)
+            local okN, unitName = true, Chaircraft.UnitFullName(match.unit)
             clones[i] = { key = string.format("%s:%02d", match.unit, match.index), state = {
                 show = true, name = ns.AuraField(data, "name"), icon = ns.AuraField(data, "icon"),
                 stacks = ns.StackCount(data), duration = ns.AuraField(data, "duration"),

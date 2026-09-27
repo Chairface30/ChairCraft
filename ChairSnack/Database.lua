@@ -348,7 +348,7 @@ local function SafeText(value)
 end
 
 function addon:CharLabel()
-    return (SafeText(UnitName("player")) or "Unknown")
+    return (SafeText(Chaircraft.UnitFullName("player")) or "Unknown")
         .. "-" .. (SafeText(GetRealmName()) or "Unknown")
 end
 

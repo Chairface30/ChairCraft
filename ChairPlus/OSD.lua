@@ -419,7 +419,7 @@ local function RememberMoney()
     local money = ReadMoney()
     if not (store and money) then return end
     store.lastMoney = money
-    local okN, name = pcall(_G.UnitName, "player")
+    local okN, name = true, Chaircraft.UnitFullName("player")
     local okR, realm = pcall(_G.GetRealmName)
     store.name = (okN and ns.Text(name) or "?") .. "-" .. (okR and ns.Text(realm) or "?")
 end
@@ -1147,7 +1147,7 @@ local ITEMS = {
         -- tanking it (or past 100% and about to).
         key = "threat", setting = "osdThreat", label = "My threat on target", ticks = true,
         tooltip = function(tip)
-            local okN, name = pcall(_G.UnitName, "target")
+            local okN, name = true, Chaircraft.UnitFullName("target")
             tip:AddLine("Threat on " .. (okN and ns.Text(name) or "target"), 1, 0.82, 0)
             local detailed = _G.UnitDetailedThreatSituation
             if type(detailed) == "function" then

@@ -401,7 +401,7 @@ local function Judge(event, message, sender, lineID, channelIndex, channelName)
     if ns.Get("hideListed") and ns.Players()[ns.Key(full)] then
         return true, "listed"
     end
-    if ns.Key(full) == ns.Key(ns.FullName(ns.Text(UnitName and UnitName("player")))) then return false end
+    if ns.Key(full) == ns.Key(ns.FullName(Chaircraft.UnitFullName("player"))) then return false end
     local kind = KINDS[event]
     -- Where it was said, as a filter's channel list names it: a numbered
     -- channel by its name, and Say and Yell as themselves.

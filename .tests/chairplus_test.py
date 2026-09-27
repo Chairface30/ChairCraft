@@ -377,6 +377,7 @@ end
 LOAD = r'''
 NS = {}
 SUITE_TABLE = { ChairPlus = NS }
+SUITE_TABLE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit) if not ok or a == nil then return nil end a = tostring(a) if b ~= nil and tostring(b) ~= "" then return a .. " " .. tostring(b) end return a end
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "Quests.lua", "Gossip.lua",
     "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "Arrow.lua",

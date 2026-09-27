@@ -405,16 +405,18 @@ local MORE = {
     -- You
     {
         key = "playerName", kind = "text", label = "Character name", section = "You",
-        tip = "One or more names, split by commas. Name-Realm works too.",
+        tip = "One or more names, split by commas: the first name, the full name, or Name-Realm.",
         read = function(ctx)
-            ctx.playerName = ReadText(_G.UnitName, "player")
+            -- The whole Forever name, first name and surname.
+            ctx.playerName = Chaircraft.UnitFullName("player") or UNKNOWN
             ctx.realm = ReadText(_G.GetRealmName)
         end,
         test = function(value, ctx)
             local name, realm = ctx.playerName, ctx.realm
             if name == UNKNOWN or not name then return true end
+            local first = name:match("^(%S+)")
             local full = (realm and realm ~= UNKNOWN) and (name .. "-" .. realm:gsub("%s", "")) or nil
-            return InList(value, name, full)
+            return InList(value, name, first, full)
         end,
     },
     {

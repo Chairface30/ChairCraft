@@ -330,7 +330,7 @@ function ns.ProfileKey()
     local okG, guid = pcall(_G.UnitGUID, "player")
     guid = okG and ns.Text(guid) or nil
     if guid then return "guid:" .. guid, true end
-    local okN, name = pcall(_G.UnitName, "player")
+    local okN, name = true, Chaircraft.UnitFullName("player")
     local okR, realm = pcall(_G.GetRealmName)
     return (okN and ns.Text(name) or "Unknown") .. "-"
         .. (okR and ns.Text(realm) or "Unknown"), false
@@ -365,7 +365,7 @@ function ns.Profile()
     end
     if type(profile.settings) ~= "table" then profile.settings = {} end
     if type(profile.movers) ~= "table" then profile.movers = {} end
-    local okN, name = pcall(_G.UnitName, "player")
+    local okN, name = true, Chaircraft.UnitFullName("player")
     local okR, realm = pcall(_G.GetRealmName)
     name, realm = okN and ns.Text(name) or nil, okR and ns.Text(realm) or nil
     if name then profile.label = realm and (name .. "-" .. realm) or name end

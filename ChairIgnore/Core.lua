@@ -245,7 +245,7 @@ function ns.Add(name, note, days)
     if type(db) ~= "table" then return nil, "not loaded yet" end
     local full = ns.FullName(name)
     if not full then return nil, "that is not a player name" end
-    if Key(full) == Key(ns.FullName(ns.Text(UnitName and UnitName("player")))) then
+    if Key(full) == Key(ns.FullName(Chaircraft.UnitFullName("player"))) then
         return nil, "you cannot ignore yourself"
     end
     local key = Key(full)

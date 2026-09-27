@@ -141,7 +141,7 @@ end
 local function Invite(name, word)
     name = ns.Text(name)
     if not name or name == "" then return end
-    local okMe, me = pcall(_G.UnitName, "player")
+    local okMe, me = true, Chaircraft.UnitFullName("player")
     if okMe and (name == me or Bare(name) == me) then return end
 
     local now = ns.Num(GetTime()) or 0

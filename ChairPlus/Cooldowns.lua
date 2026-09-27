@@ -63,7 +63,7 @@ local function Mine()
         store[key] = rec
     end
     rec.spells = type(rec.spells) == "table" and rec.spells or {}
-    local ok, name = pcall(_G.UnitName, "player")
+    local ok, name = true, Chaircraft.UnitFullName("player")
     rec.name = (ok and ns.Text(name)) or rec.name or "?"
     return rec
 end

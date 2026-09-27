@@ -104,7 +104,7 @@ function ns.ThreatRows(mob)
             local ok, tanking, status, scaledPct = pcall(detailed, unit, mob)
             local pct = ok and ns.Num(scaledPct) or nil
             if pct then
-                local okN, name = pcall(_G.UnitName, unit)
+                local okN, name = true, Chaircraft.UnitFullName(unit)
                 local okC, _, class = pcall(_G.UnitClass, unit)
                 out[#out + 1] = {
                     -- Display only: a name can come back secret, and a secret
@@ -192,7 +192,7 @@ local SAMPLE = {
 }
 
 local function SampleRows(count)
-    local okN, me = pcall(_G.UnitName, "player")
+    local okN, me = true, Chaircraft.UnitFullName("player")
     local okC, _, myClass = pcall(_G.UnitClass, "player")
     local out = {}
     for i = 1, count do
@@ -500,7 +500,7 @@ local function Refresh()
 
     local mobName
     if mob then
-        local okN, name = pcall(_G.UnitName, mob)
+        local okN, name = true, Chaircraft.UnitFullName(mob)
         mobName = okN and ns.DisplayText(name) or nil
     end
     Draw(list, "Threat", mobName)

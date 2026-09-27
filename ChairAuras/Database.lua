@@ -243,7 +243,7 @@ ns.ACCOUNT_KEY = ACCOUNT_KEY
 -- Every value reaching a concat goes through SafeText: this client can hand
 -- back secret values, and an unguarded concat on one throws.
 local function CharLabel()
-    return (ns.SafeText(UnitName("player")) or "Unknown")
+    return (ns.SafeText(Chaircraft.UnitFullName("player")) or "Unknown")
         .. "-" .. (ns.SafeText(GetRealmName()) or "Unknown")
 end
 ns.CharLabel = CharLabel

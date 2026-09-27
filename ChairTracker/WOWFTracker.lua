@@ -2293,8 +2293,17 @@ local function SafeText(value)
     return nil
 end
 
+-- The whole name: on WoW Forever UnitName returns the first name and the
+-- surname as two values (see Chaircraft.UnitFullName in Suite/Namespace.lua).
+local function PlayerFullName()
+    local ok, first, second = pcall(UnitName, "player")
+    first, second = ok and SafeText(first) or nil, ok and SafeText(second) or nil
+    if not first then return nil end
+    return second and (first .. " " .. second) or first
+end
+
 local function CharLabel()
-    return (SafeText(UnitName("player")) or "Unknown")
+    return (PlayerFullName() or "Unknown")
         .. "-" .. (SafeText(GetRealmName()) or "Unknown")
 end
 

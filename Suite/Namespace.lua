@@ -39,6 +39,30 @@ local function TocField(field)
 end
 Chaircraft.version = TocField("Version") or "?"
 
+-- A unit's name as chat gives it. On WoW Forever every character has a
+-- surname, and UnitName returns it as its SECOND value -- the slot other
+-- clients use for a realm: UnitName("player") -> "Highley", "Regarded", while
+-- chat and addon messages say "Highley Regarded". Reading UnitName's first
+-- value alone makes every "is this me?" check fail, so names are read here.
+-- nil when the client keeps the name secret.
+function Chaircraft.UnitFullName(unit)
+    local ok, first, second = pcall(UnitName, unit)
+    if not ok then return nil end
+    local function Plain(value)
+        if value == nil then return nil end
+        local okText, text = pcall(function()
+            local s = "" .. tostring(value)
+            if s == "" then return nil end
+            return s
+        end)
+        return okText and text or nil
+    end
+    first, second = Plain(first), Plain(second)
+    if not first then return nil end
+    return second and (first .. " " .. second) or first
+end
+
+
 -- One table per merged addon, created before any of their files load.
 Chaircraft.ChairPlus = {}
 Chaircraft.ChairAuras = {}

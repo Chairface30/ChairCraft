@@ -443,7 +443,7 @@ def boot(setup="", preset=False):
     L.execute(HARNESS)
     L.execute(setup)
     run = L.eval("function(s, n) local f = assert(loadstring(s, n)); f('Chaircraft', suite) end")
-    L.execute("ns = {}; suite = { ChairAuras = ns }")
+    L.execute("ns = {}; suite = { ChairAuras = ns }; suite.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit) if not ok or a == nil then return nil end a = tostring(a) if b ~= nil and tostring(b) ~= \"\" then return a .. \" \" .. tostring(b) end return a end")
     # The libraries the TOC loads ahead of ChairAuras: LibStub, and the ones
     # the WeakAuras-style strings are made with.
     for f in LIBS:

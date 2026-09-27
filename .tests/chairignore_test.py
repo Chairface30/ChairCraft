@@ -81,7 +81,8 @@ UIParent = Mock()
 UISpecialFrames = {}
 
 -- The player.
-function UnitName(unit) if unit == "player" then return "Me Test" end return UNIT_NAMES and UNIT_NAMES[unit] end
+-- As WoW Forever does: the first name and the surname as two values.
+function UnitName(unit) if unit == "player" then return "Me", "Test" end return UNIT_NAMES and UNIT_NAMES[unit] end
 function GetNormalizedRealmName() return "HomeRealm" end
 function UnitIsPlayer(unit) return true end
 function UnitIsUnit(a, b) return a == b end
@@ -161,6 +162,7 @@ function RUN_TIMERS()
 end
 
 SUITE = { ChairIgnore = {} }
+SUITE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit) if not ok or a == nil then return nil end a = tostring(a) if b ~= nil and tostring(b) ~= "" then return a .. " " .. tostring(b) end return a end
 SUITE.FindPart = function(token) if token == "ignore" then return { Open = function() OPENED = true return true end } end end
 NS = SUITE.ChairIgnore
 function LOAD(path)

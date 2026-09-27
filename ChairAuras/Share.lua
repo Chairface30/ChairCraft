@@ -214,7 +214,7 @@ local function Bundle(aura)
 
     return {
         v = 1,
-        who = ns.SafeText(UnitName("player")) or "?",
+        who = ns.SafeText(Chaircraft.UnitFullName("player")) or "?",
         auras = copies,
     }
 end

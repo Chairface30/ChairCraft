@@ -284,7 +284,7 @@ def boot(setup=""):
     L.execute(HARNESS)
     L.execute(setup)
     run = L.eval("function(s, n) local f = assert(loadstring(s, n)); f('Chaircraft', suite) end")
-    L.execute("addon = {}; suite = { ChairSnack = addon }")
+    L.execute("addon = {}; suite = { ChairSnack = addon }; suite.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit) if not ok or a == nil then return nil end a = tostring(a) if b ~= nil and tostring(b) ~= \"\" then return a .. \" \" .. tostring(b) end return a end")
     for f in FILES:
         run(io.open(f, encoding="utf-8").read(), "@" + f)
     return L
