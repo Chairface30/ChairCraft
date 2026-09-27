@@ -175,7 +175,7 @@ function EVENT(event, ...)
 end
 '''
 
-FILES = ["ChairIgnore/Core.lua", "ChairIgnore/Filters.lua", "ChairIgnore/Window.lua"]
+FILES = ["ChairIgnore/Core.lua", "ChairIgnore/Filters.lua", "ChairIgnore/Tab.lua", "ChairIgnore/Window.lua"]
 
 print("Parsing every Lua file as 5.1")
 lua = lua51.LuaRuntime(unpack_returned_tuples=True)
@@ -558,6 +558,67 @@ check("accented capitals too", matches(["élection"], "ÉLECTION demain") and ma
 check("and Cyrillic", matches(["золото"], "ДЕШЁВОЕ ЗОЛОТО") and matches(["ДЕШЁВОЕ"], "дешёвое золото"))
 check("the players list ignores case", ev("(NS.Add('Sewer Urchin')) ~= nil") is True
       and ev("NS.IsListed('SEWER URCHIN')") is True and ev("NS.IsListed('sewer urchin-homerealm')") is True)
+
+print("\nThe Ignored chat tab")
+CHAT_WINDOWS = """
+-- The game's chat windows: 1 General, 2 Combat Log, and whatever is made.
+CHAT_NAMES = { "General", "Combat Log" }
+NUM_CHAT_WINDOWS = 10
+MADE, IN_COMBAT = 0, false
+local function Frame(i)
+    local f = { lines = {} }
+    function f:AddMessage(text) table.insert(self.lines, text) end
+    _G["ChatFrame" .. i] = f
+end
+Frame(1) Frame(2)
+function GetChatWindowInfo(i) return CHAT_NAMES[i] end
+function InCombatLockdown() return IN_COMBAT end
+function FCF_OpenNewWindow(name)
+    MADE = MADE + 1
+    table.insert(CHAT_NAMES, name)
+    Frame(#CHAT_NAMES)
+    return _G["ChatFrame" .. #CHAT_NAMES]
+end
+"""
+rt, ev = fresh(CHAT_WINDOWS)
+rt.execute("NS.Add('Pest Person') CHAT('CHAT_MSG_SAY', 'hello', 'Pest Person-HomeRealm')")
+check("off out of the box: no tab is made", ev("MADE") == 0)
+rt.execute("NS.Set('ignoredTab', true)")
+check("turned on, an Ignored tab is made on the chat window", ev("MADE") == 1 and ev("CHAT_NAMES[3]") == "Ignored")
+rt.execute("CHAT('CHAT_MSG_SAY', 'buy my gold', 'Pest Person-HomeRealm')")
+line = str(ev("ChatFrame3.lines[1]"))
+check("a hidden message is printed there, with who and why",
+      "Pest Person" in line and "buy my gold" in line and "listed" in line, line)
+check("and nowhere else", ev("#ChatFrame1.lines") == 0)
+rt.execute("NS.Set('ignoredTab', false) NS.Set('ignoredTab', true)")
+check("it is made once and reused after", ev("MADE") == 1)
+rt.execute("PRINTED = {} SlashCmdList.CHAIRIGNORE('tab off') CHAT('CHAT_MSG_SAY', 'again', 'Pest Person-HomeRealm')")
+check("tab off stops it", ev("NS.Get('ignoredTab')") is False and ev("#ChatFrame3.lines") == 1)
+
+rt, ev = fresh(CHAT_WINDOWS + "IN_COMBAT = true")
+rt.execute("NS.Set('ignoredTab', true)")
+check("in combat it waits", ev("MADE") == 0)
+rt.execute("IN_COMBAT = false EVENT('PLAYER_REGEN_ENABLED')")
+check("and makes the tab when combat ends", ev("MADE") == 1)
+
+rt, ev = fresh(CHAT_WINDOWS + """
+CHAT_NAMES[3] = "Ignored" do local f = { lines = {} } function f:AddMessage(t) table.insert(self.lines, t) end ChatFrame3 = f end
+""")
+rt.execute("NS.Set('ignoredTab', true)")
+check("a tab already named Ignored is used, not a second one", ev("MADE") == 0)
+
+rt, ev = fresh(CHAT_WINDOWS + "FCF_OpenNewWindow = nil")
+rt.execute("PRINTED = {} NS.Set('ignoredTab', true)")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("a client that cannot make one says to make a tab named Ignored", "make a chat tab named Ignored" in said, said)
+rt.execute("""
+CHAT_NAMES[3] = "Ignored" do local f = { lines = {} } function f:AddMessage(t) table.insert(self.lines, t) end ChatFrame3 = f end
+NS.Add('Pest Person') CHAT('CHAT_MSG_SAY', 'hello', 'Pest Person-HomeRealm')
+""")
+check("and uses the one you make", ev("#ChatFrame3.lines") == 1)
+rt.execute("PRINTED = {} SlashCmdList.CHAIRIGNORE('status')")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("status says it was found", "found (chat window 3)" in said, said)
 
 print("\nSharing filters")
 def with_libs(rt):

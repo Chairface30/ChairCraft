@@ -109,6 +109,7 @@ ns.DEFAULTS = {
     spareFriends   = true,   -- the chat filters never hide a friend or guildmate
     expireDays     = 0,      -- for new entries; 0 is never
     keepLog        = false,  -- keep the hidden messages log between sessions
+    ignoredTab     = false,  -- also print hidden messages in an "Ignored" chat tab
 }
 
 function ns.Get(key)
@@ -572,6 +573,18 @@ local function Command(input)
     elseif verb == "sync" then
         ns.SyncGameList()
         ns.Print("Synced with this character's ignore list.")
+    elseif verb == "tab" then
+        local want = rest:lower()
+        if want == "on" or want == "off" then
+            ns.Set("ignoredTab", want == "on")
+            if want == "off" then
+                ns.Print("Hidden messages no longer go to the " .. ns.TAB_NAME .. " tab. "
+                    .. "Close the tab like any other: right-click it, Close Window.")
+            end
+        else
+            ns.Print("|cffffd100/chair ignore tab on|r or |cffffd100off|r: hidden messages in an "
+                .. ns.TAB_NAME .. " chat tab.")
+        end
     elseif verb == "status" then
         local function YesNo(v) return v and "|cff55ff55yes|r" or "|cffff5555no|r" end
         local game = GameList()
@@ -582,6 +595,11 @@ local function Command(input)
         print("  keep the game's list in step: " .. YesNo(ns.Get("syncGameList")))
         print("  on the list: " .. ns.Count() .. ", on this character's game list: "
             .. (game and gameCount or "unreadable"))
+        -- Called directly: "a and f()" would keep only f's first result.
+        local tab, index
+        if ns.FindIgnoredTab then tab, index = ns.FindIgnoredTab() end
+        print("  " .. (ns.TAB_NAME or "Ignored") .. " tab: " .. YesNo(ns.Get("ignoredTab"))
+            .. (tab and (", found (chat window " .. index .. ")") or ", not found"))
         print("  hide chat from the list: " .. YesNo(ns.Get("hideListed"))
             .. ", chat filters switched on: " .. ns.FiltersOn())
         local fl = FL()
@@ -595,7 +613,7 @@ local function Command(input)
             .. ", game's own count: " .. tostring(okN and ns.Text(raw) or "unreadable"))
     else
         ns.Print("|cffffd100/chair ignore|r opens the window. Also: |cffffd100add|r <name>[: reason], "
-            .. "|cffffd100remove|r <name>, |cffffd100list|r, |cffffd100sync|r, |cffffd100status|r.")
+            .. "|cffffd100remove|r <name>, |cffffd100list|r, |cffffd100sync|r, |cffffd100tab on|r/|cffffd100off|r, |cffffd100status|r.")
     end
 end
 
@@ -660,6 +678,9 @@ end)
 function ns.OnSettingChanged(key)
     if key == "enabled" or key == "syncGameList" then
         if ns.On() then ns.SyncGameList() end
+    end
+    if (key == "enabled" or key == "ignoredTab") and ns.On("ignoredTab") and ns.IgnoredTabTurned then
+        pcall(ns.IgnoredTabTurned, true)
     end
     if ns.ApplyChat then ns.ApplyChat() end
     Changed()

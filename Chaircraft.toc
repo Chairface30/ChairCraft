@@ -91,6 +91,7 @@ ChairTracker\Options.lua
 # ChairIgnore: the account-wide ignore list and chat filters.
 ChairIgnore\Core.lua
 ChairIgnore\Filters.lua
+ChairIgnore\Tab.lua
 ChairIgnore\Window.lua
 
 # The welcome page and What's new: after every part, before the hub.

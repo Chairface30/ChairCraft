@@ -791,6 +791,7 @@ local OPTIONS = {
     { key = "filterGroup", text = "in party, raid, instance and guild chat", sub = true },
     { key = "spareFriends", text = "never on a friend or guildmate", sub = true },
     { key = "keepLog", text = "Keep the Hidden tab's messages between sessions" },
+    { key = "ignoredTab", text = "Also show hidden messages in an Ignored chat tab" },
 }
 
 local function BuildOptions(page)

@@ -19,6 +19,7 @@ Chaircraft.WHATS_NEW = {
             "ChairIgnore filters take a * wildcard (<*> is any guild tag), and each can be kept to channels you tick: Say, Yell, Trade and the rest.",
             "Long filter lines wrap and their box grows; the filter editor scrolls to fit.",
             "A Politics starter filter, off until you tick it on the Chat filters tab.",
+            "An Ignored chat tab: everything ChairIgnore hides, in its own tab (ChairIgnore Options).",
             "ChairIgnore is now set up once for the whole account: its switches are the same on every character.",
             "This window has a Don't show after updates box, and Quick setup and What's new now take the menu's place while they are up.",
         },

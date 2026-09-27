@@ -154,6 +154,7 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 - **Hides chat from everyone on the list**, the ones past the game's 50 included.
 - **Chat filters:** hide messages that contain a word from each of a few lines of words you write, with a box to try a message against a filter before you save it. `*` is a wildcard (`<*>` is any guild tag), each filter can be kept to channels you tick (Trade, LookingForGroup), `{link}` matches any link, and a word in `"quotes"` counts only on its own, even spaced out or with look-alike letters. Choose the kinds of chat they cover (channels, say and yell, whispers, group and guild), and friends and guildmates are spared. Each filter counts what it hides. It comes with six starter filters (gold selling, boost ads, guild recruiting, Thunderfury jokes, crude link jokes, politics), all off.
 - **Hidden tab:** the last 200 messages it hid, and why, with Show in chat and Unignore.
+- **An Ignored chat tab** (optional): everything it hides, also printed in a chat tab of its own on the main chat window.
 - **Share filters** as a line of text: Export and Import on the Chat filters tab.
 - **Your normal Ignore goes to ChairIgnore:** ignore someone from the game's right-click menu or with `/ignore` and they are added to ChairIgnore's list, and a small window asks why.
 - Commands: `/chair ignore add First Last: reason` (the reason is optional), `/chair ignore remove First Last`, `/chair ignore list`, `/chair ignore sync`, `/chair ignore status`.

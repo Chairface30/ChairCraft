@@ -74,7 +74,7 @@ EXPECTED_ORDER = {
                    "AutoBar.lua", "BuffFood.lua", "Grid.lua", "Config.lua",
                    "Bootstrap.lua"],
     "ChairTracker": ["Config.lua", "WOWFTracker.lua", "Options.lua"],
-    "ChairIgnore": ["Core.lua", "Filters.lua", "Window.lua"],
+    "ChairIgnore": ["Core.lua", "Filters.lua", "Tab.lua", "Window.lua"],
 }
 for part, expected in EXPECTED_ORDER.items():
     check(f"{part} load order preserved", order(part) == expected, str(order(part)))
@@ -96,7 +96,7 @@ check("the TOC is for WoW Forever 1.60.1 (16001) only",
 # --------------------------------------------------------------------------
 print("")
 print("Namespace isolation")
-REBOUND = {"ChairPlus": 24, "ChairAuras": 22, "ChairSnack": 9, "ChairIgnore": 3}
+REBOUND = {"ChairPlus": 24, "ChairAuras": 22, "ChairSnack": 9, "ChairIgnore": 4}
 for part, expected in REBOUND.items():
     bound, raw = 0, []
     for f in sorted(os.listdir(part)):

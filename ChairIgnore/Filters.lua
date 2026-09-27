@@ -370,7 +370,7 @@ end
 
 local function Remember(event, message, sender, why)
     local log = ns.HiddenLog()
-    log[#log + 1] = {
+    local entry = {
         at = ns.Now(),
         kind = KindName(event),
         sender = ns.FullName(sender),
@@ -379,7 +379,9 @@ local function Remember(event, message, sender, why)
         text = ns.Text(message),
         why = (why == "listed") and "listed" or (type(why) == "table" and why.name) or "?",
     }
+    log[#log + 1] = entry
     while #log > ns.LOG_MAX do table.remove(log, 1) end
+    if ns.ToIgnoredTab then pcall(ns.ToIgnoredTab, entry) end
 end
 
 -- A chat filter is called once per chat window showing the message. The line
