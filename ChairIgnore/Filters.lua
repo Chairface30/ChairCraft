@@ -127,10 +127,21 @@ local function WholeWordIn(lower, pattern)
     end
 end
 
--- A line of words, as lowercase words (and squeezed, when asked). Two kinds
+-- A word with * in it as a Lua pattern: every character as itself, and each
+-- * as "anything, as little as it takes". So <*> is any guild tag and stops
+-- at the first >. A word that is nothing but * would match every message,
+-- and is dropped instead.
+local function WildPattern(word)
+    if not word:find("[^%*%s]") then return nil end
+    local escaped = word:gsub("[%^%$%(%)%%%.%[%]%+%-%?]", "%%%0")
+    return (escaped:gsub("%*", ".-"))
+end
+
+-- A line of words, as lowercase words (and squeezed, when asked). Three kinds
 -- are special:
 --   {link}     any link: an item, spell, quest or other, however it is named
 --   "word"     only as a whole word, spaced out or with look-alike letters
+--   <*>        * is a wildcard: anything, of any length
 local function Words(line, squeeze)
     local out = {}
     for word in tostring(line or ""):gmatch("[^,]+") do
@@ -141,6 +152,9 @@ local function Words(line, squeeze)
         elseif quoted then
             local pattern = WholePattern(quoted)
             if pattern then out[#out + 1] = { whole = pattern } end
+        elseif word:find("*", 1, true) then
+            local pattern = WildPattern(word)
+            if pattern then out[#out + 1] = { wild = pattern } end
         elseif word ~= "" then
             out[#out + 1] = { plain = word, squeezed = squeeze and Squeeze(word) or nil }
         end
@@ -174,6 +188,8 @@ local function LineMatches(words, lower, squeezed)
             if lower:find("|h", 1, true) then return true end
         elseif word.whole then
             if WholeWordIn(lower, word.whole) then return true end
+        elseif word.wild then
+            if lower:find(word.wild) then return true end
         elseif lower:find(word.plain, 1, true) then return true end
         -- A word that is all symbols ("<", "$") squeezes to nothing, and is
         -- only ever looked for as it is.

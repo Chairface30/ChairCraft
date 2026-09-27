@@ -12,6 +12,8 @@
   - An optional **ready notice** in chat, once per cooldown.
   - `/chair cooldowns` lists them; `/chair cooldowns probe` prints the next casts' spell IDs and what the game says about their cooldowns.
 
+- **ChairIgnore filters take a `*` wildcard:** anything, of any length. `<*>` is any guild tag, and `g*ld` catches "g.0.ld". A word that is nothing but `*` is ignored.
+
 **Changed**
 - **What's new** has a **Don't show after updates** box (also on the General page).
 - **Quick setup and What's new** take the menu's place while they are up, and hand it back on the same page when they close.

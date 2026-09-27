@@ -16,6 +16,7 @@ Chaircraft.WHATS_NEW = {
         lines = {
             "Restock: at any merchant, buy back up to a count you set of ammo, reagents, food and water (Plus page, Merchants, Items...).",
             "Profession cooldowns on every character: an OSD item, a ready notice, and /chair cooldowns.",
+            "ChairIgnore filters take a * wildcard: <*> is any guild tag.",
             "This window has a Don't show after updates box, and Quick setup and What's new now take the menu's place while they are up.",
         },
     },

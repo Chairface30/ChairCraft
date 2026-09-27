@@ -341,6 +341,31 @@ check("kept for the session only by default", ev("ChairIgnoreDB.log") is None)
 rt.execute("NS.Set('keepLog', true) CHAT('CHAT_MSG_CHANNEL', 'cheapest gold again', 'Gold Seller-Otherrealm')")
 check("with Keep on, it lives in the saved data", ev("#ChairIgnoreDB.log") == 1)
 
+print("\nWildcards")
+rt, ev = fresh()
+def matches(lines, text):
+    rt.globals().MSG = text
+    rt.execute("F = { lines = {} }")
+    for i, l in enumerate(lines, 1):
+        rt.globals().LINE = l
+        rt.execute("F.lines[%d] = LINE" % i)
+    return rt.eval("NS.MatchFilter(MSG, F) ~= nil")
+check("<*> catches a guild tag", matches(["<*>"], "<The Unkindled> is recruiting all classes"))
+check("any tag, however long", matches(["<*>"], "Join <Pals For Life And Beyond> today"))
+check("in any case", matches(["<*>"], "<pals> RECRUITING"))
+check("but not a message without one", not matches(["<*>"], "anyone for deadmines?"))
+check("nor half a tag", not matches(["<*>"], "3 < 5 is true"))
+check("with another line: a tag and recruiting", matches(["<*>", "recruit, recruiting"], "<Pals> recruiting healers"))
+check("the tag alone is not enough then", not matches(["<*>", "recruit, recruiting"], "<Pals> says hi"))
+check("* in the middle of a word", matches(["g*ld"], "cheap g.0.ld here"))
+check("a lone * is ignored, never a match-everything", not matches(["*"], "anything at all"))
+check("other symbols in a wildcard word stay literal",
+      matches(["50%*off"], "get 50% and more off") and not matches(["a.*z"], "abz"))
+check("the test box reports a wildcard miss by its line",
+      (lambda: (rt.globals().__setitem__("MSG", "<Pals> says hi"),
+                rt.execute("F = { lines = { '<*>', 'recruit' } }"),
+                ev("NS.MissingLine(MSG, F)"))[2])() == 2)
+
 print("\nSharing filters")
 def with_libs(rt):
     for lib in ("Libs/LibStub/LibStub.lua", "Libs/LibDeflate/LibDeflate.lua", "Libs/LibSerialize/LibSerialize.lua"):

@@ -412,7 +412,8 @@ local function BuildFilters(page)
     page.nameBox:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", 0, -4)
 
     local help = Label(edit, "Hide a message that has a word from every line below. "
-        .. "Separate words with commas. |cffffd100{link}|r is any link. A word in "
+        .. "Separate words with commas. |cffffd100*|r is anything (|cffffd100<*>|r: a guild tag). "
+        .. "|cffffd100{link}|r is any link. A word in "
         .. "|cffffd100\"quotes\"|r counts only on its own, even spaced out or with "
         .. "look-alike letters (4 for a, 0 for o).", "GameFontDisableSmall")
     help:SetPoint("TOPLEFT", page.nameBox, "BOTTOMLEFT", 0, -10)
