@@ -3365,61 +3365,6 @@ rt.execute('TIP_LINES = {} NS.Set("tooltipExtras", false) POST[0](GameTooltip, {
 check("switched off, nothing is added", len(list(rt.eval("TIP_LINES").values())) == 0)
 
 rt.execute("""
-MAIL = { { money = 1500, items = {} }, { money = 0, cod = 500, items = { "Pricey" } },
-         { money = 0, items = { "Wool Cloth", "Linen Cloth" } } }
-function GetInboxNumItems() return #MAIL end
-function GetInboxHeaderInfo(i)
-    local m = MAIL[i]
-    local n = 0 for _ in pairs(m.items) do n = n + 1 end
-    return nil, nil, "Someone", "Hi", m.money, m.cod or 0, 30, n, false, false, false, true, false
-end
-function GetInboxItem(i, a) return MAIL[i].items[a] end
-function TakeInboxMoney(i) MAIL[i].money = 0 end
-function TakeInboxItem(i, a) MAIL[i].items[a] = nil end
-NS.Set("mailOpenAll", true)
-PRINTED = {}
-NS.OpenAllMail()
-RUN_TIMERS(10)
-""")
-check("open all takes the gold", rt.eval("MAIL[1].money") == 0)
-check("and the items", rt.eval("next(MAIL[3].items)") is None)
-check("but never a cash-on-delivery letter", rt.eval("MAIL[2].items[1]") == "Pricey")
-said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
-check("and says what it took", "from the mail" in said and "2 items" in said, said[-200:])
-
-# The server refuses one attachment (a unique item already carried): it is
-# left, not asked for forever, and not counted.
-rt.execute("""
-MAIL = { { money = 0, items = { "Unique Trinket", "Wool Cloth" } } }
-TAKE_CALLS = 0
-function TakeInboxItem(i, a)
-    TAKE_CALLS = TAKE_CALLS + 1
-    if MAIL[i].items[a] ~= "Unique Trinket" then MAIL[i].items[a] = nil end
-end
-PRINTED = {}
-NS.OpenAllMail()
-RUN_TIMERS(40)
-""")
-said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
-check("a refused attachment is left and the run ends",
-      rt.eval("MAIL[1].items[1]") == "Unique Trinket" and rt.eval("MAIL[1].items[2]") is None
-      and len(list(rt.eval("PENDING").values())) == 0, said[-200:])
-check("it is asked for once, not on every step", rt.eval("TAKE_CALLS") == 2, rt.eval("TAKE_CALLS"))
-check("and only what came out is counted", "1 item " in said and "2 items" not in said, said[-200:])
-
-# Slow server: the gold is still showing on the next look, then goes. It is
-# counted once.
-rt.execute("""
-MAIL = { { money = 900, items = {} } }
-function TakeInboxMoney(i) C_Timer.After(0.5, function() MAIL[i].money = 0 end) end
-PRINTED = {}
-NS.OpenAllMail()
-RUN_TIMERS(20)
-""")
-said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
-check("gold the server hands over late is counted once", "900 copper" in said and "1800" not in said, said[-200:])
-
-rt.execute("""
 RELEASED, STOPPED, DISMOUNTED, STOOD = 0, 0, 0, 0
 function IsInInstance() return true, "pvp" end
 function HasSoulstone() return nil end

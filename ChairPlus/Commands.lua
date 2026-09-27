@@ -119,7 +119,6 @@ local ROWS = {
     { key = "tooltipSellPrice", label = "Sell price",          sub = "tooltipExtras",
       tip = "What an item sells to a merchant for; a stack's worth for a stack in your bags." },
     { key = "tooltipIDs",       label = "Item and spell IDs",  sub = "tooltipExtras" },
-    { key = "mailOpenAll",      label = "Open all mail button" },
     { key = "autoReleaseBG",    label = "Release in battlegrounds" },
     { key = "skipCinematics",   label = "Skip cinematics" },
     { key = "autoDismount",     label = "Dismount and stand when needed" },

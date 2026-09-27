@@ -119,7 +119,6 @@ ns.defaults = {
     tooltipIDs          = false,    -- item and spell IDs
 
     -- Mail and small automations (Mail.lua)
-    mailOpenAll         = false,    -- an "Open all" button on the inbox
     autoReleaseBG       = false,    -- release on dying in a battleground
     skipCinematics      = false,    -- the in-game cutscenes
     autoDismount        = false,    -- dismount / stand on those errors

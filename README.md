@@ -98,7 +98,6 @@ ChairCraft also publishes its own launcher, so other bar addons can show a chair
 
 **Tooltips, mail and small automations**
 - Sell prices on item tooltips, and item and spell IDs.
-- An **Open all** button on the mailbox that takes every letter's gold and items. It skips cash-on-delivery and GM mail, and stops when your bags are full.
 - Release in battlegrounds, skip cinematics, and dismount or stand up when an action needs it.
 
 **Threat meter**
