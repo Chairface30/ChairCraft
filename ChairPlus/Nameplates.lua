@@ -7,8 +7,11 @@
 --   a non-tank has aggro  it is on a group member whose role is not Tank
 --   another tank has it   it is on another group member whose role is Tank
 --
--- A mob that is not in combat, or is on someone outside the group, keeps its
--- normal color. Each state can be switched off on its own.
+-- Only while you are the tank: your group role, or the roles ticked in the
+-- group finder when you have none (ns.PlayerIsTank, Threat.lua). Anyone else
+-- sees every plate in its normal colors. A mob that is not in combat, or is
+-- on someone outside the group, keeps its normal color too. Each state can be
+-- switched off on its own.
 --
 -- The color goes onto the plate's health bar, and is put back on after the
 -- client recolors it (a post-hook on CompactUnitFrame_UpdateHealthColor, so
@@ -71,7 +74,9 @@ end
 local function Paint(unit)
     local bar = HealthBar(unit)
     if not bar then return end
-    local state = ns.IsEnabled("nameplateThreat") and ns.NameplateState(unit) or nil
+    -- A tank's tool: for anyone else the plates keep their normal colors.
+    local tanking = ns.PlayerIsTank and ns.PlayerIsTank() or false
+    local state = (ns.IsEnabled("nameplateThreat") and tanking) and ns.NameplateState(unit) or nil
     if state and not ns.Get(state) then state = nil end
     if state then
         if not original[bar] then
@@ -122,12 +127,14 @@ end
 
 local EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_THREAT_LIST_UPDATE",
                  "UNIT_TARGET", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
-                 "GROUP_ROSTER_UPDATE", "PLAYER_ROLES_ASSIGNED" }
+                 "GROUP_ROSTER_UPDATE", "PLAYER_ROLES_ASSIGNED",
+                 -- Your role changing while solo or queued: the group finder's.
+                 "LFG_ROLE_UPDATE", "ROLE_CHANGED_INFORM" }
 
 ns.RegisterModule("nameplateThreat", {
     title = "Nameplate threat colors",
-    desc = "Color enemy nameplates by who has aggro: you, a tank, someone who is not a tank, "
-        .. "or aggro that is changing hands. Each color is your own.",
+    desc = "While you are the tank, color enemy nameplates by who has aggro: you, another tank, someone "
+        .. "who is not a tank, or aggro that is changing hands. Each color is your own.",
     Apply = function(enabled)
         if not driver then
             driver = CreateFrame("Frame")

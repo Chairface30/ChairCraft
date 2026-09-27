@@ -3454,7 +3454,8 @@ function UnitIsFriend() return false end
 function UnitExists(u) return true end
 function UnitIsUnit(a, b) return ON_ME end
 function UnitInParty(u) return GROUPED end
-function UnitGroupRolesAssigned(u) return TARGET_ROLE end
+MY_ROLE = "TANK"
+function UnitGroupRolesAssigned(u) if u == "player" then return MY_ROLE end return TARGET_ROLE end
 NS.Set("nameplateThreat", true)
 FireEvent("NAME_PLATE_UNIT_ADDED", "nameplate1")
 """)
@@ -3471,6 +3472,14 @@ rt.execute('GROUPED = false FireEvent("UNIT_THREAT_LIST_UPDATE", "nameplate1")')
 check("on someone outside the group, the plate's own color comes back", colour() == (0.8, 0.0, 0.0), colour())
 rt.execute('GROUPED = true STATUS = 3 NS.Set("npMine", false) FireEvent("UNIT_THREAT_LIST_UPDATE", "nameplate1")')
 check("a state switched off is left alone", colour() == (0.8, 0.0, 0.0), colour())
+rt.execute('NS.Set("npMine", true) MY_ROLE = "DAMAGER" FireEvent("UNIT_THREAT_LIST_UPDATE", "nameplate1")')
+check("not the tank: the plate keeps its normal color", colour() == (0.8, 0.0, 0.0), colour())
+rt.execute('MY_ROLE = "TANK" FireEvent("PLAYER_ROLES_ASSIGNED")')
+check("made the tank, the colors come on", colour() == (0.2, 0.8, 0.2), colour())
+rt.execute('MY_ROLE = "HEALER" FireEvent("PLAYER_ROLES_ASSIGNED")')
+check("and go again, back to normal, when the role changes", colour() == (0.8, 0.0, 0.0), colour())
+rt.execute('MY_ROLE = "NONE" C_LFGList = { GetRoles = function() return { tank = true } end } FireEvent("LFG_ROLE_UPDATE")')
+check("solo, the tank role ticked in the group finder counts", colour() == (0.2, 0.8, 0.2), colour())
 
 print("\nSettings backup")
 rt, g = fresh()

@@ -210,8 +210,9 @@ local ROWS = {
       tip = "The list stays here and in /chair whatsnew either way." },
     { slider = "threatWarnAt",    label = "Warn at",           tab = "threat", sub = "threatWarn", min = 50, max = 100, step = 5, fmt = "%" },
     { header = "Nameplates", tab = "threat" },
-    { key = "nameplateThreat",  label = "Color enemy nameplates by aggro", tab = "threat",
-      tip = "Enemy nameplates take a color for who has aggro. Pick each color; untick one to leave that case alone. "
+    { key = "nameplateThreat",  label = "Color enemy nameplates by aggro (tanking)", tab = "threat",
+      tip = "While you are the tank (your group role, or the tank role ticked in the group finder), enemy nameplates take "
+         .. "a color for who has aggro. Otherwise they keep their normal colors. Pick each color; untick one to leave that case alone. "
          .. "/chair threat nameplates probe says whether this client can read it in combat." },
     { key = "npMine",      label = "I have aggro",           tab = "threat", sub = "nameplateThreat",
       swatch = { "npMineR", "npMineG", "npMineB" } },
