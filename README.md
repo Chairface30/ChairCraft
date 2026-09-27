@@ -5,6 +5,8 @@
 Everything ships **switched off**. Nothing changes about your game until you turn it on, and each feature has its own switch.
 
 - **Open the menu:** type `/chair`, click the chair on the minimap, or go to *Options > AddOns > Chaircraft*.
+- **Find an option:** type part of its name in the search box at the top of the menu.
+- **New here?** `/chair setup` opens a page of the most-used switches. `/chair whatsnew` lists what changed in this version.
 - **Commands:** `/chair help` lists every command.
 - **Health check:** `/chair status` shows which parts loaded and what each one found on your client.
 
@@ -145,7 +147,9 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 - **One list for the whole account**, with a note for each player and an optional number of days before they come off it. No 50-name limit.
 - **Kept in step with the game's own ignore list** on each character: it fills the game's 50 slots from yours, newest first, and picks up anyone you ignore or unignore the normal way.
 - **Hides chat from everyone on the list**, the ones past the game's 50 included.
-- **Chat filters:** hide messages that contain a word from each of a few lines of words you write, with a box to try a message against a filter before you save it. Choose the kinds of chat they cover (channels, say and yell, whispers, group and guild), and friends and guildmates are spared. Each filter counts what it hides. It comes with four starter filters (gold selling, boost ads, guild recruiting, Thunderfury jokes), all off.
+- **Chat filters:** hide messages that contain a word from each of a few lines of words you write, with a box to try a message against a filter before you save it. `{link}` matches any link, and a word in `"quotes"` counts only on its own, even spaced out or with look-alike letters. Choose the kinds of chat they cover (channels, say and yell, whispers, group and guild), and friends and guildmates are spared. Each filter counts what it hides. It comes with five starter filters (gold selling, boost ads, guild recruiting, Thunderfury jokes, crude link jokes), all off.
+- **Hidden tab:** the last 200 messages it hid, and why, with Show in chat and Unignore.
+- **Share filters** as a line of text: Export and Import on the Chat filters tab.
 - **Your normal Ignore goes to ChairIgnore:** ignore someone from the game's right-click menu or with `/ignore` and they are added to ChairIgnore's list, and a small window asks why.
 - Commands: `/chair ignore add First Last: reason` (the reason is optional), `/chair ignore remove First Last`, `/chair ignore list`, `/chair ignore sync`, `/chair ignore status`.
 

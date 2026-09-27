@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0: finding things, and ChairIgnore round two
+
+**New**
+- **Search the menu:** a box in the menu's title bar finds any option by its name or its tooltip, on every page, plus ChairIgnore's options and each part by name. Pick a result to go straight to it; the option is highlighted for a moment.
+- **Quick setup:** the first time Chaircraft loads on an account, one page of the most-used switches, since everything starts off. Reopen it from the General page or with `/chair setup`.
+- **What's new:** after an update, a short list of what changed, once per version. Reopen it from the General page or with `/chair whatsnew`.
+- **ChairIgnore**
+  - **Smarter filter words:** `{link}` matches any item, spell or quest link, and a word in `"quotes"` counts only on its own, even spaced out ("a n a l") or with look-alike letters ("4nal"), and never inside another word ("canal").
+  - A **Crude link jokes** starter filter (`"anal"` + `{link}`), off like the others.
+  - **A Hidden tab:** the last 200 messages ChairIgnore hid, when, from whom, and which filter or listing hid them. **Show in chat** brings one back; **Unignore** takes a listed sender off. Kept for the session unless you tick the option to keep it.
+  - **Share filters:** **Export** a filter as one line of text and **Import** someone else's. An imported filter arrives switched off.
+
 ## 1.3.0: ChairIgnore
 
 **New**

@@ -69,6 +69,7 @@ ns.DEFAULTS = {
     filterGroup    = false,  -- party, raid, instance, guild, officer
     spareFriends   = true,   -- the chat filters never hide a friend or guildmate
     expireDays     = 0,      -- for new entries; 0 is never
+    keepLog        = false,  -- keep the hidden messages log between sessions
 }
 
 function ns.Get(key)

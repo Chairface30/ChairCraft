@@ -194,7 +194,7 @@ print("\nShipped off")
 rt, ev = fresh(on=False)
 check("ChairIgnore is off out of the box", ev("NS.Get('enabled')") is False)
 check("the starter filters are there, every one off",
-      ev("#NS.Filters()") == 4 and all(ev(f"NS.Filters()[{i}].enabled") is False for i in range(1, 5)))
+      ev("#NS.Filters()") == 5 and all(ev(f"NS.Filters()[{i}].enabled") is False for i in range(1, 6)))
 check("off, a listed player's chat is left alone",
       ev("(NS.Add('Spammer Test'))") is not None and ev("CHAT('CHAT_MSG_SAY', 'hi', 'Spammer Test-HomeRealm')") is False)
 check("off, nothing is put on the game's list", ev("#GAME") == 0)
@@ -304,7 +304,98 @@ check("a word that is all symbols is matched as it is",
 print("\nStarter filters are shipped once")
 rt, ev = fresh()
 rt.execute("NS.DeleteFilter(NS.Filters()[4]) NS.InitFilters(ChairIgnoreDB)")
-check("one you delete stays deleted", ev("#NS.Filters()") == 3)
+check("one you delete stays deleted", ev("#NS.Filters()") == 4)
+
+print("\nThe hidden messages log")
+rt, ev = fresh()
+rt.execute("NS.Add('Pest Person') NS.Filters()[1].enabled = true NS.CompileFilters()")
+rt.execute("CHAT('CHAT_MSG_SAY', 'hello there', 'Pest Person-HomeRealm')")
+rt.execute("CHAT('CHAT_MSG_CHANNEL', 'cheapest gold here', 'Gold Seller-Otherrealm')")
+rt.execute("CHAT('CHAT_MSG_CHANNEL', 'an ordinary message', 'Nice Person-Otherrealm')")
+check("each hidden message is logged, and only those", ev("#NS.HiddenLog()") == 2)
+check("with why: a listed player",
+      ev("NS.HiddenLog()[1].why") == "listed" and ev("NS.HiddenLog()[1].kind") == "say"
+      and ev("NS.HiddenLog()[1].text") == "hello there")
+check("or the filter's name", ev("NS.HiddenLog()[2].why") == "Gold selling"
+      and ev("NS.HiddenLog()[2].sender") == "Gold Seller-Otherrealm")
+rt.execute("NS.ShowWindow() ChairIgnoreWindow.tabs.hidden._scripts.OnClick()")
+check("the Hidden tab lists them newest first",
+      ev("ChairIgnoreWindow.pages.hidden.rows[1].cols[4]:GetText()") == "Gold selling"
+      and ev("ChairIgnoreWindow.pages.hidden.rows[2].cols[2]:GetText()") == "Pest Person")
+rt.execute("""
+local page = ChairIgnoreWindow.pages.hidden
+page.rows[2]._scripts.OnClick(page.rows[2])
+PRINTED = {}
+page.show._scripts.OnClick()
+""")
+said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
+check("Show in chat brings a message back, marked", "hidden by ChairIgnore" in said and "hello there" in said, said)
+rt.execute("ChairIgnoreWindow.pages.hidden.unignore._scripts.OnClick()")
+check("Unignore takes a listed sender off the list", ev("NS.IsListed('Pest Person')") is False)
+rt.execute("for i = 1, 250 do CHAT('CHAT_MSG_CHANNEL', 'cheapest gold ' .. i, 'Gold Seller-Otherrealm') end")
+check("at most 200 are kept, the oldest dropped",
+      ev("#NS.HiddenLog()") == 200 and ev("NS.HiddenLog()[200].text") == "cheapest gold 250")
+rt.execute("ChairIgnoreWindow.pages.hidden.clear._scripts.OnClick()")
+check("Clear empties it", ev("#NS.HiddenLog()") == 0)
+check("kept for the session only by default", ev("ChairIgnoreDB.log") is None)
+rt.execute("NS.Set('keepLog', true) CHAT('CHAT_MSG_CHANNEL', 'cheapest gold again', 'Gold Seller-Otherrealm')")
+check("with Keep on, it lives in the saved data", ev("#ChairIgnoreDB.log") == 1)
+
+print("\nSharing filters")
+def with_libs(rt):
+    for lib in ("Libs/LibStub/LibStub.lua", "Libs/LibDeflate/LibDeflate.lua", "Libs/LibSerialize/LibSerialize.lua"):
+        rt.execute("local f = assert(loadstring(...)) f()", open(lib, encoding="utf-8").read())
+rt, ev = fresh()
+with_libs(rt)
+rt.execute("""
+local f = NS.Filters()[1]
+f.enabled = true f.blocked = 42 f.squeeze = true
+SHARED = NS.ExportFilter(f)
+""")
+shared = ev("SHARED")
+check("a filter exports as one line of text", isinstance(shared, str) and shared.startswith("!CI:1!")
+      and "\n" not in shared, str(shared)[:40])
+rt.execute("IMPORTED = NS.ImportFilter(SHARED)")
+check("and imports back as a new filter", ev("#NS.Filters()") == 6 and ev("IMPORTED.name") == "Gold selling (2)")
+check("with its words and squeeze setting",
+      ev("IMPORTED.lines[1]") == ev("NS.Filters()[1].lines[1]") and ev("IMPORTED.squeeze") is True)
+check("but switched off, with nothing counted", ev("IMPORTED.enabled") is False and ev("IMPORTED.blocked") == 0)
+rt.execute("AGAIN = NS.ImportFilter(SHARED)")
+check("a third copy is named (3)", ev("AGAIN.name") == "Gold selling (3)")
+check("spaces and line breaks pasted around it do not matter",
+      ev("NS.ImportFilter('  ' .. SHARED:sub(1, 20) .. '\\n' .. SHARED:sub(21) .. '  ') ~= nil") is True)
+check("text that is not a filter is refused, not an error",
+      ev("select(2, NS.ImportFilter('hello'))") == "that is not a ChairIgnore filter")
+check("a damaged filter is refused",
+      ev("select(2, NS.ImportFilter('!CI:1!notreallyafilter'))") == "the text is damaged")
+check("nothing is exported without a filter picked", ev("select(2, NS.ExportFilter(nil))") == "pick a filter first")
+
+print("\nSmarter filter words")
+rt, ev = fresh()
+LINK = "|cffa335ee|Hitem:19019::::::::60:::::|h[Thunderfury, Blessed Blade of the Windseeker]|h|r"
+rt.globals().LINK = LINK
+rt.execute("CRUDE = { lines = { '\"anal\"', '{link}' } }")
+def hides(text):
+    rt.globals().MSG = text
+    return rt.eval("NS.MatchFilter(MSG, CRUDE) ~= nil")
+check("{link} and a quoted word: 'anal [link]' is caught", hides("anal " + LINK))
+check("spaced out", hides("a n a l " + LINK))
+check("with dots", hides("a.n.a.l " + LINK))
+check("with a look-alike letter", hides("4nal " + LINK))
+check("in capitals", hides("ANAL " + LINK))
+check("inside another word it is not: canal", not hides("the canal " + LINK))
+check("nor analysis", not hides("analysis of " + LINK))
+check("nor banal", not hides("so banal " + LINK))
+check("without a link it is not", not hides("anal"))
+check("and a plain [bracket] typed by hand is not a link", not hides("anal [Thunderfury]"))
+check("the starter filter ships, switched off",
+      ev("(function() for _, f in ipairs(NS.Filters()) do if f.name == 'Crude link jokes' then return f.enabled end end end)()") is False)
+rt.execute("for _, f in ipairs(NS.Filters()) do if f.name == 'Crude link jokes' then f.enabled = true end end NS.CompileFilters()")
+rt.globals().CHATLINE = "anal " + LINK
+check("switched on, it hides the chat line",
+      ev("CHAT('CHAT_MSG_CHANNEL', CHATLINE, 'Joke Teller-Otherrealm')") is True)
+check("the test box says which line a miss lacks, with the new words too",
+      (lambda: (rt.globals().__setitem__("MSG", "the canal " + LINK), ev("NS.MissingLine(MSG, CRUDE)"))[1])() == 1)
 
 print("\nIgnoring the normal way")
 rt, ev = fresh()
@@ -422,6 +513,12 @@ check("and, for a miss, which line of words it lacks",
       ev("ChairIgnoreWindow.pages.filters.result:GetText()"))
 rt.execute("ChairIgnoreWindow.tabs.options._scripts.OnClick()")
 check("the Options tab draws", ev("ChairIgnoreWindow.pages.options:IsShown()") is True)
+entries = rt.eval("NS.SearchEntries()")
+labels = [entries[i].label for i in range(1, len(entries) + 1)]
+check("the menu's search can find ChairIgnore's tabs and options",
+      "ChairIgnore: Chat filters" in labels and "Turn on ChairIgnore" in labels, labels)
+rt.execute("for _, e in ipairs(NS.SearchEntries()) do if e.label == 'ChairIgnore: Chat filters' then e.open() end end")
+check("and opening one goes to its tab", ev("ChairIgnoreWindow.pages.filters:IsShown()") is True)
 
 print("")
 if failures:

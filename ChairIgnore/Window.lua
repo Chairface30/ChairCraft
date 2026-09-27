@@ -379,6 +379,27 @@ local function BuildFilters(page)
     end)
     page.reset:SetPoint("LEFT", page.delete, "RIGHT", 6, 0)
 
+    -- Sharing: one filter as a line of text, and back.
+    page.export = Button(page, 70, "Export", function()
+        local text, why = ns.ExportFilter(filters.selected)
+        if not text then ns.Print("Not exported:", why .. ".") return end
+        if Chaircraft.ShowTextBox then
+            Chaircraft.ShowTextBox("filter: " .. tostring(filters.selected.name), text, nil,
+                "Press ctrl-A then ctrl-C, and paste it to whoever wants the filter.")
+        end
+    end)
+    page.export:SetPoint("TOPLEFT", new, "BOTTOMLEFT", 0, -6)
+    page.import = Button(page, 70, "Import", function()
+        if not Chaircraft.ShowTextBox then return end
+        Chaircraft.ShowTextBox("filter import", "", function(typed)
+            local filter, why = ns.ImportFilter(typed)
+            if not filter then ns.Print("Not imported:", why .. ".") return end
+            ns.Print("Imported \"" .. filter.name .. "\", switched off. Tick it on the Chat filters tab to use it.")
+            SelectFilter(filter)
+        end, "Paste a ChairIgnore filter here, then press Import. It arrives switched off.")
+    end)
+    page.import:SetPoint("LEFT", page.export, "RIGHT", 6, 0)
+
     -- The editor, to the right of the list.
     local edit = CreateFrame("Frame", nil, page)
     edit:SetSize(340, 330)
@@ -391,7 +412,9 @@ local function BuildFilters(page)
     page.nameBox:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", 0, -4)
 
     local help = Label(edit, "Hide a message that has a word from every line below. "
-        .. "Separate words with commas.", "GameFontDisableSmall")
+        .. "Separate words with commas. |cffffd100{link}|r is any link. A word in "
+        .. "|cffffd100\"quotes\"|r counts only on its own, even spaced out or with "
+        .. "look-alike letters (4 for a, 0 for o).", "GameFontDisableSmall")
     help:SetPoint("TOPLEFT", page.nameBox, "BOTTOMLEFT", 0, -10)
     help:SetWidth(330)
 
@@ -461,6 +484,109 @@ local function RefreshFilters(page)
     page.none:SetShown(not has)
     page.delete:SetEnabled(has)
     page.reset:SetEnabled(has)
+    page.export:SetEnabled(has)
+end
+
+-------------------------------------------------------------------------------
+-- Hidden
+-------------------------------------------------------------------------------
+-- What ChairIgnore hid, newest first: to check a filter is not catching
+-- more than it should, and to bring back something worth reading.
+
+local hidden = { offset = 0 }
+local HIDDEN_ROWS = 13
+
+local HIDDEN_COLUMNS = {
+    { title = "When", width = 60 },
+    { title = "From", width = 150 },
+    { title = "Message", width = 290 },
+    { title = "Why", width = 100 },
+}
+
+local function TimeText(t)
+    if not t or type(date) ~= "function" then return "" end
+    return date("%H:%M", t)
+end
+
+-- The log newest first.
+local function Newest()
+    local log, out = ns.HiddenLog(), {}
+    for i = #log, 1, -1 do out[#out + 1] = log[i] end
+    return out
+end
+
+local function BuildHidden(page)
+    local head = CreateFrame("Frame", nil, page)
+    head:SetSize(600, 16)
+    head:SetPoint("TOPLEFT", 0, 0)
+    Header(head, HIDDEN_COLUMNS)
+
+    local list = CreateFrame("Frame", nil, page)
+    list:SetSize(600, HIDDEN_ROWS * ROW_H)
+    list:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -2)
+    local bg = list:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.3)
+    page.rows = {}
+    for i = 1, HIDDEN_ROWS do
+        local row = Row(list, 600, HIDDEN_COLUMNS)
+        row:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
+        row:SetScript("OnClick", function(self)
+            hidden.selected = self.entry
+            ns.RefreshWindow()
+        end)
+        page.rows[i] = row
+    end
+    Scroller(list, function() return hidden.offset end, function(v) hidden.offset = v end,
+        function() return math.max(0, #ns.HiddenLog() - HIDDEN_ROWS) end)
+
+    page.show = Button(page, 110, "Show in chat", function()
+        local e = hidden.selected
+        if not e then return end
+        print("|cff808080[hidden by ChairIgnore, " .. (e.why == "listed" and "listed player" or e.why) .. "]|r "
+            .. "[" .. e.kind .. "] " .. tostring(e.sender or "?") .. ": " .. (e.text or "<unreadable>"))
+    end)
+    page.show:SetPoint("TOPLEFT", list, "BOTTOMLEFT", 0, -8)
+    page.unignore = Button(page, 90, "Unignore", function()
+        local e = hidden.selected
+        if e and e.why == "listed" and e.sender and ns.Remove(e.sender) then
+            ns.Print(e.sender, "is off the list.")
+        end
+        ns.RefreshWindow()
+    end)
+    page.unignore:SetPoint("LEFT", page.show, "RIGHT", 6, 0)
+    page.clear = Button(page, 70, "Clear", function()
+        ns.ClearHiddenLog()
+        hidden.selected, hidden.offset = nil, 0
+        ns.RefreshWindow()
+    end)
+    page.clear:SetPoint("LEFT", page.unignore, "RIGHT", 6, 0)
+    page.note = Label(page, "", "GameFontDisableSmall")
+    page.note:SetPoint("LEFT", page.clear, "RIGHT", 12, 0)
+end
+
+local function RefreshHidden(page)
+    local list = Newest()
+    hidden.offset = math.max(0, math.min(hidden.offset, #list - HIDDEN_ROWS))
+    for i, row in ipairs(page.rows) do
+        local e = list[hidden.offset + i]
+        row.entry = e
+        if e then
+            row.cols[1]:SetText(TimeText(e.at))
+            row.cols[2]:SetText(ns.ShortName(e.sender or "?"))
+            row.cols[3]:SetText(e.text or "|cff808080(unreadable)|r")
+            row.cols[4]:SetText(e.why == "listed" and "listed" or e.why)
+            row.selected:SetShown(e == hidden.selected)
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    local e = hidden.selected
+    page.show:SetEnabled(e ~= nil)
+    page.unignore:SetEnabled(e ~= nil and e.why == "listed" and ns.IsListed(e.sender or ""))
+    page.note:SetText(#list .. " kept (at most " .. ns.LOG_MAX .. ")"
+        .. (ns.Get("keepLog") and ", saved between sessions." or ", this session only."))
 end
 
 -------------------------------------------------------------------------------
@@ -478,6 +604,7 @@ local OPTIONS = {
     { key = "filterWhisper", text = "in whispers", sub = true },
     { key = "filterGroup", text = "in party, raid, instance and guild chat", sub = true },
     { key = "spareFriends", text = "never on a friend or guildmate", sub = true },
+    { key = "keepLog", text = "Keep the Hidden tab's messages between sessions" },
 }
 
 local function BuildOptions(page)
@@ -536,6 +663,7 @@ end
 local TABS = {
     { key = "players", title = "Players", build = BuildPlayers, refresh = RefreshPlayers },
     { key = "filters", title = "Chat filters", build = BuildFilters, refresh = RefreshFilters },
+    { key = "hidden", title = "Hidden", build = BuildHidden, refresh = RefreshHidden },
     { key = "options", title = "Options", build = BuildOptions, refresh = RefreshOptions },
 }
 
@@ -573,19 +701,20 @@ local function Build()
     -- missed, beside the tabs.
     window.offNote = Label(window, "|cffff7f7fChairIgnore is off.|r Nothing here runs, and ignoring "
         .. "someone only reaches the game's list, until you tick Turn on ChairIgnore.", "GameFontHighlightSmall")
-    window.offNote:SetPoint("TOPLEFT", 372, -46)
-    window.offNote:SetWidth(250)
+    local noteX = 16 + #TABS * 104 + 4
+    window.offNote:SetPoint("TOPLEFT", noteX, -46)
+    window.offNote:SetWidth(WIDTH - noteX - 16)
 
     window.tabs, window.pages = {}, {}
     local x = 16
     for _, tab in ipairs(TABS) do
-        local b = Button(window, 110, tab.title, function()
+        local b = Button(window, 100, tab.title, function()
             currentTab = tab.key
             ns.RefreshWindow()
         end)
         b:SetPoint("TOPLEFT", x, -48)
         window.tabs[tab.key] = b
-        x = x + 116
+        x = x + 104
 
         local page = CreateFrame("Frame", nil, window)
         page:SetPoint("TOPLEFT", 16, -84)
@@ -706,6 +835,29 @@ end
 
 function ns.GetWindow()
     return Build()
+end
+
+-- Opens the page on one tab ("players", "filters", "options").
+function ns.ShowTab(key)
+    currentTab = key
+    ns.RefreshWindow()
+end
+
+-- What the menu's search box can find here: each tab by name, and each
+-- option by its label. Opening one goes to its tab (the part's page is
+-- opened first, by the menu).
+function ns.SearchEntries()
+    local out = {}
+    for _, tab in ipairs(TABS) do
+        out[#out + 1] = { label = "ChairIgnore: " .. tab.title, open = function() ns.ShowTab(tab.key) end }
+    end
+    for _, option in ipairs(OPTIONS) do
+        if option.text then
+            out[#out + 1] = { label = option.text, open = function() ns.ShowTab("options") end }
+        end
+    end
+    out[#out + 1] = { label = "Turn on ChairIgnore", open = function() ns.ShowTab("options") end }
+    return out
 end
 
 function ns.ShowWindow()

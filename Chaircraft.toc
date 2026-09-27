@@ -3,7 +3,7 @@
 ## Notes: ChairPlus, ChairAuras, ChairSnack, ChairTracker and ChairIgnore in one addon, under one menu. Type /chair.
 ## Author: Chairface
 ## IconTexture: Interface\AddOns\Chaircraft\ChairSnack\minimap
-## Version: 1.3.0
+## Version: 1.4.0
 ## SavedVariables: ChairPlusDB, ChairAurasDB, SnapSnackDB, WOWFTrackerAccountDB, ChairIgnoreDB
 ## SavedVariablesPerCharacter: WOWFTrackerDB, ChairIgnoreCharDB
 
@@ -90,6 +90,10 @@ ChairTracker\Options.lua
 ChairIgnore\Core.lua
 ChairIgnore\Filters.lua
 ChairIgnore\Window.lua
+
+# The welcome page and What's new: after every part, before the hub.
+Suite\Welcome.lua
+Suite\WhatsNew.lua
 
 # Must load last: it captures every part's slash handler before replacing them
 # all with /chair, so every file above must already have registered.

@@ -4199,6 +4199,88 @@ check("the toggle is on the OSD page, not under the display's own switch",
           if r.key == "hideStatusBars" then return r.tab == "osd" and r.sub == nil end end
           return "no ROWS" end)()""") in (True, "no ROWS"))
 
+print("\nWelcome page and What's new")
+# Suite/Welcome.lua and Suite/WhatsNew.lua ride on ChairPlus's widgets and
+# settings; loaded here before BOOT so What's new hears PLAYER_LOGIN.
+SUITE_FILES = """
+SUITE_TABLE.version = "1.4.0"
+for _, f in ipairs({ "Suite/Welcome.lua", "Suite/WhatsNew.lua" }) do
+    assert(loadfile(f))("Chaircraft", SUITE_TABLE)
+end
+"""
+rt, g = fresh(stock=True)
+rt.execute("ChairPlusDB = nil")
+rt.execute(SUITE_FILES)
+rt.execute("BOOT() RUN_TIMERS(1)")
+check("a brand-new account gets the welcome page", rt.eval("ChaircraftWelcome and ChaircraftWelcome:IsShown()") is True)
+check("and not What's new on top of it",
+      rt.eval("ChaircraftWhatsNew == nil or not ChaircraftWhatsNew:IsShown()") is True)
+check("both remembered for next time",
+      rt.eval("ChairPlusDB.welcomed") is True and rt.eval("ChairPlusDB.lastSeenVersion") == "1.4.0")
+check("its first switch is the menu's own row, label and all",
+      rt.eval("ChaircraftWelcome.checks[1].info.label") == "Show the display")
+rt.execute("""
+local c = ChaircraftWelcome.checks[1].check
+c:SetChecked(true)
+rawget(c, "_scripts").OnClick(c)
+""")
+check("ticking it switches the setting on", g.NS.Get("osd") is True)
+rt.execute("ChaircraftWelcome:Hide() SUITE_TABLE.MaybeWelcome()")
+check("it does not come back on the next login", rt.eval("ChaircraftWelcome:IsShown()") is False)
+
+rt, g = fresh(stock=True)
+rt.execute("""ChairPlusDB = { profiles = { ["guid:alt"] = { settings = { sellJunk = true } } },
+                              lastSeenVersion = "1.3.0" }""")
+rt.execute(SUITE_FILES)
+rt.execute("BOOT() RUN_TIMERS(1)")
+check("an account updated from 1.3.0 gets no welcome page",
+      rt.eval("ChaircraftWelcome == nil or not ChaircraftWelcome:IsShown()") is True)
+check("but What's new, once", rt.eval("ChaircraftWhatsNew and ChaircraftWhatsNew:IsShown()") is True
+      and rt.eval("ChairPlusDB.lastSeenVersion") == "1.4.0")
+rt.execute("ChaircraftWhatsNew:Hide()")
+check("and not again for the same version", rt.eval("SUITE_TABLE.MaybeWhatsNew(false)") is False)
+print("\nSearching the menu")
+rt, g = fresh()
+rt.execute('''
+SUITE_TABLE.parts = { { key = "chairplus", title = "ChairPlus" },
+    { key = "chairignore", title = "ChairIgnore", blurb = "One ignore list for every character.",
+      Open = function() OPENED_PART = "ignore" return true end,
+      Search = function() return { { label = "Hide chat from everyone on the list",
+                                     open = function() OPENED_TAB = "options" end } } end } }
+BOOT()
+''')
+def search(q):
+    return rt.eval("NS.SearchSettings(%r)" % q)
+hits = search("repair")
+labels = [hits[i].label for i in range(1, len(hits) + 1)]
+check("search finds an option by its label", "Repair automatically" in labels, labels)
+check("and says which page it is on",
+      any(hits[i].label == "Repair automatically" and hits[i].where == "Plus" for i in range(1, len(hits) + 1)))
+check("case does not matter", len(search("REPAIR")) == len(hits))
+check("one letter shows nothing", len(search("r")) == 0)
+tip_only = search("bought back")
+check("a word only in an option's tooltip still finds it",
+      any(tip_only[i].label == "Sell junk automatically" for i in range(1, len(tip_only) + 1)))
+rt.execute("NS.GoToSetting(NS.SearchSettings('dark background')[1])")
+check("choosing a result opens its page", rt.eval("NS.CurrentPage()") == "osd"
+      and rt.eval("ChairPlusPanel:IsShown()") is True)
+rt.execute("NS.GoToSetting(NS.SearchSettings('hide chat from')[1])")
+check("another part's option opens that part, on the right tab",
+      rt.eval("OPENED_PART") == "ignore" and rt.eval("OPENED_TAB") == "options")
+check("a part is found by name", any(search("chairignore")[i].where == "Page"
+                                     for i in range(1, len(search("chairignore")) + 1)))
+rt.execute('''
+local box = ChairPlusPanel.search
+box:SetText("zzzz") rawget(box, "_scripts").OnTextChanged(box)
+''')
+check("no match says so", rt.eval("ChairPlusPanel.searchList.none:IsShown()") is True)
+
+check("the General page offers both again",
+      rt.eval("""(function() local found = 0
+          for _, r in ipairs(NS.ROWS) do
+              if r.tab == "general" and (r.action == "Quick setup..." or r.action == "What's new...") then found = found + 1 end
+          end return found end)()""") == 2)
+
 
 if failures:
     print(f"{len(failures)} check(s) failed:")

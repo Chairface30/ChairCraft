@@ -186,6 +186,13 @@ local ROWS = {
       tip = "The chair on the minimap. /chair still opens the menu." },
     { key = "osdLocked",  label = "Lock the on-screen display", tab = "general",
       tip = "Unlocked, the display can be dragged anywhere." },
+    { header = "Getting started", tab = "general" },
+    { action = "Quick setup...", tab = "general",
+      run = function() if Chaircraft.ShowWelcome then Chaircraft.ShowWelcome() end end,
+      tip = "The most-used switches on one page, as shown the first time Chaircraft loads." },
+    { action = "What's new...", tab = "general",
+      run = function() if Chaircraft.ShowWhatsNew then Chaircraft.ShowWhatsNew() end end,
+      tip = "What changed in this version." },
     { slider = "threatWarnAt",    label = "Warn at",           tab = "threat", sub = "threatWarn", min = 50, max = 100, step = 5, fmt = "%" },
     { header = "Nameplates", tab = "threat" },
     { key = "nameplateThreat",  label = "Color enemy nameplates by aggro", tab = "threat",
@@ -202,6 +209,9 @@ local ROWS = {
     { key = "npOtherTank", label = "Another tank has aggro", tab = "threat", sub = "nameplateThreat",
       swatch = { "npOtherTankR", "npOtherTankG", "npOtherTankB" } },
 }
+-- Read by the welcome window (labels and tips for its switches) and by the
+-- menu's search box. Nothing outside this file changes it.
+ns.ROWS = ROWS
 
 -- A row's tooltip: its own tip, or the description of the module it switches.
 local function RowTip(row)
@@ -210,6 +220,7 @@ local function RowTip(row)
     local module = key and ns.modules and ns.modules[key]
     return module and module.desc or nil
 end
+ns.RowTip = RowTip
 
 local function AttachTip(frame, row)
     local text = RowTip(row)
@@ -585,6 +596,174 @@ local function RefreshPanel()
     currentTab = realTab
 end
 
+-------------------------------------------------------------------------------
+-- Search
+-------------------------------------------------------------------------------
+-- The box in the menu's title bar. Finds any option by its label or its
+-- tooltip, across every page, plus the other parts by name and whatever
+-- options a part lists for searching (part.Search in Suite/Namespace.lua).
+
+local PAGE_NAMES = { plus = "Plus", osd = "OSD", threat = "Threat", arrow = "Arrow", general = "General" }
+
+-- Results for a query, best first: label hits before tooltip-only hits.
+-- Under two letters there is nothing to show.
+function ns.SearchSettings(query)
+    query = tostring(query or ""):lower():match("^%s*(.-)%s*$")
+    if #query < 2 then return {} end
+    local function Has(text)
+        return type(text) == "string" and text:lower():find(query, 1, true) ~= nil
+    end
+    local byLabel, byTip = {}, {}
+    for _, row in ipairs(ROWS) do
+        local label = row.label or row.action
+        if label and not row.header then
+            local page = PAGE_NAMES[row.tab or "plus"] or row.tab
+            if Has(label) then
+                byLabel[#byLabel + 1] = { label = label, where = page, row = row }
+            elseif Has(RowTip(row)) then
+                byTip[#byTip + 1] = { label = label, where = page, row = row }
+            end
+        end
+    end
+    for _, part in ipairs(Chaircraft and Chaircraft.parts or {}) do
+        if part.key ~= "chairplus" then
+            if Has(part.title) or Has(part.blurb) then
+                byLabel[#byLabel + 1] = { label = part.title, where = "Page", part = part }
+            end
+            local ok, entries = pcall(function() return part.Search and part.Search() or {} end)
+            for _, entry in ipairs(ok and entries or {}) do
+                if Has(entry.label) then
+                    byLabel[#byLabel + 1] = { label = entry.label, where = part.title, part = part, open = entry.open }
+                end
+            end
+        end
+    end
+    for _, hit in ipairs(byTip) do byLabel[#byLabel + 1] = hit end
+    return byLabel
+end
+
+-- A moment's highlight behind the row a search went to.
+local flash
+local function Flash(widget)
+    if not (panel and widget) then return end
+    if not flash then
+        flash = panel:CreateTexture(nil, "BACKGROUND", nil, 1)
+        flash:SetColorTexture(1, 0.82, 0, 0.22)
+    end
+    flash:ClearAllPoints()
+    flash:SetPoint("LEFT", widget, "LEFT", -4, 0)
+    flash:SetSize(236, 26)
+    flash:Show()
+    flash.shownAt = (GetTime and GetTime()) or 0
+    local shownAt = flash.shownAt
+    ns.After(1.5, function()
+        if flash and flash.shownAt == shownAt then flash:Hide() end
+    end)
+end
+
+-- Takes you to a result: its page, with the row flashed, or the part's page.
+function ns.GoToSetting(result)
+    if type(result) ~= "table" then return end
+    if result.row then
+        ns.OpenPanel(result.row.tab or "plus")
+        local key = result.row.key or result.row.slider
+        local widget = (checkboxes[key] and checkboxes[key].check) or (sliders[key] and sliders[key].slider)
+        Flash(widget)
+    elseif result.part then
+        pcall(result.part.Open)
+        if result.open then pcall(result.open) end
+    end
+end
+
+local function BuildSearch(close)
+    local RESULTS = 8
+    local box = CreateFrame("EditBox", nil, panel)
+    box:SetSize(150, 20)
+    box:SetPoint("RIGHT", close, "LEFT", -8, 0)
+    box:SetAutoFocus(false)
+    box:SetFontObject("GameFontHighlightSmall")
+    box:SetMaxLetters(40)
+    box:SetTextInsets(6, 6, 0, 0)
+    local boxBg = box:CreateTexture(nil, "BACKGROUND")
+    boxBg:SetAllPoints()
+    boxBg:SetColorTexture(1, 1, 1, 0.08)
+    local hint = box:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    hint:SetPoint("LEFT", 6, 0)
+    hint:SetText("Search options")
+
+    local list = CreateFrame("Frame", nil, panel)
+    list:SetSize(270, 8)
+    list:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, -2)
+    pcall(list.SetFrameLevel, list, (ns.Num(panel:GetFrameLevel()) or 1) + 30)
+    local listBg = list:CreateTexture(nil, "BACKGROUND")
+    listBg:SetAllPoints()
+    listBg:SetColorTexture(0.08, 0.07, 0.12, 0.98)
+    list:Hide()
+    list.buttons = {}
+    for i = 1, RESULTS do
+        local b = CreateFrame("Button", nil, list)
+        b:SetSize(262, 20)
+        b:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 20)
+        local hl = b:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.1)
+        b.label = b:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        b.label:SetPoint("LEFT", 4, 0)
+        b.label:SetWidth(180)
+        b.label:SetJustifyH("LEFT")
+        b.where = b:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+        b.where:SetPoint("RIGHT", -4, 0)
+        b:SetScript("OnClick", function(self)
+            local result = self.result
+            box:SetText("")
+            box:ClearFocus()
+            list:Hide()
+            ns.GoToSetting(result)
+        end)
+        list.buttons[i] = b
+    end
+    list.none = list:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    list.none:SetPoint("TOPLEFT", 8, -8)
+    list.none:SetText("Nothing matches.")
+
+    local results = {}
+    box:SetScript("OnTextChanged", function(self)
+        local text = self:GetText() or ""
+        hint:SetShown(text == "" and not self:HasFocus())
+        results = ns.SearchSettings(text)
+        if #text:gsub("%s", "") < 2 then list:Hide() return end
+        for i, b in ipairs(list.buttons) do
+            local r = results[i]
+            b.result = r
+            if r then
+                b.label:SetText(r.label)
+                b.where:SetText(r.where or "")
+                b:Show()
+            else
+                b:Hide()
+            end
+        end
+        list.none:SetShown(#results == 0)
+        list:SetHeight(8 + math.max(1, math.min(#results, RESULTS)) * 20)
+        list:Show()
+    end)
+    box:SetScript("OnEditFocusGained", function() hint:Hide() end)
+    box:SetScript("OnEditFocusLost", function(self) hint:SetShown((self:GetText() or "") == "") end)
+    box:SetScript("OnEnterPressed", function(self)
+        local first = results[1]
+        self:SetText("")
+        self:ClearFocus()
+        list:Hide()
+        if first then ns.GoToSetting(first) end
+    end)
+    box:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+        list:Hide()
+    end)
+    panel.search, panel.searchList = box, list
+end
+
 local function BuildPanel()
     if panel then return panel end
 
@@ -627,6 +806,7 @@ local function BuildPanel()
     closeText:SetAllPoints()
     closeText:SetText("x")
     close:SetScript("OnClick", function() panel:Hide() end)
+    BuildSearch(close)
 
     ---------------------------------------------------------------------------
     -- Nav row
@@ -793,6 +973,15 @@ local function BuildPanel()
             sliders[key] = { slider = slider, label = slider.labelText, row = row,
                              sub = row.sub, tab = tab }
             y[col] = y[col] - 40
+        elseif row.action then
+            -- A button on its own line, for something the page opens rather
+            -- than a setting it holds.
+            local button = MakeButton(panel, 140, row.action)
+            button:SetPoint("TOPLEFT", COL_X[col] + 4, y[col] - 2)
+            button:SetScript("OnClick", function() pcall(row.run) end)
+            AttachTip(button, row)
+            pageWidgets[tab][#pageWidgets[tab] + 1] = button
+            y[col] = y[col] - 28
         elseif row.header then
             local h = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
             h:SetPoint("TOPLEFT", COL_X[col], y[col] - 4)
@@ -1318,6 +1507,11 @@ function ns.OpenPanel(tab)
     panel:Show()
     if ns.SetOSDArranging then ns.SetOSDArranging(currentTab == "osd") end
     return true
+end
+
+-- Which of this window's own pages is showing ("plus", "osd", ...).
+function ns.CurrentPage()
+    return currentTab
 end
 
 function ns.TogglePanel(tab)

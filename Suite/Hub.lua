@@ -251,6 +251,8 @@ local function Help()
     print("  |cffffd100/chair threat|r - the threat meter's options (|cffffd100on|r, "
         .. "|cffffd100off|r, |cffffd100lock|r, |cffffd100unlock|r, |cffffd100reset|r, "
         .. "|cffffd100preview|r)")
+    print("  |cffffd100/chair setup|r - the welcome page's quick setup")
+    print("  |cffffd100/chair whatsnew|r - what changed in this version")
     print("  |cffffd100/chair status|r - which parts loaded")
 end
 
@@ -313,6 +315,20 @@ local function Handler(input)
             ns.TogglePanel("osd")
         else
             Print("|cffff5555The menu did not load.|r")
+        end
+        return
+    end
+
+    -- The welcome page and What's new, reopened by hand.
+    if token == "setup" or token == "welcome" then
+        if not (Chaircraft.ShowWelcome and Chaircraft.ShowWelcome()) then
+            Print("|cffff5555The welcome page could not open.|r Try |cffffd100/chair status|r.")
+        end
+        return
+    end
+    if token == "whatsnew" or token == "news" then
+        if not (Chaircraft.ShowWhatsNew and Chaircraft.ShowWhatsNew()) then
+            Print("Nothing listed for v" .. tostring(Chaircraft.version) .. ".")
         end
         return
     end

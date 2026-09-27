@@ -173,6 +173,11 @@ Chaircraft.parts = {
             local ns = Chaircraft.ChairIgnore
             return (ns and ns.ShowWindow ~= nil) and true or false
         end,
+        -- Its tabs and options, for the menu's search box.
+        Search = function()
+            local ns = Chaircraft.ChairIgnore
+            return ns and ns.SearchEntries and ns.SearchEntries() or {}
+        end,
     },
 }
 

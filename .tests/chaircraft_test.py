@@ -307,6 +307,9 @@ check("the version is read from the TOC", vrt.eval("SUITE.version") == toc_versi
       (vrt.eval("SUITE.version"), toc_version))
 src = io.open("Suite/Namespace.lua", encoding="utf-8").read() + io.open("ChairPlus/Core.lua", encoding="utf-8").read()
 check("and no file keeps a copy of its own", not re.search(r'version\s*=\s*"[0-9]', src))
+whats_new = io.open("Suite/WhatsNew.lua", encoding="utf-8").read()
+check("What's new has an entry for the TOC's version (add one each release)",
+      '["' + toc_version + '"] = {' in whats_new, toc_version)
 check("namespace hands out separate tables",
       rt.eval("SUITE.ChairPlus ~= SUITE.ChairSnack "
               "and SUITE.ChairPlus ~= SUITE.ChairAuras") is True)

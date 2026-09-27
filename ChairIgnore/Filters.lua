@@ -49,6 +49,10 @@ local STARTERS = {
         id = "thunderfury", name = "Thunderfury jokes",
         lines = { "thunderfury" },
     },
+    {
+        id = "linkjoke", name = "Crude link jokes",
+        lines = { '"anal"', "{link}" },
+    },
 }
 
 local function Copy(filter)
@@ -89,12 +93,55 @@ local function Squeeze(text)
     return (text:gsub("[%s%p]", ""))
 end
 
--- A line of words, as lowercase words (and squeezed, when asked).
+-- Letters spammers swap for look-alikes. A word in quotes accepts any of
+-- them in that letter's place.
+local LOOKALIKE = {
+    a = "[a4@]", e = "[e3]", i = "[i1!]", l = "[l1i]", o = "[o0]", s = "[s5%$]", t = "[t7]",
+}
+
+-- A "quoted" word as a Lua pattern: its letters in order, each one or any of
+-- its look-alikes, with spaces or symbols allowed between them. So "anal"
+-- also finds "a n a l", "a.n.a.l" and "4nal". Whole-word is checked by
+-- WholeWordIn, not here.
+local function WholePattern(word)
+    local parts = {}
+    for c in word:gmatch("%S") do
+        parts[#parts + 1] = LOOKALIKE[c] or (c:match("%w") and c) or ("%" .. c)
+    end
+    if #parts == 0 then return nil end
+    return table.concat(parts, "[%s%p]*")
+end
+
+-- Whether the pattern turns up as a word of its own: no letter right before
+-- it or right after it, so "anal" is found in "anal [link]" but not in
+-- "canal" or "analysis".
+local function WholeWordIn(lower, pattern)
+    local from = 1
+    while true do
+        local first, last = lower:find(pattern, from)
+        if not first then return false end
+        local before = first > 1 and lower:sub(first - 1, first - 1) or ""
+        local after = lower:sub(last + 1, last + 1)
+        if not before:match("%a") and not after:match("%a") then return true end
+        from = first + 1
+    end
+end
+
+-- A line of words, as lowercase words (and squeezed, when asked). Two kinds
+-- are special:
+--   {link}     any link: an item, spell, quest or other, however it is named
+--   "word"     only as a whole word, spaced out or with look-alike letters
 local function Words(line, squeeze)
     local out = {}
     for word in tostring(line or ""):gmatch("[^,]+") do
         word = word:match("^%s*(.-)%s*$"):lower()
-        if word ~= "" then
+        local quoted = word:match('^"(.+)"$')
+        if word == "{link}" then
+            out[#out + 1] = { link = true }
+        elseif quoted then
+            local pattern = WholePattern(quoted)
+            if pattern then out[#out + 1] = { whole = pattern } end
+        elseif word ~= "" then
             out[#out + 1] = { plain = word, squeezed = squeeze and Squeeze(word) or nil }
         end
     end
@@ -121,10 +168,17 @@ end
 
 local function LineMatches(words, lower, squeezed)
     for _, word in ipairs(words) do
-        if lower:find(word.plain, 1, true) then return true end
+        if word.link then
+            -- Every link carries the client's |H...|h markup in the raw
+            -- text, whatever it links to. Nobody can type it by hand.
+            if lower:find("|h", 1, true) then return true end
+        elseif word.whole then
+            if WholeWordIn(lower, word.whole) then return true end
+        elseif lower:find(word.plain, 1, true) then return true end
         -- A word that is all symbols ("<", "$") squeezes to nothing, and is
         -- only ever looked for as it is.
-        if squeezed and word.squeezed and word.squeezed ~= "" and squeezed:find(word.squeezed, 1, true) then
+        if squeezed and word.plain and word.squeezed and word.squeezed ~= ""
+            and squeezed:find(word.squeezed, 1, true) then
             return true
         end
     end
@@ -217,6 +271,53 @@ local function IsSpared(sender)
     return false
 end
 
+-------------------------------------------------------------------------------
+-- The hidden messages log
+-------------------------------------------------------------------------------
+-- The last LOG_MAX messages ChairIgnore hid, newest last: when, what kind of
+-- chat, from whom, what it said, and why (the listing, or which filter).
+-- Kept for the session only, unless "keepLog" is on, when it lives in the
+-- account's saved data. Local only: nothing here is ever sent anywhere.
+
+ns.LOG_MAX = 200
+local sessionLog = {}
+
+function ns.HiddenLog()
+    if ns.Get("keepLog") then
+        local db = _G.ChairIgnoreDB
+        if type(db) == "table" then
+            db.log = type(db.log) == "table" and db.log or {}
+            return db.log
+        end
+    end
+    return sessionLog
+end
+
+function ns.ClearHiddenLog()
+    wipe(sessionLog)
+    local db = _G.ChairIgnoreDB
+    if type(db) == "table" then db.log = nil end
+end
+
+-- "CHAT_MSG_RAID_LEADER" -> "raid leader"
+local function KindName(event)
+    return (tostring(event or ""):gsub("^CHAT_MSG_", ""):gsub("_", " "):lower())
+end
+
+local function Remember(event, message, sender, why)
+    local log = ns.HiddenLog()
+    log[#log + 1] = {
+        at = ns.Now(),
+        kind = KindName(event),
+        sender = ns.FullName(sender),
+        -- A message the client kept secret can still be hidden (its sender
+        -- is listed); there is just nothing of it to show.
+        text = ns.Text(message),
+        why = (why == "listed") and "listed" or (type(why) == "table" and why.name) or "?",
+    }
+    while #log > ns.LOG_MAX do table.remove(log, 1) end
+end
+
 -- A chat filter is called once per chat window showing the message. The line
 -- ID is the same for all of them, so each message is counted once.
 local lastLine, lastVerdict
@@ -252,6 +353,7 @@ function ns.ChatFilter(_, event, message, sender, ...)
             why.blocked = (why.blocked or 0) + 1
             ns.session.filtered = ns.session.filtered + 1
         end
+        pcall(Remember, event, message, sender, why)
         -- The Hidden column and the session line change with every hit; an
         -- open window shows it at once. A closed one costs nothing.
         if ns.RefreshWindow then pcall(ns.RefreshWindow) end
@@ -294,6 +396,76 @@ end
 
 function ns.NewFilter()
     local filter = { name = "New filter", lines = { "" }, enabled = false, blocked = 0 }
+    local list = ns.Filters()
+    list[#list + 1] = filter
+    ns.CompileFilters()
+    return filter
+end
+
+-------------------------------------------------------------------------------
+-- Sharing
+-------------------------------------------------------------------------------
+-- One filter as a line of text, to paste to a friend or a forum: its name,
+-- its lines of words and its squeeze setting, serialized and compressed the
+-- same way ChairAuras shares an aura. Never its count or whether it is on:
+-- an imported filter always arrives switched off, for you to look at first.
+
+local SHARE_PREFIX = "!CI:1!"
+
+local function Lib(name)
+    local stub = _G.LibStub
+    if not stub then return nil end
+    local ok, lib = pcall(stub.GetLibrary, stub, name, true)
+    return ok and lib or nil
+end
+
+function ns.ExportFilter(filter)
+    if type(filter) ~= "table" then return nil, "pick a filter first" end
+    local serialize, deflate = Lib("LibSerialize"), Lib("LibDeflate")
+    if not (serialize and deflate) then return nil, "this copy is missing LibSerialize or LibDeflate" end
+    local lines = {}
+    for _, line in ipairs(filter.lines or {}) do lines[#lines + 1] = tostring(line) end
+    local ok, text = pcall(function()
+        local packed = serialize:Serialize({ v = 1, name = tostring(filter.name or ""),
+                                             lines = lines, squeeze = filter.squeeze and true or nil })
+        return SHARE_PREFIX .. deflate:EncodeForPrint(deflate:CompressDeflate(packed, { level = 9 }))
+    end)
+    if not ok then return nil, "could not be written" end
+    return text
+end
+
+-- Adds the filter a string holds. Returns it, or nil and why not.
+function ns.ImportFilter(text)
+    text = tostring(text or ""):gsub("%s", "")
+    if text:sub(1, #SHARE_PREFIX) ~= SHARE_PREFIX then return nil, "that is not a ChairIgnore filter" end
+    local serialize, deflate = Lib("LibSerialize"), Lib("LibDeflate")
+    if not (serialize and deflate) then return nil, "this copy is missing LibSerialize or LibDeflate" end
+    local decoded = deflate:DecodeForPrint(text:sub(#SHARE_PREFIX + 1))
+    local raw = decoded and deflate:DecompressDeflate(decoded)
+    if not raw then return nil, "the text is damaged" end
+    local ok, data = serialize:Deserialize(raw)
+    if not ok or type(data) ~= "table" or type(data.lines) ~= "table" then return nil, "the text is damaged" end
+
+    -- Only plain text comes in, and not too much of it.
+    local lines = {}
+    for i = 1, math.min(#data.lines, 6) do
+        if type(data.lines[i]) == "string" then lines[#lines + 1] = data.lines[i]:sub(1, 400) end
+    end
+    if #lines == 0 then return nil, "the filter has no words" end
+    local name = type(data.name) == "string" and data.name:sub(1, 60) or ""
+    if not name:match("%S") then name = "Imported filter" end
+
+    -- A second copy of a name gets " (2)", " (3)"...
+    local taken = {}
+    for _, f in ipairs(ns.Filters()) do taken[tostring(f.name)] = true end
+    local base, n = name, 1
+    while taken[name] do
+        n = n + 1
+        name = base .. " (" .. n .. ")"
+    end
+
+    local filter = { name = name, lines = lines, squeeze = data.squeeze == true or nil,
+                     enabled = false, blocked = 0 }
     local list = ns.Filters()
     list[#list + 1] = filter
     ns.CompileFilters()
