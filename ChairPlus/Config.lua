@@ -113,6 +113,9 @@ ns.defaults = {
     -- Camera
     maxCameraZoom       = false,
 
+    -- Chat (Chat.lua)
+    chatScrollLeft      = false,    -- scroll bar and arrows on the left
+
     -- Tooltip extras (Tooltips.lua)
     tooltipExtras       = false,
     tooltipSellPrice    = true,     -- what it sells to a merchant for

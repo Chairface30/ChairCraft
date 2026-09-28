@@ -112,6 +112,8 @@ local ROWS = {
     { key = "flightCountdown",  label = "Countdown while flying",  sub = "flight" },
     { key = "flightTooltip",    label = "Time on the flight map",  sub = "flight" },
     { key = "flightSummary",    label = "Say the time in chat on landing", sub = "flight" },
+    { key = "chatScrollLeft",   label = "Chat scroll bar on the left",
+      tip = "Moves each chat window's scroll bar, its arrows and the jump-to-bottom button to the left side. The window's background moves over to make room, and the text stays where it is." },
     { key = "filterErrors",     label = "Hide \"Not enough rage\" spam",
       tip = "Hides the red text you get while mashing a button (not enough rage, not ready yet). Real errors still show." },
     { key = "lfgFilters",       label = "Player filters in the group finder" },

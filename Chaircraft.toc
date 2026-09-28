@@ -40,6 +40,7 @@ ChairPlus\Arrow.lua
 ChairPlus\Threat.lua
 ChairPlus\Nameplates.lua
 ChairPlus\Tooltips.lua
+ChairPlus\Chat.lua
 ChairPlus\Mail.lua
 ChairPlus\Social.lua
 ChairPlus\Invite.lua

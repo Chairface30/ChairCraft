@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+**New**
+- **Chat scroll bar on the left** (Plus page, World; off): each chat window's scroll bar, its arrows and the jump-to-bottom button move to the left side. The window's background moves over to make room, and the text stays where it is. Whisper windows opened later follow too, and switching it off puts everything back.
+
 **Changed**
 - **The Open all mail button is gone.** The game's mailbox has its own now, so ChairCraft no longer adds one (it was under Plus, Tooltips, mail and small automations).
 - **Credits read Chairface Chippendale** in the AddOns list, ChairTracker and the README.
