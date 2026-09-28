@@ -14,6 +14,9 @@
 - **The name is spelled ChairCraft** everywhere you read it: the AddOns list, the menu, chat, the minimap and options-page tooltips, the welcome page and the README. Nothing else changes: the folder, `/chair`, and your saved settings stay as they are.
 - **The version reads "ChairCraft v1.5.0"** in the menu title, `/chair status`, What's new and the options page.
 
+**Fixed**
+- **Fixed errors in the game's Options > Advanced list** ("attempt to compare a secret number value" from the nameplate preview while scrolling or hovering checkboxes). ChairAuras' icon picker built its list with Blizzard's own icon provider, whose shared state then counted as addon-written, and the preview that uses it next failed. The picker now reads the same icon lists directly and never touches the provider.
+
 ## 1.5.0: restock and profession cooldowns
 
 **New**

@@ -15,12 +15,14 @@ local ns = Chaircraft.ChairAuras
 -- 1. GetNumMacroIcons / GetMacroIconInfo -- the list the macro window draws,
 --    which is the raw icon set. Cheap, complete, and has no names attached.
 --
--- 2. IconDataProvider -- what the modern client replaced that with. It is
---    present on this client and it is BROKEN: its own base list comes back nil,
---    which is the crash in Blizzard_FrameXMLBase/IconDataProvider.lua:144 that
---    this client's Edit Mode falls over on. It is still tried, because a fixed
---    client should be used rather than worked around, and every call into it is
---    wrapped so its failure costs nothing.
+-- 2. The macro icon lists -- GetLooseMacroIcons, GetMacroIcons and their item
+--    twins, the four the modern client's IconDataProvider is built from, asked
+--    for directly. The provider itself is never created here: it keeps its
+--    list and a count of its users in variables shared by every caller, so
+--    creating one from addon code taints them, and the next Blizzard panel
+--    that uses one runs tainted -- the nameplate preview in Options >
+--    Advanced then errors on secret values (2026-09-28). Releasing one from
+--    here can also clear the list under a panel still using it.
 --
 -- 3. Spell icons -- every spell the client admits exists, walked in the
 --    background and indexed by name. This is what WeakAuras searches: its
@@ -61,23 +63,25 @@ local function FromMacroAPI()
     return list
 end
 
-local function FromDataProvider()
-    local mixin = _G.IconDataProviderMixin
-    local create = _G.CreateAndInitFromMixin
-    if not (mixin and create) then return nil end
+local function FromMacroLists()
+    local spells, items = {}, {}
+    for _, fill in ipairs({ { _G.GetLooseMacroIcons, spells }, { _G.GetMacroIcons, spells },
+                            { _G.GetLooseMacroItemIcons, items }, { _G.GetMacroItemIcons, items } }) do
+        if type(fill[1]) == "function" then pcall(fill[1], fill[2]) end
+    end
 
-    local ok, provider = pcall(create, mixin, _G.IconDataProviderExtraType
-                                              and _G.IconDataProviderExtraType.None or 0)
-    if not ok or type(provider) ~= "table" then return nil end
-
-    local got, count = pcall(provider.GetNumIcons, provider)
-    count = got and ns.SafeNumber(count) or nil
-    if not count or count < 1 then return nil end
-
+    -- Each entry is a file ID, as a number or a string of digits, or a file
+    -- name under Interface\Icons.
     local list = {}
-    for index = 1, count do
-        local fine, texture = pcall(provider.GetIconByIndex, provider, index)
-        if fine and texture then list[#list + 1] = texture end
+    for _, source in ipairs({ spells, items }) do
+        for _, texture in ipairs(source) do
+            local id = tonumber(texture)
+            if id then
+                list[#list + 1] = id
+            elseif type(texture) == "string" and texture ~= "" then
+                list[#list + 1] = "Interface\\Icons\\" .. texture
+            end
+        end
     end
 
     if #list == 0 then return nil end
@@ -102,7 +106,7 @@ function Icons:Browse()
     if browseList then return browseList, browseSource end
 
     browseList, browseSource = FromMacroAPI(), "macro icons"
-    if not browseList then browseList, browseSource = FromDataProvider(), "icon data provider" end
+    if not browseList then browseList, browseSource = FromMacroLists(), "macro icon lists" end
     if not browseList then browseList, browseSource = FromSpellIndex(), "spell icons" end
     if not browseList then browseList, browseSource = { QUESTION_MARK }, "nothing" end
 

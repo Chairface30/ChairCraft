@@ -1173,18 +1173,41 @@ check("and carries every icon in it",
       L2.eval("(select(2, ns.Icons:Source()))") == 4,
       L2.eval("(select(2, ns.Icons:Source()))"))
 
-# A provider that throws -- which is what this client's actually does -- must
-# not take the list down with it.
+# The lists the modern client's icon provider is built from, asked for
+# directly. The provider must never be created: its shared state, written
+# from addon code, taints the nameplate preview in Options > Advanced.
 L3 = boot("""
 GetNumMacroIcons, GetMacroIconInfo = nil, nil
+PROVIDER_MADE = false
 IconDataProviderMixin = {}
-function CreateAndInitFromMixin() error("BaseIconFilenames is nil") end
+function CreateAndInitFromMixin() PROVIDER_MADE = true error("must not be called") end
+function GetLooseMacroIcons(t) t[#t + 1] = 136243 end
+function GetMacroIcons(t) t[#t + 1] = "Spell_Nature_Regeneration" t[#t + 1] = "135000" end
+function GetMacroItemIcons(t) t[#t + 1] = 133784 end
 IMMEDIATE_TIMERS = true
 ChairAurasDB = { version = 2, profiles = { ["guid:Player-1-00000001"] = { auras = {} } } }
 """)
-L3.execute("ns.Icons:StartScan()")
-check("a broken icon provider falls through instead of erroring",
-      L3.eval("(ns.Icons:Source())") == "spell icons", L3.eval("(ns.Icons:Source())"))
+L3.execute("ns.Icons:StartScan() ns.Icons:Browse()")
+check("without the old macro API, the macro icon lists are read directly",
+      L3.eval("(ns.Icons:Source())") == "macro icon lists", L3.eval("(ns.Icons:Source())"))
+check("spells first, then items, file IDs as numbers, file names under the Icons folder",
+      L3.eval("table.concat((ns.Icons:Browse()), ',')")
+      == r"136243,Interface\Icons\Spell_Nature_Regeneration,135000,133784",
+      L3.eval("table.concat((ns.Icons:Browse()), ',')"))
+check("and Blizzard's icon provider is never created", L3.eval("PROVIDER_MADE") is False)
+
+# One of those functions throwing takes nothing else down.
+L4 = boot("""
+GetNumMacroIcons, GetMacroIconInfo = nil, nil
+function GetLooseMacroIcons(t) error("broken") end
+function GetMacroIcons(t) t[#t + 1] = 136243 end
+IMMEDIATE_TIMERS = true
+ChairAurasDB = { version = 2, profiles = { ["guid:Player-1-00000001"] = { auras = {} } } }
+""")
+L4.execute("ns.Icons:StartScan()")
+check("a list that throws is skipped, not fatal",
+      L4.eval("(ns.Icons:Source())") == "macro icon lists"
+      and L4.eval("(select(2, ns.Icons:Source()))") == 1, L4.eval("(ns.Icons:Source())"))
 
 # --- 6h. a chosen icon outranks everything --------------------------------
 print("-- a chosen icon wins")
