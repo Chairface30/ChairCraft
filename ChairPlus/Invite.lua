@@ -10,7 +10,7 @@
 -- repeating "inv" does not get a stack of invites.
 --
 -- The keywords and switches live in a small window that flies out from the
--- right edge of the menu, opened from the Plus page or /chair plus keywords.
+-- right edge of the menu, opened from the Groups & people page or /chair plus keywords.
 
 local suiteName, Chaircraft = ...
 local ns = Chaircraft.ChairPlus
@@ -401,7 +401,7 @@ function ns.ToggleKeywordPanel()
     -- The window belongs to the menu, so the menu comes up first.
     local menu = _G.ChairPlusPanel
     if not (menu and menu:IsShown()) and ns.OpenPanel then
-        pcall(ns.OpenPanel, "plus")
+        pcall(ns.OpenPanel, "groups")
         menu = _G.ChairPlusPanel
     end
     BuildWindow(menu)

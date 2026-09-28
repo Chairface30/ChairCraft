@@ -5,7 +5,7 @@
 Everything ships **switched off**. Nothing changes about your game until you turn it on, and each feature has its own switch.
 
 - **Open the menu:** type `/chair`, click the chair on the minimap, or go to *Options > AddOns > ChairCraft*.
-- **Find an option:** type part of its name in the search box at the top of the menu.
+- **Find an option:** pick a topic from the list down the left of the menu (Quests & NPCs, Buying & selling, Groups & people, Chat, Looting & comfort, Travel, Info bar, Threat meter), or type part of its name in the search box at the top.
 - **New here?** `/chair setup` opens a page of the most-used switches. `/chair whatsnew` lists what changed in this version.
 - **Commands:** `/chair help` lists every command.
 - **Health check:** `/chair status` shows which parts loaded and what each one found on your client.
@@ -16,7 +16,7 @@ Everything ships **switched off**. Nothing changes about your game until you tur
 
 One slim, draggable line of information. Each item has its own switch. Add up to 30 dividers between items, and set the text size, scale, background and its opacity. Set a width past which items wrap onto a second line.
 
-To change the order, drag items in the list on the menu's OSD page, or drag them left and right on the display itself while that page is open. A gold line shows where an item will land.
+To change the order, drag items in the list on the menu's Info bar page, or drag them left and right on the display itself while that page is open. A gold line shows where an item will land.
 
 Nearly every item is interactive. **Hover** for detail and **click** to act. Some items do something else on a **right-click**:
 
@@ -113,7 +113,7 @@ ChairCraft also publishes its own launcher, so other bar addons can show a chair
 - Player filters (class, role, level) in the group finder.
 - Hide the game's XP bar and status bar 2.
 - Drag the character panel, bags, bank, auction house, professions, quest log, spellbook, talents, mail and other Blizzard windows by their headers. Their positions are remembered.
-- On the **General** page: the minimap icon, copying settings from another character, and **backing up every setting** as one line of text to keep or paste onto another character.
+- On the **Home** page: the minimap icon, copying settings from another character, and **backing up every setting** as one line of text to keep or paste onto another character.
 
 ## ChairAuras: buff, debuff and cooldown tracking (*Beta*)
 

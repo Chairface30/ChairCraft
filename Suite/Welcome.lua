@@ -7,7 +7,7 @@
 -- Shown once per account, and only to someone new: an account that already
 -- has settings saved on any character is an update, not a first run, and
 -- gets What's new (Suite/WhatsNew.lua) instead. Reopened from the menu's
--- General page, or /chair setup.
+-- Home page, or /chair setup.
 --
 -- The labels and tips are the menu's own rows (ChairPlus's ROWS), so a
 -- switch here always reads the same as in the menu.

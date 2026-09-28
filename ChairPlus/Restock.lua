@@ -491,7 +491,7 @@ end
 function ns.ToggleRestockPanel()
     local menu = _G.ChairPlusPanel
     if not (menu and menu:IsShown()) and ns.OpenPanel then
-        pcall(ns.OpenPanel, "plus")
+        pcall(ns.OpenPanel, "shopping")
         menu = _G.ChairPlusPanel
     end
     Build(menu)

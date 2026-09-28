@@ -176,6 +176,13 @@ function SHOWN_BUTTON(text)
     return nil
 end
 
+function PAGE_BUTTON(text)
+    for _, f in ipairs(FRAMES) do
+        local label = rawget(f, "labelText")
+        if label and rawget(label, "_text") == text then return f end
+    end
+end
+
 function DRIVER_TICK()
     for _, f in ipairs(FRAMES) do
         local s = rawget(f, "_scripts")
@@ -866,8 +873,9 @@ rt.execute('SlashCmdList["CHAIRPLUS"]("")')
 check("and a third opens it once more",
       rt.eval("ChairPlusPanel:IsShown()") is True)
 
-# The nav row holds a button for every other part. With four of them it runs
-# to 600px; the window has to hold that with a 16px margin, not clip it.
+# The sidebar lists every page, then every other part under TOOLS; the
+# window is the sidebar plus two columns of settings, and tall enough for
+# the whole list.
 rt, g = fresh()
 rt.execute('''
 SUITE_TABLE.parts = {}
@@ -877,7 +885,9 @@ end
 BOOT() SlashCmdList["CHAIRPLUS"]("")
 ''')
 width = rt.eval("rawget(ChairPlusPanel, '_w')")
-check("the menu is wide enough for every nav button, with a margin", width == 616, width)
+check("the menu is the sidebar plus two columns wide", width == 160 + 540, width)
+check("every other part has a line in the sidebar",
+      all(rt.eval("SHOWN_BUTTON(%r)" % t) is True for t in ("chairauras", "chairsnack", "chairtracker", "chairignore")))
 rt.execute('SlashCmdList["CHAIRPLUS"]("status")')
 check("status prints without error",
       any("sellJunk" in str(v) for v in rt.eval("PRINTED").values()))
@@ -1696,14 +1706,17 @@ print("")
 print("Menu tabs")
 rt, g = fresh()
 rt.execute("BOOT()")
-rt.execute('NS.OpenPanel("plus")')
+rt.execute('NS.OpenPanel("quests")')
 check("Plus page shows the automation options",
       rt.eval('SHOWN("Automate quests")') is True)
 check("and hides the display options",
       rt.eval('SHOWN("Money")') is False)
 check("section headers follow their page",
       rt.eval('SHOWN("|cff9d7cffQuests|r")') is True
-      and rt.eval('SHOWN("|cff9d7cffOn-screen display|r")') is False)
+      and rt.eval('SHOWN("|cff9d7cffDisplay|r")') is False
+      and rt.eval('SHOWN("|cff9d7cffJunk and repairs|r")') is False)
+check("each page opens with its name", rt.eval('SHOWN("Quests & NPCs")') is True
+      and rt.eval('SHOWN("Buying & selling")') is True)
 
 rt.execute('NS.OpenPanel("osd")')
 check("OSD page shows the display options",
@@ -1714,7 +1727,7 @@ check("and hides the automation options",
 check("the move/reset buttons live on the OSD page",
       rt.eval('SHOWN_BUTTON("Move display")') is True
       and rt.eval('SHOWN_BUTTON("Reset position")') is True)
-rt.execute('NS.OpenPanel("plus")')
+rt.execute('NS.OpenPanel("quests")')
 check("and are gone from the Plus page",
       rt.eval('SHOWN_BUTTON("Move display")') is False)
 
@@ -1722,13 +1735,13 @@ check("and are gone from the Plus page",
 # (2026-09-25) -- the times are hardcoded now; /chair plus flights still shows them.
 check("there is no flight times button any more",
       rt.eval('SHOWN_BUTTON("Flight times")') is None)
-rt.execute('NS.OpenPanel("plus")')
+rt.execute('NS.OpenPanel("quests")')
 check("the minimap size slider is gone: the icon sits in the minimap ring now",
       rt.eval('SHOWN("Minimap icon size: 24")') is None)
 
 # Toggling is per page: asking for the page you are on closes the window,
 # asking for another switches to it rather than shutting it in your face.
-rt.execute('NS.OpenPanel("plus")')
+rt.execute('NS.OpenPanel("quests")')
 rt.execute('NS.TogglePanel("osd")')
 check("toggling to a different page switches instead of closing",
       rt.eval("ChairPlusPanel:IsShown()") is True
@@ -2031,7 +2044,7 @@ check("and removing the pin makes it disappear again",
 rt.execute('SlashCmdList["CHAIRPLUS"]("arrow unlock") DRIVER_TICK()')
 check("unlocked but with the menu closed, nothing selected still shows nothing",
       rt.eval("rawget(ChairPlusArrow, '_alpha')") == 0)
-rt.execute('NS.OpenPanel("plus") DRIVER_TICK()')
+rt.execute('NS.OpenPanel("quests") DRIVER_TICK()')
 check("unlocked with the menu open, it shows to be dragged",
       rt.eval("rawget(ChairPlusArrow, '_alpha')") == 1)
 rt.execute('SlashCmdList["CHAIRPLUS"]("arrow lock") NS.OpenPanel("arrow") DRIVER_TICK()')
@@ -2182,7 +2195,7 @@ check("its sliders are labelled with their values",
 check("the move and preview buttons live on the Threat tab",
       rt.eval('SHOWN_BUTTON("Move / resize")') is True
       and rt.eval('SHOWN_BUTTON("Preview")') is True)
-rt.execute('NS.OpenPanel("plus")')
+rt.execute('NS.OpenPanel("quests")')
 check("and are gone from the Plus page", rt.eval('SHOWN_BUTTON("Move / resize")') is False)
 check("the threat options are not on the Plus page any more",
       rt.eval('SHOWN("Show the threat meter")') is False)
@@ -2648,7 +2661,7 @@ end
 """
 rt, g = fresh()
 rt.execute(EMBED_SETUP)
-rt.execute("BOOT() NS.OpenPanel('plus')")
+rt.execute("BOOT() NS.OpenPanel('quests')")
 base = (rt.eval("rawget(ChairPlusPanel, '_w')"), rt.eval("rawget(ChairPlusPanel, '_h')"))
 check("the menu's Escape entry is there", rt.eval("SPECIAL_COUNT('ChairPlusPanel')") == 1)
 
@@ -2656,9 +2669,9 @@ opened = rt.eval("NS.OpenPage(PART)")
 check("a part's page opens", opened is True)
 check("its window is parented inside the menu",
       rt.eval("rawget(FAKE, '_parent') == ChairPlusPanel") is True)
-check("below the menu's header",
+check("below the menu's header, beside the sidebar",
       rt.eval("FAKE_POINTS.TOPLEFT ~= nil and FAKE_POINTS.TOPLEFT[1] == ChairPlusPanel"
-              " and FAKE_POINTS.TOPLEFT[4] == -44") is True)
+              " and FAKE_POINTS.TOPLEFT[3] == 160 and FAKE_POINTS.TOPLEFT[4] == -44") is True)
 # Pinned by its bottom corner too: when the ChairAuras grip resizes the menu,
 # the window goes with it rather than coming loose from the menu's background.
 check("and pinned to the menu's bottom corner, so it follows a resize",
@@ -2669,11 +2682,11 @@ check("the part filled and showed it the way it always has",
 check("its own title and close button are hidden",
       rt.eval("FAKE_TITLE:IsShown()") is False and rt.eval("FAKE_CLOSE:IsShown()") is False)
 check("it cannot be dragged out of the menu", rt.eval("rawget(FAKE, '_movable')") is False)
-check("the menu grows to fit it",
-      rt.eval("rawget(ChairPlusPanel, '_w')") == 760
+check("the menu grows to fit it beside the sidebar",
+      rt.eval("rawget(ChairPlusPanel, '_w')") == 160 + 760
       and rt.eval("rawget(ChairPlusPanel, '_h')") == 520 + 44)
-check("the Back button is up", rt.eval("SHOWN_BUTTON('< Back')") is True)
-check("and the nav row is gone", rt.eval("SHOWN_BUTTON('Plus')") is False)
+check("the sidebar stays up, so any page is one click away",
+      rt.eval("SHOWN_BUTTON('Home')") is True and rt.eval("SHOWN_BUTTON('Info bar')") is True)
 check("the part's own Escape entry is taken out while hosted",
       rt.eval("SPECIAL_COUNT('FakeWin')") == 0)
 
@@ -2686,7 +2699,7 @@ check("and the menu's own Escape entry comes back once the key is done",
 rt.execute("ESCAPE()")
 check("a second Escape closes the menu", rt.eval("ChairPlusPanel:IsShown()") is False)
 
-rt.execute("NS.OpenPanel('plus') NS.OpenPage(PART)")
+rt.execute("NS.OpenPanel('quests') NS.OpenPage(PART)")
 rt.execute("NS.ClosePage()")
 check("Back hands the window back to the part",
       rt.eval("rawget(FAKE, '_parent') == UIParent") is True
@@ -2697,8 +2710,12 @@ check("draggable again", rt.eval("rawget(FAKE, '_movable')") is True)
 check("and back in the Escape list", rt.eval("SPECIAL_COUNT('FakeWin')") == 1)
 check("the menu is its old size again",
       (rt.eval("rawget(ChairPlusPanel, '_w')"), rt.eval("rawget(ChairPlusPanel, '_h')")) == base)
-check("the nav row is back", rt.eval("SHOWN_BUTTON('Plus')") is True
-      and rt.eval("SHOWN_BUTTON('< Back')") is False)
+check("the sidebar is still there", rt.eval("SHOWN_BUTTON('Quests & NPCs')") is True)
+
+rt.execute("NS.OpenPage(PART) PAGE_BUTTON('Travel')._scripts.OnClick(PAGE_BUTTON('Travel'))")
+check("a page in the sidebar hands a hosted window back and shows itself",
+      rt.eval("NS.HostedPart()") is None and rt.eval("NS.CurrentPage()") == "travel"
+      and rt.eval('SHOWN("Show the waypoint arrow")') is True)
 
 rt.execute("NS.OpenPage(PART)")
 rt.execute("ChairPlusPanel:Hide() rawget(ChairPlusPanel, '_scripts').OnHide(ChairPlusPanel)")
@@ -2757,7 +2774,7 @@ check("the General page offers the copy", rt.eval('SHOWN_BUTTON("Import")') is T
       and any_text(rt, "|cffffffffAlpha-Forever|r"))
 check("and the settings backup beside it",
       rt.eval('SHOWN_BUTTON("Export settings")') is True and rt.eval('SHOWN_BUTTON("Import settings")') is True)
-rt.execute('NS.OpenPanel("plus")')
+rt.execute('NS.OpenPanel("quests")')
 check("which the Plus page no longer carries", rt.eval('SHOWN_BUTTON("Export settings")') is False)
 
 print("\nInvites, duels, resurrection")
@@ -3139,7 +3156,7 @@ rawset(FAKE, "GetWidth", function() return 400 end)
 rawset(FAKE, "GetHeight", function() return 300 end)
 PART = { key = "chairfake", title = "ChairFake", Window = function() return FAKE end,
          Show = function() FAKE:Show() end }
-NS.OpenPanel("plus") NS.OpenPage(PART)
+NS.OpenPanel("quests") NS.OpenPage(PART)
 """)
 check("the Plus page's options are hidden while another part's page is up",
       rt.eval('SHOWN("Automate quests")') is False and rt.eval('SHOWN_BUTTON("Import")') is False)
@@ -3981,8 +3998,8 @@ check("as the menu's child, so it closes with it",
       rt.eval("rawget(ChairPlusKeywordPanel, '_parent') == ChairPlusPanel") is True)
 rt.execute("NS.ToggleKeywordPanel()")
 check("and the button closes it again", rt.eval("ChairPlusKeywordPanel:IsShown()") is False)
-rt.execute("NS.OpenPanel('plus')")
-check("the Plus page has a Keywords... button", rt.eval('SHOWN_BUTTON("Keywords...")') is True)
+rt.execute("NS.OpenPanel('groups')")
+check("the Groups & people page has a Keywords... button", rt.eval('SHOWN_BUTTON("Keywords...")') is True)
 
 print("\nCasino table on the OSD")
 rt, g = fresh()
@@ -4099,7 +4116,7 @@ check("a divider takes the mouse while arranging", rt.eval('NS.OSDHotspot("|1") 
 rt.execute("DRAG_TO('|1', 0)")
 check("and can be dragged too; alone at the front it is not drawn",
       rt.eval("NS.Get('osdOrder')").startswith("|,"), rt.eval("NS.Get('osdOrder')"))
-rt.execute("NS.OpenPanel('plus')")
+rt.execute("NS.OpenPanel('quests')")
 check("another page of the menu ends arranging", rt.eval("NS.OSDArranging()") is False)
 rt.execute("NS.OpenPanel('osd') ChairPlusPanel:Hide() ChairPlusPanel._scripts.OnHide(ChairPlusPanel)")
 check("and so does closing the menu", rt.eval("NS.OSDArranging()") is False)
@@ -4453,7 +4470,7 @@ hits = search("repair")
 labels = [hits[i].label for i in range(1, len(hits) + 1)]
 check("search finds an option by its label", "Repair automatically" in labels, labels)
 check("and says which page it is on",
-      any(hits[i].label == "Repair automatically" and hits[i].where == "Plus" for i in range(1, len(hits) + 1)))
+      any(hits[i].label == "Repair automatically" and hits[i].where == "Buying & selling" for i in range(1, len(hits) + 1)))
 check("case does not matter", len(search("REPAIR")) == len(hits))
 check("one letter shows nothing", len(search("r")) == 0)
 tip_only = search("bought back")

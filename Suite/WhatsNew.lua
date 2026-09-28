@@ -1,7 +1,7 @@
 -- Chaircraft Suite/WhatsNew.lua
 -- After an update, a short in-game list of what changed. Shown once per
 -- account per version; never on a first run, where the welcome page
--- (Suite/Welcome.lua) comes first. Reopened from the General page, or
+-- (Suite/Welcome.lua) comes first. Reopened from the Home page, or
 -- /chair whatsnew.
 --
 -- The client cannot read CHANGELOG.md, so each release adds its entry here:
@@ -83,7 +83,7 @@ local function Build()
         window:Hide()
     end)
 
-    -- For those who would rather not see it: it stays in the General page
+    -- For those who would rather not see it: it stays on the Home page
     -- and /chair whatsnew either way.
     local never = plus.MakeCheckButton(window)
     never:SetSize(22, 22)

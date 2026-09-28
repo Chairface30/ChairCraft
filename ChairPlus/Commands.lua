@@ -16,175 +16,13 @@ local ns = Chaircraft.ChairPlus
 -- Order is display order. A row with "sub" is indented under the one above it
 -- and greys out when its parent is off.
 
--- `tab` picks which page of the window a row appears on. The on-screen display
--- has enough settings of its own to be its own page, and putting it there is
--- what makes "/chair osd" able to land somewhere meaningful.
+-- `tab` picks which page of the window a row appears on: one of the keys in
+-- PAGES below. Each page is one topic, named the way a player would put it,
+-- so nobody has to read fifty switches to find the one they want. A header
+-- marked newColumn starts the page's second column.
 
 local ROWS = {
-    -- The items on the line (money, bags, durability...) are not rows here:
-    -- they are the ordered list built from ns.OSD_ITEMS in BuildPanel.
-    { header = "On-screen display", tab = "osd" },
-    { key = "osd",              label = "Show the display",             tab = "osd",
-      tip = "One slim line of information you can put anywhere. Pick what it shows in the list below." },
-    { key = "osdBackground",    label = "Dark background",              tab = "osd", sub = "osd",
-      tip = "A dark panel behind the display's text, so it reads over anything." },
-    { slider = "osdBgAlpha",    label = "Background opacity", tab = "osd", sub = "osdBackground", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
-    { slider = "osdMaxWidth",   label = "Wrap past",          tab = "osd", sub = "osd", min = 0, max = 2000, step = 50, zero = "never",
-      tip = "Items past this width start a second line. While you drag items on this page the display stays one line." },
-    { slider = "osdFontSize",   label = "Text size", tab = "osd", sub = "osd", min = 8, max = 32, step = 1 },
-    { slider = "osdScale",      label = "Scale",     tab = "osd", sub = "osd", min = 0.5, max = 3, step = 0.05, fmt = "x" },
-    { key = "osdBagsTotal",     label = "Bag space as free/total", tab = "osd", sub = "osd" },
-    { choice = "osdXPMode",     label = "XP as", tab = "osd", sub = "osd",
-      values = { { value = "pct", text = "percent" }, { value = "num", text = "XP/total" },
-                 { value = "both", text = "both" } } },
-    -- Not under "osd": it works whether or not the display is on.
-    { key = "hideStatusBars",   label = "Hide game XP bars", tab = "osd",
-      tip = "Makes the game's XP bar and status bar 2 see-through and click-through. The display can show XP instead." },
-    { key = "osdHideMinimap",   label = "Hide addons' minimap buttons", tab = "osd", sub = "osd",
-      tip = "An addon put on the display loses its minimap button, so there is one way in, not two. Take it off the display, or untick this, and the button comes back." },
-    { header = "Clock and alarm", tab = "osd" },
-    { key = "osdClockServer",   label = "Realm time",    tab = "osd", sub = "osd",
-      tip = "The realm's time rather than your computer's. Hovering the clock shows both." },
-    { key = "osdClock24",       label = "24-hour",       tab = "osd", sub = "osd" },
-
-    { header = "Quests" },
-    { key = "quests",              label = "Automate quests" },
-    { key = "questsAccept",        label = "Accept regular quests",     sub = "quests",
-      tip = "Quests offered by the NPC you are talking to. Blocked NPCs and quests are never taken." },
-    { key = "questsDaily",         label = "Accept daily quests",       sub = "quests" },
-    { key = "questsWeekly",        label = "Accept weekly quests",      sub = "quests" },
-    { key = "questsTurnIn",        label = "Turn in completed quests",  sub = "quests",
-      tip = "Never hands in a quest that costs gold, a currency, a crafting reagent or an account-bound item, and never picks between several rewards: those wait for you." },
-    { key = "questsShiftOverride", label = "Hold shift to suppress",    sub = "quests",
-      tip = "Holding shift while you talk to an NPC leaves everything to you." },
-
-    { header = "Gossip" },
-    { key = "autoGossip",              label = "Skip single-option gossip",
-      tip = "Only when the window has one plain option and no quests. Flight masters, innkeepers, trainers, vendors, bankers and colored options are never picked." },
-    { key = "autoGossipSummary",       label = "Say which option was taken", sub = "autoGossip" },
-    { key = "autoGossipShiftOverride", label = "Hold shift to suppress",
-                                       sub = "autoGossip" },
-
-    { header = "Invites and duels" },
-    { key = "autoInvite",          label = "Accept group invites from...",
-      tip = "Only from the people ticked below. Hold shift when the invite arrives to answer it yourself." },
-    { key = "autoInviteFriends",   label = "friends",                   sub = "autoInvite" },
-    { key = "autoInviteGuild",     label = "guildmates",                sub = "autoInvite" },
-    { key = "keywordInvite",       label = "Invite on keyword",
-      button = { "Keywords...", function() ns.ToggleKeywordPanel() end } },
-    { key = "declineDuels",        label = "Decline duels" },
-    { key = "declineGuildInvites", label = "Decline guild invites" },
-    { key = "autoResurrect",       label = "Accept resurrection",
-      tip = "Accepts a resurrection as soon as it is offered. Hold shift to answer it yourself." },
-    { key = "autoSummon",          label = "Accept summons",
-      tip = "Accepts a summon as soon as it is offered. Hold shift to answer it yourself." },
-
-    { header = "Merchants", newColumn = true },
-    { key = "sellJunk",         label = "Sell junk automatically",
-      tip = "Sells gray items when you open a merchant: twelve at most per visit, so everything sold can still be bought back." },
-    { key = "sellJunkSummary",  label = "Report the take in chat",      sub = "sellJunk" },
-    { key = "sellJunkKeepGear", label = "Keep unbound gray gear",       sub = "sellJunk",
-      tip = "Gray weapons and armor that are not soulbound can still go on the auction house, so they are kept." },
-    { key = "repairGear",       label = "Repair automatically" },
-    { key = "repairSummary",    label = "Report the cost in chat",      sub = "repairGear" },
-    { key = "repairGuildFunds", label = "Use guild funds first",        sub = "repairGear",
-      tip = "The guild bank pays first, and your own gold covers what the guild's daily limit does not." },
-    { key = "restock",          label = "Restock consumables",
-      tip = "Buys back up to the count you set of ammo, reagents, food and water, at any merchant that sells them. Hold shift to skip it.",
-      button = { "Items...", function() ns.ToggleRestockPanel() end } },
-    { key = "restockSummary",   label = "Report what was bought",       sub = "restock" },
-    { slider = "restockCap",    label = "Spend at most per visit", sub = "restock", min = 0, max = 100, step = 1,
-      fmt = "g", zero = "no limit" },
-    { slider = "restockFloor",  label = "Keep at least", sub = "restock", min = 0, max = 500, step = 5, fmt = "g",
-      zero = "no floor", tip = "Stops buying before your gold would drop under this." },
-
-    { header = "World" },
-    { key = "cooldownNotify",   label = "Say when a profession cooldown is ready",
-      tip = "Transmutes, Mooncloth and the Salt Shaker, on every character, recorded when you cast them. "
-         .. "The OSD page has an item for them too. /chair cooldowns lists them." },
-    { key = "fasterLoot",       label = "Faster auto loot",
-      tip = "Takes the whole corpse the moment the loot is ready. With your bags full, only coin and currency are taken." },
-    { slider = "fasterLootDelay", label = "Loot again after", sub = "fasterLoot", min = 0.1, max = 1, step = 0.05, fmt = "sec",
-      tip = "How soon a second loot window is handled; lower is faster. Too low can take the same corpse twice." },
-    { key = "maxCameraZoom",    label = "Max camera zoom",
-      tip = "Lets the camera zoom out further than the game's own slider allows. Left off, the game's setting is not touched." },
-    { key = "flight",           label = "Flight path timer" },
-    { key = "flightCountdown",  label = "Countdown while flying",  sub = "flight" },
-    { key = "flightTooltip",    label = "Time on the flight map",  sub = "flight" },
-    { key = "flightSummary",    label = "Say the time in chat on landing", sub = "flight" },
-    { key = "chatScrollLeft",   label = "Chat scroll bar on the left",
-      tip = "Moves each chat window's scroll bar, its arrows and the jump-to-bottom button to the left side. The window's background moves over to make room, and the text stays where it is." },
-    { key = "filterErrors",     label = "Hide \"Not enough rage\" spam",
-      tip = "Hides the red text you get while mashing a button (not enough rage, not ready yet). Real errors still show." },
-    { key = "lfgFilters",       label = "Player filters in the group finder" },
-    { key = "tooltipExtras",    label = "Tooltip extras" },
-    { key = "tooltipSellPrice", label = "Sell price",          sub = "tooltipExtras",
-      tip = "What an item sells to a merchant for; a stack's worth for a stack in your bags." },
-    { key = "tooltipIDs",       label = "Item and spell IDs",  sub = "tooltipExtras" },
-    { key = "autoReleaseBG",    label = "Release in battlegrounds" },
-    { key = "skipCinematics",   label = "Skip cinematics" },
-    { key = "autoDismount",     label = "Dismount and stand when needed" },
-
-    -- The waypoint arrow's page. A row with `choice` steps through a list of
-    -- values with < and > buttons.
-    { header = "Waypoint arrow", tab = "arrow" },
-    { key = "arrow",                label = "Show the waypoint arrow",   tab = "arrow" },
-    { key = "arrowLocked",          label = "Locked in place",           tab = "arrow", sub = "arrow" },
-    { choice = "arrowStyle",        label = "Style",                     tab = "arrow", sub = "arrow",
-      values = ns.ARROW_STYLES or { { value = "bevel", text = "3D arrow" } } },
-    { key = "arrowDirectionColour", label = "Color by direction",       tab = "arrow", sub = "arrow",
-      blockedBy = "arrowCustomColor" },
-    { key = "arrowCustomColor",     label = "Custom color",              tab = "arrow", sub = "arrow",
-      swatch = { "arrowColorR", "arrowColorG", "arrowColorB" } },
-    { key = "arrowShowDistance",    label = "Show the distance",         tab = "arrow", sub = "arrow" },
-    { key = "arrowShowName",        label = "Show the quest's name",     tab = "arrow", sub = "arrow" },
-    { slider = "arrowScale", label = "Size",    tab = "arrow", sub = "arrow", min = 0.5, max = 3, step = 0.05, fmt = "x" },
-    { slider = "arrowAlpha", label = "Opacity", tab = "arrow", sub = "arrow", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
-
-    -- The threat meter's page. Rows with `slider` are sliders rather than
-    -- checkboxes: min, max, step, and how the value reads in the label.
-    { header = "Threat meter", tab = "threat" },
-    { key = "threat",                   label = "Show the threat meter",      tab = "threat" },
-    { key = "threatLocked",             label = "Locked in place",            tab = "threat", sub = "threat" },
-    { key = "threatClickThrough",       label = "Click-through",              tab = "threat", sub = "threat" },
-    { key = "threatClickThroughCombat", label = "Click-through in combat",    tab = "threat", sub = "threat" },
-    { header = "Bars", tab = "threat" },
-    { key = "threatClassColours",       label = "Color bars by class",       tab = "threat", sub = "threat" },
-    { key = "threatShowPets",           label = "Include pets",               tab = "threat", sub = "threat" },
-    { key = "threatAlwaysMe",           label = "Always show my own bar",     tab = "threat", sub = "threat" },
-    { key = "threatShowTitle",          label = "Title with the mob's name",  tab = "threat", sub = "threat" },
-    { key = "threatGrowUp",             label = "Grow upwards",               tab = "threat", sub = "threat" },
-    { header = "Size", tab = "threat" },
-    { slider = "threatWidth",     label = "Width",       tab = "threat", sub = "threat", min = 120, max = 600, step = 10 },
-    { slider = "threatRowHeight", label = "Bar height",  tab = "threat", sub = "threat", min = 10, max = 40, step = 1 },
-    { slider = "threatMaxRows",   label = "Most bars",   tab = "threat", sub = "threat", min = 1, max = 40, step = 1 },
-    { slider = "threatScale",     label = "Scale",       tab = "threat", sub = "threat", min = 0.5, max = 3, step = 0.05, fmt = "x" },
-
-    { header = "When to show", tab = "threat", newColumn = true },
-    { key = "threatSolo",         label = "When solo",                  tab = "threat", sub = "threat" },
-    { key = "threatParty",        label = "In a party",                 tab = "threat", sub = "threat" },
-    { key = "threatRaid",         label = "In a raid",                  tab = "threat", sub = "threat" },
-    { key = "threatOutOfCombat",  label = "Out of combat too",          tab = "threat", sub = "threat" },
-    { key = "threatShowEmpty",    label = "Before anyone has threat",   tab = "threat", sub = "threat" },
-    { key = "threatTargetTarget", label = "Friend targeted: their target", tab = "threat", sub = "threat",
-      tip = "With a friendly player targeted, show threat on whatever they are fighting." },
-    { slider = "threatShowAbove", label = "Only once my threat is over", tab = "threat", sub = "threat", min = 0, max = 100, step = 5, fmt = "%", zero = "always" },
-    { slider = "threatLinger",    label = "Stay up after the fight",     tab = "threat", sub = "threat", min = 0, max = 30, step = 1, fmt = "s" },
-    { header = "Where", tab = "threat" },
-    { key = "threatWorld",        label = "Open world",                 tab = "threat", sub = "threat" },
-    { key = "threatDungeon",      label = "Dungeons",                   tab = "threat", sub = "threat" },
-    { key = "threatRaidZone",     label = "Raids",                      tab = "threat", sub = "threat" },
-    { key = "threatPvP",          label = "Battlegrounds and arenas",   tab = "threat", sub = "threat" },
-    { header = "Look and warning", tab = "threat" },
-    { slider = "threatAlpha",     label = "Opacity",           tab = "threat", sub = "threat", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
-    { slider = "threatBgAlpha",   label = "Background",        tab = "threat", sub = "threat", min = 0, max = 1, step = 0.05, fmt = "pct" },
-    { key = "threatWarn",         label = "Warn before I pull aggro",   tab = "threat", sub = "threat",
-      tip = "A warning as your threat nears the tank's. Quiet whenever your group role is Tank." },
-    { key = "threatWarnSound",    label = "With a sound",               tab = "threat", sub = "threatWarn" },
-    { sound = "threatWarnSoundID", label = "Sound", tab = "threat", sub = "threatWarnSound",
-      default = "Raid warning", play = function() if ns.PlayThreatWarning then ns.PlayThreatWarning() end end,
-      stop = function() if ns.StopThreatWarning then ns.StopThreatWarning() end end },
-    -- The General page: what belongs to the whole suite rather than a part.
+    -- The Home page: what belongs to the whole suite rather than a part.
     { header = "ChairCraft", tab = "general" },
     { key = "chairMinimapHidden", label = "Hide the minimap icon", tab = "general",
       get = function()
@@ -215,26 +53,219 @@ local ROWS = {
     { note = "If it has earned a place in your UI and you'd like to say thanks, "
           .. "in-game gold mailed to Chairface Chippendale is always appreciated, "
           .. "and never expected.", tab = "general" },
-    { slider = "threatWarnAt",    label = "Warn at",           tab = "threat", sub = "threatWarn", min = 50, max = 100, step = 5, fmt = "%" },
-    { header = "Nameplates", tab = "threat" },
-    { key = "nameplateThreat",  label = "Color enemy nameplates by aggro (tanking)", tab = "threat",
+
+    { header = "Quests", tab = "quests" },
+    { key = "quests",              label = "Automate quests", tab = "quests" },
+    { key = "questsAccept",        label = "Accept regular quests", tab = "quests",     sub = "quests",
+      tip = "Quests offered by the NPC you are talking to. Blocked NPCs and quests are never taken." },
+    { key = "questsDaily",         label = "Accept daily quests", tab = "quests",       sub = "quests" },
+    { key = "questsWeekly",        label = "Accept weekly quests", tab = "quests",      sub = "quests" },
+    { key = "questsTurnIn",        label = "Turn in completed quests", tab = "quests",  sub = "quests",
+      tip = "Never hands in a quest that costs gold, a currency, a crafting reagent or an account-bound item, and never picks between several rewards: those wait for you." },
+    { key = "questsShiftOverride", label = "Hold shift to suppress", tab = "quests",    sub = "quests",
+      tip = "Holding shift while you talk to an NPC leaves everything to you." },
+    { header = "Talking to NPCs", tab = "quests" },
+    { key = "autoGossip",              label = "Skip single-option gossip", tab = "quests",
+      tip = "Only when the window has one plain option and no quests. Flight masters, innkeepers, trainers, vendors, bankers and colored options are never picked." },
+    { key = "autoGossipSummary",       label = "Say which option was taken", tab = "quests", sub = "autoGossip" },
+    { key = "autoGossipShiftOverride", label = "Hold shift to suppress", tab = "quests",
+                                       sub = "autoGossip" },
+
+    { header = "Junk and repairs", tab = "shopping" },
+    { key = "sellJunk",         label = "Sell junk automatically", tab = "shopping",
+      tip = "Sells gray items when you open a merchant: twelve at most per visit, so everything sold can still be bought back." },
+    { key = "sellJunkSummary",  label = "Report the take in chat", tab = "shopping",      sub = "sellJunk" },
+    { key = "sellJunkKeepGear", label = "Keep unbound gray gear", tab = "shopping",       sub = "sellJunk",
+      tip = "Gray weapons and armor that are not soulbound can still go on the auction house, so they are kept." },
+    { key = "repairGear",       label = "Repair automatically", tab = "shopping" },
+    { key = "repairSummary",    label = "Report the cost in chat", tab = "shopping",      sub = "repairGear" },
+    { key = "repairGuildFunds", label = "Use guild funds first", tab = "shopping",        sub = "repairGear",
+      tip = "The guild bank pays first, and your own gold covers what the guild's daily limit does not." },
+    { header = "Restock", tab = "shopping" },
+    { key = "restock",          label = "Restock consumables", tab = "shopping",
+      tip = "Buys back up to the count you set of ammo, reagents, food and water, at any merchant that sells them. Hold shift to skip it.",
+      button = { "Items...", function() ns.ToggleRestockPanel() end } },
+    { key = "restockSummary",   label = "Report what was bought", tab = "shopping",       sub = "restock" },
+    { slider = "restockCap",    label = "Spend at most per visit", tab = "shopping", sub = "restock", min = 0, max = 100, step = 1,
+      fmt = "g", zero = "no limit" },
+    { slider = "restockFloor",  label = "Keep at least", tab = "shopping", sub = "restock", min = 0, max = 500, step = 5, fmt = "g",
+      zero = "no floor", tip = "Stops buying before your gold would drop under this." },
+
+    { header = "Invites", tab = "groups" },
+    { key = "autoInvite",          label = "Accept group invites from...", tab = "groups",
+      tip = "Only from the people ticked below. Hold shift when the invite arrives to answer it yourself." },
+    { key = "autoInviteFriends",   label = "friends", tab = "groups",                   sub = "autoInvite" },
+    { key = "autoInviteGuild",     label = "guildmates", tab = "groups",                sub = "autoInvite" },
+    { key = "keywordInvite",       label = "Invite on keyword", tab = "groups",
+      button = { "Keywords...", function() ns.ToggleKeywordPanel() end } },
+    { key = "declineGuildInvites", label = "Decline guild invites", tab = "groups" },
+    { header = "Answer for me", tab = "groups" },
+    { key = "declineDuels",        label = "Decline duels", tab = "groups" },
+    { key = "autoResurrect",       label = "Accept resurrection", tab = "groups",
+      tip = "Accepts a resurrection as soon as it is offered. Hold shift to answer it yourself." },
+    { key = "autoSummon",          label = "Accept summons", tab = "groups",
+      tip = "Accepts a summon as soon as it is offered. Hold shift to answer it yourself." },
+    { key = "autoReleaseBG",    label = "Release in battlegrounds", tab = "groups" },
+    { header = "Group finder", tab = "groups" },
+    { key = "lfgFilters",       label = "Player filters in the group finder", tab = "groups" },
+
+    { header = "Chat windows", tab = "chat" },
+    { key = "chatScrollLeft",   label = "Chat scroll bar on the left", tab = "chat",
+      tip = "Moves each chat window's scroll bar, its arrows and the jump-to-bottom button to the left side. The window's background moves over to make room, and the text stays where it is." },
+    { header = "Messages", tab = "chat" },
+    { key = "filterErrors",     label = "Hide \"Not enough rage\" spam", tab = "chat",
+      tip = "Hides the red text you get while mashing a button (not enough rage, not ready yet). Real errors still show." },
+    { key = "cooldownNotify",   label = "Say when a profession cooldown is ready", tab = "chat",
+      tip = "Transmutes, Mooncloth and the Salt Shaker, on every character, recorded when you cast them. "
+         .. "The Info bar page has an item for them too. /chair cooldowns lists them." },
+
+    { header = "Looting", tab = "comfort" },
+    { key = "fasterLoot",       label = "Faster auto loot", tab = "comfort",
+      tip = "Takes the whole corpse the moment the loot is ready. With your bags full, only coin and currency are taken." },
+    { slider = "fasterLootDelay", label = "Loot again after", tab = "comfort", sub = "fasterLoot", min = 0.1, max = 1, step = 0.05, fmt = "sec",
+      tip = "How soon a second loot window is handled; lower is faster. Too low can take the same corpse twice." },
+    { header = "Everyday", tab = "comfort" },
+    { key = "autoDismount",     label = "Dismount and stand when needed", tab = "comfort" },
+    { key = "skipCinematics",   label = "Skip cinematics", tab = "comfort" },
+    { key = "maxCameraZoom",    label = "Max camera zoom", tab = "comfort",
+      tip = "Lets the camera zoom out further than the game's own slider allows. Left off, the game's setting is not touched." },
+    { header = "Tooltips", tab = "comfort" },
+    { key = "tooltipExtras",    label = "Tooltip extras", tab = "comfort" },
+    { key = "tooltipSellPrice", label = "Sell price", tab = "comfort",          sub = "tooltipExtras",
+      tip = "What an item sells to a merchant for; a stack's worth for a stack in your bags." },
+    { key = "tooltipIDs",       label = "Item and spell IDs", tab = "comfort",  sub = "tooltipExtras" },
+
+    { header = "Flight paths", tab = "travel" },
+    { key = "flight",           label = "Flight path timer", tab = "travel" },
+    { key = "flightCountdown",  label = "Countdown while flying", tab = "travel",  sub = "flight" },
+    { key = "flightTooltip",    label = "Time on the flight map", tab = "travel",  sub = "flight" },
+    { key = "flightSummary",    label = "Say the time in chat on landing", tab = "travel", sub = "flight" },
+    -- The waypoint arrow. A row with `choice` steps through a list of values
+    -- with < and > buttons.
+    { header = "Waypoint arrow", tab = "travel", newColumn = true },
+    { key = "arrow",                label = "Show the waypoint arrow", tab = "travel" },
+    { key = "arrowLocked",          label = "Locked in place", tab = "travel", sub = "arrow" },
+    { choice = "arrowStyle",        label = "Style", tab = "travel", sub = "arrow",
+      values = ns.ARROW_STYLES or { { value = "bevel", text = "3D arrow" } } },
+    { key = "arrowDirectionColour", label = "Color by direction", tab = "travel", sub = "arrow",
+      blockedBy = "arrowCustomColor" },
+    { key = "arrowCustomColor",     label = "Custom color", tab = "travel", sub = "arrow",
+      swatch = { "arrowColorR", "arrowColorG", "arrowColorB" } },
+    { key = "arrowShowDistance",    label = "Show the distance", tab = "travel", sub = "arrow" },
+    { key = "arrowShowName",        label = "Show the quest's name", tab = "travel", sub = "arrow" },
+    { slider = "arrowScale", label = "Size", tab = "travel", sub = "arrow", min = 0.5, max = 3, step = 0.05, fmt = "x" },
+    { slider = "arrowAlpha", label = "Opacity", tab = "travel", sub = "arrow", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
+
+    -- The Info bar page. The items on the line (money, bags, durability...) are
+    -- not rows here: they are the ordered list built from ns.OSD_ITEMS in
+    -- BuildPanel.
+    { header = "Display", tab = "osd" },
+    { key = "osd",              label = "Show the display", tab = "osd",
+      tip = "One slim line of information you can put anywhere. Pick what it shows in the list below." },
+    { key = "osdBackground",    label = "Dark background", tab = "osd", sub = "osd",
+      tip = "A dark panel behind the display's text, so it reads over anything." },
+    { slider = "osdBgAlpha",    label = "Background opacity", tab = "osd", sub = "osdBackground", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
+    { slider = "osdMaxWidth",   label = "Wrap past", tab = "osd", sub = "osd", min = 0, max = 2000, step = 50, zero = "never",
+      tip = "Items past this width start a second line. While you drag items on this page the display stays one line." },
+    { slider = "osdFontSize",   label = "Text size", tab = "osd", sub = "osd", min = 8, max = 32, step = 1 },
+    { slider = "osdScale",      label = "Scale", tab = "osd", sub = "osd", min = 0.5, max = 3, step = 0.05, fmt = "x" },
+    { key = "osdBagsTotal",     label = "Bag space as free/total", tab = "osd", sub = "osd" },
+    { choice = "osdXPMode",     label = "XP as", tab = "osd", sub = "osd",
+      values = { { value = "pct", text = "percent" }, { value = "num", text = "XP/total" },
+                 { value = "both", text = "both" } } },
+    -- Not under "osd": it works whether or not the display is on.
+    { key = "hideStatusBars",   label = "Hide game XP bars", tab = "osd",
+      tip = "Makes the game's XP bar and status bar 2 see-through and click-through. The display can show XP instead." },
+    { key = "osdHideMinimap",   label = "Hide addons' minimap buttons", tab = "osd", sub = "osd",
+      tip = "An addon put on the display loses its minimap button, so there is one way in, not two. Take it off the display, or untick this, and the button comes back." },
+    { header = "Clock and alarm", tab = "osd" },
+    { key = "osdClockServer",   label = "Realm time", tab = "osd", sub = "osd",
+      tip = "The realm's time rather than your computer's. Hovering the clock shows both." },
+    { key = "osdClock24",       label = "24-hour", tab = "osd", sub = "osd" },
+
+    -- The threat meter's three pages. Rows with `slider` are sliders rather than
+    -- checkboxes: min, max, step, and how the value reads in the label.
+    { header = "The meter", tab = "threat" },
+    { key = "threat",                   label = "Show the threat meter", tab = "threat" },
+    { key = "threatLocked",             label = "Locked in place", tab = "threat", sub = "threat" },
+    { key = "threatClickThrough",       label = "Click-through", tab = "threat", sub = "threat" },
+    { key = "threatClickThroughCombat", label = "Click-through in combat", tab = "threat", sub = "threat" },
+    { header = "Bars", tab = "threat" },
+    { key = "threatClassColours",       label = "Color bars by class", tab = "threat", sub = "threat" },
+    { key = "threatShowPets",           label = "Include pets", tab = "threat", sub = "threat" },
+    { key = "threatAlwaysMe",           label = "Always show my own bar", tab = "threat", sub = "threat" },
+    { key = "threatShowTitle",          label = "Title with the mob's name", tab = "threat", sub = "threat" },
+    { key = "threatGrowUp",             label = "Grow upwards", tab = "threat", sub = "threat" },
+    { header = "Size", tab = "threat", newColumn = true },
+    { slider = "threatWidth",     label = "Width", tab = "threat", sub = "threat", min = 120, max = 600, step = 10 },
+    { slider = "threatRowHeight", label = "Bar height", tab = "threat", sub = "threat", min = 10, max = 40, step = 1 },
+    { slider = "threatMaxRows",   label = "Most bars", tab = "threat", sub = "threat", min = 1, max = 40, step = 1 },
+    { slider = "threatScale",     label = "Scale", tab = "threat", sub = "threat", min = 0.5, max = 3, step = 0.05, fmt = "x" },
+    { header = "Look and warning", tab = "threat" },
+    { slider = "threatAlpha",     label = "Opacity", tab = "threat", sub = "threat", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
+    { slider = "threatBgAlpha",   label = "Background", tab = "threat", sub = "threat", min = 0, max = 1, step = 0.05, fmt = "pct" },
+    { key = "threatWarn",         label = "Warn before I pull aggro", tab = "threat", sub = "threat",
+      tip = "A warning as your threat nears the tank's. Quiet whenever your group role is Tank." },
+    { key = "threatWarnSound",    label = "With a sound", tab = "threat", sub = "threatWarn" },
+    { sound = "threatWarnSoundID", label = "Sound", tab = "threat", sub = "threatWarnSound",
+      default = "Raid warning", play = function() if ns.PlayThreatWarning then ns.PlayThreatWarning() end end,
+      stop = function() if ns.StopThreatWarning then ns.StopThreatWarning() end end },
+    { slider = "threatWarnAt",    label = "Warn at", tab = "threat", sub = "threatWarn", min = 50, max = 100, step = 5, fmt = "%" },
+    { header = "When to show", tab = "threatwhen" },
+    { key = "threatSolo",         label = "When solo", tab = "threatwhen", sub = "threat" },
+    { key = "threatParty",        label = "In a party", tab = "threatwhen", sub = "threat" },
+    { key = "threatRaid",         label = "In a raid", tab = "threatwhen", sub = "threat" },
+    { key = "threatOutOfCombat",  label = "Out of combat too", tab = "threatwhen", sub = "threat" },
+    { key = "threatShowEmpty",    label = "Before anyone has threat", tab = "threatwhen", sub = "threat" },
+    { key = "threatTargetTarget", label = "Friend targeted: their target", tab = "threatwhen", sub = "threat",
+      tip = "With a friendly player targeted, show threat on whatever they are fighting." },
+    { slider = "threatShowAbove", label = "Only once my threat is over", tab = "threatwhen", sub = "threat", min = 0, max = 100, step = 5, fmt = "%", zero = "always" },
+    { slider = "threatLinger",    label = "Stay up after the fight", tab = "threatwhen", sub = "threat", min = 0, max = 30, step = 1, fmt = "s" },
+    { header = "Where", tab = "threatwhen", newColumn = true },
+    { key = "threatWorld",        label = "Open world", tab = "threatwhen", sub = "threat" },
+    { key = "threatDungeon",      label = "Dungeons", tab = "threatwhen", sub = "threat" },
+    { key = "threatRaidZone",     label = "Raids", tab = "threatwhen", sub = "threat" },
+    { key = "threatPvP",          label = "Battlegrounds and arenas", tab = "threatwhen", sub = "threat" },
+    { header = "While you tank", tab = "threatnp" },
+    { key = "nameplateThreat",  label = "Color enemy nameplates by aggro (tanking)", tab = "threatnp",
       tip = "While you are the tank (your group role, or the tank role ticked in the group finder), enemy nameplates take "
          .. "a color for who has aggro. Otherwise they keep their normal colors. Pick each color; untick one to leave that case alone. "
          .. "/chair threat nameplates probe says whether this client can read it in combat." },
-    { key = "npMine",      label = "I have aggro",           tab = "threat", sub = "nameplateThreat",
+    { key = "npMine",      label = "I have aggro", tab = "threatnp", sub = "nameplateThreat",
       swatch = { "npMineR", "npMineG", "npMineB" } },
-    { key = "npChanging",  label = "Aggro changing",         tab = "threat", sub = "nameplateThreat",
+    { key = "npChanging",  label = "Aggro changing", tab = "threatnp", sub = "nameplateThreat",
       swatch = { "npChangingR", "npChangingG", "npChangingB" },
       tip = "Someone is about to take it, or about to lose it." },
-    { key = "npNonTank",   label = "A non-tank has aggro",   tab = "threat", sub = "nameplateThreat",
+    { key = "npNonTank",   label = "A non-tank has aggro", tab = "threatnp", sub = "nameplateThreat",
       swatch = { "npNonTankR", "npNonTankG", "npNonTankB" },
       tip = "On a group member whose role is not Tank." },
-    { key = "npOtherTank", label = "Another tank has aggro", tab = "threat", sub = "nameplateThreat",
+    { key = "npOtherTank", label = "Another tank has aggro", tab = "threatnp", sub = "nameplateThreat",
       swatch = { "npOtherTankR", "npOtherTankG", "npOtherTankB" } },
 }
 -- Read by the welcome window (labels and tips for its switches) and by the
 -- menu's search box. Nothing outside this file changes it.
 ns.ROWS = ROWS
+
+-- The menu's pages, top to bottom as the sidebar lists them. `indent` hangs a
+-- page under the one above it: the threat meter has three. "plus" and "arrow"
+-- are the old names of pages that are now split or merged, still accepted
+-- from anything that asks for them.
+local PAGES = {
+    { key = "general",    label = "Home" },
+    { key = "quests",     label = "Quests & NPCs" },
+    { key = "shopping",   label = "Buying & selling" },
+    { key = "groups",     label = "Groups & people" },
+    { key = "chat",       label = "Chat" },
+    { key = "comfort",    label = "Looting & comfort" },
+    { key = "travel",     label = "Travel" },
+    { key = "osd",        label = "Info bar" },
+    { key = "threat",     label = "Threat meter" },
+    { key = "threatwhen", label = "When & where",     indent = true },
+    { key = "threatnp",   label = "Nameplate colors", indent = true },
+}
+local PAGE_ALIASES = { arrow = "travel" }
+local PAGE_LABELS = {}
+for _, page in ipairs(PAGES) do PAGE_LABELS[page.key] = page.label end
 
 -- A row's tooltip: its own tip, or the description of the module it switches.
 local function RowTip(row)
@@ -298,11 +329,11 @@ local headers = {}
 local moveButton
 local tabButtons = {}
 local osdOnlyWidgets = {}
-local plusOnlyWidgets = {}
 local threatOnlyWidgets = {}
 -- Widgets that belong to one page, by page. The older per-page lists above
 -- work the same way; new pages use this.
-local pageWidgets = { plus = {}, osd = {}, threat = {}, arrow = {}, general = {} }
+local pageWidgets = {}
+for _, page in ipairs(PAGES) do pageWidgets[page.key] = {} end
 local choices = {}
 local soundRows = {}
 local swatches = {}
@@ -313,15 +344,18 @@ local copyChoice = { index = 1 }
 local sliders = {}
 local refreshing = false
 local threatMoveButton, threatPreviewButton
-local currentTab = "plus"
+local currentTab = "general"
 
 -- The page of another part currently hosted in this window, if any. See
 -- "Hosted pages" below.
 local hosted
 local navWidgets = {}
-local backButton, pageTitle, mainTitle
-local baseWidth, baseHeight
+local partButtons = {}
+local baseWidth, baseHeight, sidebarHeight
 local EMBED_TOP = 44
+-- The page list down the left. Pages, and the other parts' settings hosted
+-- in the menu, all sit to its right.
+local SIDEBAR = 160
 
 local function MakeButton(parent, width, text)
     local button
@@ -440,9 +474,6 @@ local function RefreshPanel()
 
     for _, widget in ipairs(osdOnlyWidgets) do
         widget:SetShown(currentTab == "osd")
-    end
-    for _, widget in ipairs(plusOnlyWidgets) do
-        widget:SetShown(currentTab == "plus")
     end
     for _, widget in ipairs(threatOnlyWidgets) do
         widget:SetShown(currentTab == "threat")
@@ -600,24 +631,20 @@ local function RefreshPanel()
             ns.IsEnabled("osdLocked") and "Move display" or "Lock display")
     end
 
-    -- The selected tab is lit; the rest are dimmed. Nav buttons that reach
-    -- other addons are never "selected" -- they open a different window.
-    for tabKey, button in pairs(tabButtons) do
-        if button.labelText then
-            local selected = (tabKey == currentTab)
-            button.labelText:SetTextColor(selected and 1 or 0.62,
-                                          selected and 0.82 or 0.62,
-                                          selected and 0 or 0.62)
-        end
+    -- The page on show is lit in the sidebar: one of this window's own, or
+    -- the part whose settings are hosted.
+    local function Light(button, selected)
+        button.selected:SetShown(selected)
+        button.mark:SetShown(selected)
+        button.labelText:SetTextColor(selected and 1 or 0.86, selected and 0.82 or 0.86,
+                                      selected and 0 or 0.86)
     end
-
-    -- A hosted page takes the whole window: the nav row gives
-    -- way to the page's own title and the Back button.
-    local embedded = hosted ~= nil
-    for _, widget in ipairs(navWidgets) do widget:SetShown(not embedded) end
-    if backButton then backButton:SetShown(embedded) end
-    if pageTitle then pageTitle:SetShown(embedded) end
-    if mainTitle then mainTitle:SetShown(not embedded) end
+    for tabKey, button in pairs(tabButtons) do
+        Light(button, not hosted and tabKey == realTab)
+    end
+    for part, button in pairs(partButtons) do
+        Light(button, hosted ~= nil and hosted.part == part)
+    end
     currentTab = realTab
 end
 
@@ -627,8 +654,6 @@ end
 -- The box in the menu's title bar. Finds any option by its label or its
 -- tooltip, across every page, plus the other parts by name and whatever
 -- options a part lists for searching (part.Search in Suite/Namespace.lua).
-
-local PAGE_NAMES = { plus = "Plus", osd = "OSD", threat = "Threat", arrow = "Arrow", general = "General" }
 
 -- Results for a query, best first: label hits before tooltip-only hits.
 -- Under two letters there is nothing to show.
@@ -642,7 +667,7 @@ function ns.SearchSettings(query)
     for _, row in ipairs(ROWS) do
         local label = row.label or row.action
         if label and not row.header then
-            local page = PAGE_NAMES[row.tab or "plus"] or row.tab
+            local page = PAGE_LABELS[row.tab] or row.tab
             if Has(label) then
                 byLabel[#byLabel + 1] = { label = label, where = page, row = row }
             elseif Has(RowTip(row)) then
@@ -690,7 +715,7 @@ end
 function ns.GoToSetting(result)
     if type(result) ~= "table" then return end
     if result.row then
-        ns.OpenPanel(result.row.tab or "plus")
+        ns.OpenPanel(result.row.tab)
         local key = result.row.key or result.row.slider
         local widget = (checkboxes[key] and checkboxes[key].check) or (sliders[key] and sliders[key].slider)
         Flash(widget)
@@ -822,7 +847,6 @@ local function BuildPanel()
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -14)
     title:SetText("ChairCraft v" .. ((Chaircraft and Chaircraft.version) or "?"))
-    mainTitle = title
 
     local close = CreateFrame("Button", nil, panel)
     close:SetSize(24, 24)
@@ -834,26 +858,63 @@ local function BuildPanel()
     BuildSearch(close)
 
     ---------------------------------------------------------------------------
-    -- Nav row
+    -- Sidebar
     ---------------------------------------------------------------------------
-    -- Two kinds of button on one row, separated by a divider. Plus and OSD are
-    -- pages of this window. The rest host another part's own settings window
-    -- inside this one, with a Back button (see "Hosted pages"): the part keeps
-    -- building its window exactly as before, it is only parented here.
-    local navX = 16
-    local function NavButton(width, text, onClick)
-        local button = MakeButton(panel, width, text)
-        button:SetPoint("TOPLEFT", navX, -40)
+    -- Every page down the left, one topic each, then the other parts of the
+    -- suite under their own heading. A page of this window shows beside it;
+    -- a part's settings window is hosted beside it (see "Hosted pages"): the
+    -- part keeps building its window exactly as before, it is only parented
+    -- here. The sidebar stays up either way, so any page is one click away.
+    local shade = panel:CreateTexture(nil, "BACKGROUND", nil, 1)
+    shade:SetColorTexture(1, 1, 1, 0.035)
+    shade:SetPoint("TOPLEFT", 2, -EMBED_TOP)
+    shade:SetPoint("BOTTOMLEFT", 2, 2)
+    shade:SetWidth(SIDEBAR - 8)
+    local rule = panel:CreateTexture(nil, "BORDER")
+    rule:SetColorTexture(0.45, 0.35, 0.7, 0.5)
+    rule:SetPoint("TOPLEFT", SIDEBAR - 6, -EMBED_TOP)
+    rule:SetPoint("BOTTOMLEFT", SIDEBAR - 6, 2)
+    rule:SetWidth(1)
+
+    local sideY = -EMBED_TOP - 6
+    local function SideButton(text, indent, onClick)
+        local button = CreateFrame("Button", nil, panel)
+        button:SetSize(SIDEBAR - 20, 22)
+        button:SetPoint("TOPLEFT", 8, sideY)
+        local selected = button:CreateTexture(nil, "BACKGROUND", nil, 2)
+        selected:SetAllPoints()
+        selected:SetColorTexture(0.62, 0.49, 1, 0.22)
+        selected:Hide()
+        button.selected = selected
+        local mark = button:CreateTexture(nil, "ARTWORK")
+        mark:SetColorTexture(1, 0.82, 0, 1)
+        mark:SetPoint("TOPLEFT")
+        mark:SetPoint("BOTTOMLEFT")
+        mark:SetWidth(3)
+        mark:Hide()
+        button.mark = mark
+        local hl = button:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.08)
+        local label = button:CreateFontString(nil, "ARTWORK",
+            indent and "GameFontHighlightSmall" or "GameFontHighlight")
+        label:SetPoint("LEFT", indent and 22 or 10, 0)
+        label:SetPoint("RIGHT", -4, 0)
+        label:SetJustifyH("LEFT")
+        pcall(label.SetWordWrap, label, false)
+        label:SetText(text)
+        button.labelText = label
         button:SetScript("OnClick", onClick)
-        navX = navX + width + 4
+        sideY = sideY - 22
         navWidgets[#navWidgets + 1] = button
         return button
     end
 
-    for _, page in ipairs({ { "plus", "Plus" }, { "osd", "OSD" },
-                            { "threat", "Threat" }, { "arrow", "Arrow" }, { "general", "General", 62 } }) do
-        tabButtons[page[1]] = NavButton(page[3] or 54, page[2], function()
-            currentTab = page[1]
+    for _, page in ipairs(PAGES) do
+        local key = page.key
+        tabButtons[key] = SideButton(page.label, page.indent, function()
+            if hosted then ns.ClosePage() end
+            currentTab = key
             RefreshPanel()
         end)
     end
@@ -862,16 +923,15 @@ local function BuildPanel()
     -- part never means editing this file. Guarded so ChairPlus still builds a
     -- panel if it is ever loaded without the suite around it.
     if Chaircraft and Chaircraft.parts then
-        local divider = panel:CreateTexture(nil, "ARTWORK")
-        divider:SetColorTexture(0.45, 0.35, 0.7, 0.8)
-        divider:SetSize(2, 22)
-        divider:SetPoint("TOPLEFT", navX + 2, -40)
-        navWidgets[#navWidgets + 1] = divider
-        navX = navX + 10
+        local tools = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+        tools:SetPoint("TOPLEFT", 18, sideY - 12)
+        tools:SetText("TOOLS")
+        navWidgets[#navWidgets + 1] = tools
+        sideY = sideY - 30
 
         for _, part in ipairs(Chaircraft.parts) do
             if part.key ~= "chairplus" then
-                NavButton(66, (part.title:gsub("^Chair", "")), function()
+                partButtons[part] = SideButton((part.title:gsub("^Chair", "")), false, function()
                     local ok, opened = pcall(part.Open)
                     if not ok or not opened then
                         ns.Print("|cffff5555" .. part.title .. " did not answer.|r "
@@ -881,27 +941,32 @@ local function BuildPanel()
             end
         end
     end
+    sidebarHeight = -sideY + 12
 
     ---------------------------------------------------------------------------
     -- Option rows
     ---------------------------------------------------------------------------
-    -- Laid out per tab: each tab starts its own two columns, so a short page
-    -- does not inherit the tall page's gaps.
-    local COL_X = { 16, 250 }
-    local TOP = -72
-    local tabY = { plus = { TOP, TOP }, osd = { TOP, TOP }, threat = { TOP, TOP },
-                   arrow = { TOP, TOP }, general = { TOP, TOP } }
-    local tabCol = { plus = 1, osd = 1, threat = 1, arrow = 1, general = 1 }
+    -- Laid out per page: each page starts its own two columns, so a short
+    -- page does not inherit the tall page's gaps. Every page opens with its
+    -- name, large, the way the sidebar says it.
+    local COL_X = { SIDEBAR + 16, SIDEBAR + 250 }
+    local TOP = -76
+    local tabY, tabCol = {}, {}
+    for _, page in ipairs(PAGES) do
+        tabY[page.key] = { TOP, TOP }
+        tabCol[page.key] = 1
+        local heading = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        heading:SetPoint("TOPLEFT", COL_X[1], -EMBED_TOP - 6)
+        heading:SetText(page.label)
+        pageWidgets[page.key][#pageWidgets[page.key] + 1] = heading
+    end
 
     for _, row in ipairs(ROWS) do
-        local tab = row.tab or "plus"
+        local tab = row.tab
         local y = tabY[tab]
 
-        -- A header marked newColumn starts the page's second column: the Plus
-        -- page splits at "Merchants", keeping quests and gossip -- the NPC
-        -- automation -- together on the left, and the Threat page at "When to
-        -- show". Neither breaks a section across columns. The OSD page is
-        -- short enough to stay in one column.
+        -- A header marked newColumn starts the page's second column. No page
+        -- breaks a section across columns.
         if row.newColumn then tabCol[tab] = 2 end
         local col = tabCol[tab]
 
@@ -1093,7 +1158,7 @@ local function BuildPanel()
     -- because "drag the thing" is the one setting nobody thinks to look for in
     -- a list of checkboxes. It belongs to the OSD page.
     moveButton = MakeButton(panel, 140, "Move display")
-    moveButton:SetPoint("BOTTOMLEFT", 16, 14)
+    moveButton:SetPoint("BOTTOMLEFT", COL_X[1], 14)
     moveButton:SetScript("OnClick", function()
         local nowLocked = not ns.IsEnabled("osdLocked")
         ns.Set("osdLocked", nowLocked)
@@ -1123,7 +1188,7 @@ local function BuildPanel()
     -- without waiting for a fight. Preview does the same without unlocking,
     -- to judge the look of a meter that is already where it belongs.
     threatMoveButton = MakeButton(panel, 140, "Move / resize")
-    threatMoveButton:SetPoint("BOTTOMLEFT", 16, 14)
+    threatMoveButton:SetPoint("BOTTOMLEFT", COL_X[1], 14)
     threatMoveButton:SetScript("OnClick", function()
         local nowLocked = not ns.IsEnabled("threatLocked")
         ns.SetMany({ threat = true, threatLocked = nowLocked })
@@ -1391,10 +1456,10 @@ local function BuildPanel()
     end
 
     ---------------------------------------------------------------------------
-    -- Arrow page controls
+    -- Travel page: the arrow's controls
     ---------------------------------------------------------------------------
     arrowMoveButton = MakeButton(panel, 140, "Move arrow")
-    arrowMoveButton:SetPoint("BOTTOMLEFT", 16, 14)
+    arrowMoveButton:SetPoint("BOTTOMLEFT", COL_X[1], 14)
     arrowMoveButton:SetScript("OnClick", function()
         local nowLocked = not ns.IsEnabled("arrowLocked")
         ns.SetMany({ arrow = true, arrowLocked = nowLocked })
@@ -1411,18 +1476,18 @@ local function BuildPanel()
         })
         ns.Print("Waypoint arrow moved back to the top center.")
     end)
-    pageWidgets.arrow[#pageWidgets.arrow + 1] = arrowMoveButton
-    pageWidgets.arrow[#pageWidgets.arrow + 1] = arrowResetButton
+    pageWidgets.travel[#pageWidgets.travel + 1] = arrowMoveButton
+    pageWidgets.travel[#pageWidgets.travel + 1] = arrowResetButton
 
     ---------------------------------------------------------------------------
-    -- Plus page: copying another character's settings
+    -- Home page: copying another character's settings
     ---------------------------------------------------------------------------
     -- On the bottom row: it is not a setting of its own, so it sits with the
     -- page's controls rather than in a column of checkboxes. (The minimap icon
     -- size slider that shared the row went when the icon moved into the
     -- minimap ring, where every addon's button is the same size.)
     do
-        local x = 16
+        local x = COL_X[1]
         local header = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         header:SetPoint("BOTTOMLEFT", x, 36)
         header:SetText("Copy settings from:")
@@ -1477,21 +1542,11 @@ local function BuildPanel()
     for _, ys in pairs(tabY) do
         tallest = math.min(tallest, ys[1], ys[2])
     end
-    -- At least as wide as the nav row, with the same 16px margin on the
-    -- right as on the left: a part added to the suite adds a nav button, and
-    -- the window grows to hold it rather than clipping it.
-    baseWidth, baseHeight = math.max(540, navX - 4 + 16), -tallest + 54
+    -- Tall enough for the sidebar too: a part added to the suite adds a
+    -- line to it, and the window grows to hold it rather than clipping it.
+    baseWidth = SIDEBAR + 540
+    baseHeight = math.max(-tallest + 54, sidebarHeight)
     panel:SetSize(baseWidth, baseHeight)
-
-    -- Hosted pages: the page's name where the title was, and the way back.
-    pageTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    pageTitle:SetPoint("LEFT", title, "LEFT", 76, 0)
-    pageTitle:Hide()
-
-    backButton = MakeButton(panel, 68, "< Back")
-    backButton:SetPoint("TOPLEFT", 12, -10)
-    backButton:SetScript("OnClick", function() ns.ClosePage() end)
-    backButton:Hide()
 
     -- Closing the window from a hosted page gives the page back to its part,
     -- so the next /chair opens on the main menu.
@@ -1527,7 +1582,13 @@ local function BuildPanel()
     return panel
 end
 
-local PAGES = { plus = true, osd = true, threat = true, arrow = true, general = true }
+-- A page's key from what was asked for: an old name is mapped to where its
+-- settings went. "plus" (the old main page) or nothing at all means the page
+-- the menu was last on, and gives nil.
+local function PageKey(tab)
+    tab = PAGE_ALIASES[tab] or tab
+    return PAGE_LABELS[tab] and tab or nil
+end
 
 -- Open the menu, optionally on a named page. This is what "/chair" and every
 -- nav button go through.
@@ -1539,15 +1600,16 @@ end
 
 function ns.OpenPanel(tab)
     BuildPanel()
-    if hosted and PAGES[tab] then ns.ClosePage() end
-    if PAGES[tab] then currentTab = tab end
+    local page = PageKey(tab)
+    if hosted and (page or tab == "plus") then ns.ClosePage() end
+    if page then currentTab = page end
     RefreshPanel()
     panel:Show()
     if ns.SetOSDArranging then ns.SetOSDArranging(currentTab == "osd") end
     return true
 end
 
--- Which of this window's own pages is showing ("plus", "osd", ...).
+-- Which of this window's own pages is showing ("general", "osd", ...).
 -- Redraws the menu, for windows beside it that change its settings.
 function ns.RefreshPanel()
     RefreshPanel()
@@ -1561,7 +1623,8 @@ function ns.TogglePanel(tab)
     BuildPanel()
     -- Asking for the page you are already looking at closes the window; asking
     -- for a different one switches to it rather than shutting it in your face.
-    if panel:IsShown() and (tab == nil or tab == currentTab) and not hosted then
+    local page = PageKey(tab)
+    if panel:IsShown() and (page == nil or page == currentTab) and not hosted then
         panel:Hide()
         return true
     end
@@ -1573,7 +1636,7 @@ end
 -------------------------------------------------------------------------------
 -- The other parts' settings open inside this window rather than in windows of
 -- their own. Each part builds its window exactly as it always has; this takes
--- that window, parents it under the menu below a 44px header, hides the
+-- that window, parents it beside the sidebar below a 44px header, hides the
 -- part's own title and close button (the `chairChrome` list each part hangs on
 -- its window), and hands it back untouched on Back.
 --
@@ -1697,7 +1760,7 @@ function ns.OpenPage(part)
     end
     frame:SetParent(panel)
     frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -EMBED_TOP)
+    frame:SetPoint("TOPLEFT", panel, "TOPLEFT", SIDEBAR, -EMBED_TOP)
     pcall(frame.SetFrameStrata, frame, panel:GetFrameStrata())
     pcall(frame.SetFrameLevel, frame, (ns.Num(panel:GetFrameLevel()) or 1) + 5)
     frame:SetMovable(false)
@@ -1705,8 +1768,7 @@ function ns.OpenPage(part)
 
     local w = ns.Num(frame:GetWidth()) or baseWidth
     local h = ns.Num(frame:GetHeight()) or baseHeight
-    panel:SetSize(math.max(w, 300), h + EMBED_TOP)
-    pageTitle:SetText("ChairCraft  |cff808080>|r  " .. (part.pageTitle or part.title or ""))
+    panel:SetSize(SIDEBAR + math.max(w, 300), math.max(h + EMBED_TOP, sidebarHeight or 0))
 
     -- Swap the window for the stand-in in the Escape list, so Escape means
     -- Back while a page is up.
@@ -1729,7 +1791,7 @@ function ns.OpenPage(part)
     -- Pinned by both corners, so a page that resizes the menu (ChairAuras'
     -- corner grip does) takes the window with it rather than pulling it loose.
     frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -EMBED_TOP)
+    frame:SetPoint("TOPLEFT", panel, "TOPLEFT", SIDEBAR, -EMBED_TOP)
     frame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
     frame:Show()
     return true

@@ -5185,11 +5185,14 @@ local function BuildWindow()
         local target = SizingTarget()
         pcall(target.SetResizable, target, true)
         if target ~= window then
+            -- The menu is bigger than the window by its header and its page
+            -- list, so its smallest size is the window's plus both.
             local extra = (tonumber(target:GetHeight()) or 0) - (tonumber(window:GetHeight()) or 0)
+            local extraW = (tonumber(target:GetWidth()) or 0) - (tonumber(window:GetWidth()) or 0)
             if type(target.SetResizeBounds) == "function" then
-                pcall(target.SetResizeBounds, target, WINDOW_W, WINDOW_H + extra, 1600, 1400)
+                pcall(target.SetResizeBounds, target, WINDOW_W + extraW, WINDOW_H + extra, 1600 + extraW, 1400)
             elseif type(target.SetMinResize) == "function" then
-                pcall(target.SetMinResize, target, WINDOW_W, WINDOW_H + extra)
+                pcall(target.SetMinResize, target, WINDOW_W + extraW, WINDOW_H + extra)
             end
         end
         target:StartSizing("BOTTOMRIGHT")

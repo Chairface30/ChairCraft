@@ -487,11 +487,11 @@ local function Update()
         -- client will not place the player): the arrow disappears. The frame
         -- itself stays shown, invisible and click-through, because a hidden
         -- frame stops getting OnUpdate and would never notice a new target.
-        -- The one exception is while it is being set up: on the Arrow page of
+        -- The one exception is while it is being set up: on the Travel page of
         -- the menu, or unlocked for moving, and only while the menu is open.
         -- Close the menu with nothing to track and it goes.
         local page = ns.PanelPage and ns.PanelPage()
-        local moving = page ~= nil and (page == "arrow" or not ns.Get("arrowLocked"))
+        local moving = page ~= nil and (page == "travel" or not ns.Get("arrowLocked"))
         arrowTex:SetShown(moving)
         if moving then
             Point(0)
