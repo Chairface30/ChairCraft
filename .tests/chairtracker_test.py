@@ -1614,5 +1614,29 @@ check("where the client can open a profession directly, that is used, and no cas
 L.execute("HOVER('Alchemy')")
 check("and no secure button is offered then", L.eval("WOWFTrackerNS.professionButton:IsShown()") is False)
 
+# --- a new install starts with the window off --------------------------------
+# The client shows a frame the moment it is made; the harness does not, so
+# the window is marked shown before login, the way the client would have it.
+print("-- the window on a new install")
+KEY = "guid:Player-4613-00000001"
+def window_after_login(setup):
+    L = boot("ResetPanel(true, true) ResetSkills(false) " + setup, login=False)
+    L.execute('rawset(WOWFTrackerNS.anchor, "_shown", true) FireEvent("PLAYER_LOGIN")')
+    return L, L.eval("WOWFTrackerNS.anchor:IsShown()")
+L, shown = window_after_login("")
+check("a new install: the window stays off", shown is False)
+check("and the profile is marked as saved under the new default",
+      L.eval("WOWFTrackerAccountDB.profiles['%s'].windowOffByDefault" % KEY) is True)
+L, shown = window_after_login("WOWFTrackerAccountDB = { profiles = { ['%s'] = { settings = { sortMode = 'category' } } } }" % KEY)
+check("a profile from before, silent about the window, had it up: still shown", shown is True)
+check("and now says so, so the next save keeps it",
+      L.eval("WOWFTrackerDB.settings.windowVisible") is True)
+L, shown = window_after_login("WOWFTrackerAccountDB = { profiles = { ['%s'] = { settings = { windowVisible = false } } } }" % KEY)
+check("a profile from before with the window closed keeps it closed", shown is False)
+L, shown = window_after_login("WOWFTrackerAccountDB = { profiles = { ['%s'] = { windowOffByDefault = true } } }" % KEY)
+check("a profile saved since, silent about it, means off", shown is False)
+L, shown = window_after_login("WOWFTrackerDB = { settings = { sortMode = 'category' } }")
+check("an old per-character table imported, silent about it, had it up", shown is True)
+
 print("ALL OK" if not failures else "%d FAILED" % len(failures))
 sys.exit(1 if failures else 0)

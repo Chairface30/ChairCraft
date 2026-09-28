@@ -49,6 +49,8 @@ FILES = {
     "ChairPlus/FlightData.lua",
     "ChairPlus/Flight.lua",
     "ChairPlus/Camera.lua",
+    "ChairPlus/Arrow.lua",
+    "ChairPlus/Threat.lua",
     "ChairPlus/Commands.lua",
     "Suite/Hub.lua",
 }
@@ -101,6 +103,12 @@ check("no display is shown",
 check("the camera setting is not touched",
       stock.eval('CVARS["cameraDistanceMaxZoomFactor"]') is None,
       str(stock.eval('CVARS["cameraDistanceMaxZoomFactor"]')))
+# Frames come up shown in the client (and in this harness), so anything not
+# hidden on purpose would be on screen.
+check("no threat meter is shown",
+      stock.eval("not (ChairPlusThreat and ChairPlusThreat:IsShown())") is True)
+check("no waypoint arrow is shown",
+      stock.eval("not (ChairPlusArrow and ChairPlusArrow:IsShown() and ChairPlusArrow:GetAlpha() > 0)") is True)
 check("/chair is still registered", stock.eval("SlashCmdList.CHAIRCRAFT ~= nil") is True)
 
 print("")

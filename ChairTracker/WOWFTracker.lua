@@ -2359,6 +2359,18 @@ local function InitDB()
     local defaults = WOWFTracker_Defaults or {}
 
     if not db.settings then db.settings = {} end
+
+    -- The window used to default to shown, and compaction drops any setting
+    -- equal to its default -- so a profile saved back then with the window
+    -- up says nothing about it at all. Now the default is off, that silence
+    -- would hide a window the player never closed. A profile from before the
+    -- change is read the old way once; after that it says so explicitly
+    -- (true is no longer the default, so compaction keeps it).
+    if (loadReport.profileFound or loadReport.imported) and not profile.windowOffByDefault
+        and db.settings.windowVisible == nil then
+        db.settings.windowVisible = true
+    end
+    profile.windowOffByDefault = true
     for k, v in pairs(defaults) do
         if k ~= "factions" and k ~= "skills" and db.settings[k] == nil then
             db.settings[k] = v

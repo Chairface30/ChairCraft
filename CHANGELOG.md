@@ -9,7 +9,7 @@
 - **The Open all mail button is gone.** The game's mailbox has its own now, so ChairCraft no longer adds one (it was under Plus, Tooltips, mail and small automations).
 - **Credits read Chairface Chippendale** in the AddOns list, ChairTracker and the README.
 - **An About section** at the bottom of the General page: who makes ChairCraft, and a quiet note that in-game gold mailed to Chairface Chippendale is appreciated. ChairTracker's options no longer ask for tips in their header.
-- **ChairTracker starts switched off on a new install**, like every other feature. Turn it on with Show window in its options or `/chair tracker`. If you already use it, your window stays as it is.
+- **ChairTracker starts switched off on a new install**, like every other feature: its window no longer appears the first time ChairCraft loads. Turn it on with Show window in its options or `/chair tracker`. If you already use it, your window stays as it is, including a window you never touched, which older versions saved as "no setting".
 - **The name is spelled ChairCraft** everywhere you read it: the AddOns list, the menu, chat, the minimap and options-page tooltips, the welcome page and the README. Nothing else changes: the folder, `/chair`, and your saved settings stay as they are.
 - **The version reads "ChairCraft v1.5.0"** in the menu title, `/chair status`, What's new and the options page.
 
