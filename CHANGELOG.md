@@ -1,18 +1,18 @@
 # Changelog
 
-## Unreleased
+## ChairCraft v1.6.0: a clearer menu
 
 **New**
-- **Chat scroll bar on the left** (Plus page, World; off): each chat window's scroll bar, its arrows and the jump-to-bottom button move to the left side. The window's background moves over to make room, and the text stays where it is. Whisper windows opened later follow too, and switching it off puts everything back.
+- **Chat scroll bar on the left** (Chat page; off): each chat window's scroll bar, its arrows and the jump-to-bottom button move to the left side. The window's background moves over to make room, and the text stays where it is. Whisper windows opened later follow too, and switching it off puts everything back.
 
 **Changed**
 - **The menu is reorganized into plain-language pages.** A list down the left replaces the row of tabs, and the crowded Plus page is split by topic: **Home** (the minimap icon, Quick setup, What's new, copying and backing up settings), **Quests & NPCs**, **Buying & selling** (junk, repairs, restock), **Groups & people** (invites, duels, resurrection, summons, the group finder), **Chat**, **Looting & comfort** (faster loot, dismounting, cinematics, camera zoom, tooltips), **Travel** (flight paths and the waypoint arrow), **Info bar** (the old OSD page) and **Threat meter**, with its own **When & where** and **Nameplate colors** pages. Auras, Snack, Tracker and Ignore are listed under Tools and open beside the list, which stays up, so there is no Back button any more (Escape still steps back first). Every page starts with its name, and search results say which page an option is on. No setting changes.
 - **The Open all mail button is gone.** The game's mailbox has its own now, so ChairCraft no longer adds one (it was under Plus, Tooltips, mail and small automations).
 - **Credits read Chairface Chippendale** in the AddOns list, ChairTracker and the README.
-- **An About section** at the bottom of the General page: who makes ChairCraft, and a quiet note that in-game gold mailed to Chairface Chippendale is appreciated. ChairTracker's options no longer ask for tips in their header.
+- **An About section** at the bottom of the Home page: who makes ChairCraft, and a quiet note that in-game gold mailed to Chairface Chippendale is appreciated. ChairTracker's options no longer ask for tips in their header.
 - **ChairTracker starts switched off on a new install**, like every other feature: its window no longer appears the first time ChairCraft loads. Turn it on with Show window in its options or `/chair tracker`. If you already use it, your window stays as it is, including a window you never touched, which older versions saved as "no setting".
 - **The name is spelled ChairCraft** everywhere you read it: the AddOns list, the menu, chat, the minimap and options-page tooltips, the welcome page and the README. Nothing else changes: the folder, `/chair`, and your saved settings stay as they are.
-- **The version reads "ChairCraft v1.5.0"** in the menu title, `/chair status`, What's new and the options page.
+- **The version reads "ChairCraft vX.X.X"** in the menu title, `/chair status`, What's new and the options page.
 
 **Fixed**
 - **Fixed errors in the game's Options > Advanced list** ("attempt to compare a secret number value" from the nameplate preview while scrolling or hovering checkboxes). ChairAuras' icon picker built its list with Blizzard's own icon provider, whose shared state then counted as addon-written, and the preview that uses it next failed. The picker now reads the same icon lists directly and never touches the provider.

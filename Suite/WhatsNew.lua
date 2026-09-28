@@ -11,6 +11,16 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.6.0"] = {
+        title = "A clearer menu",
+        lines = {
+            "The menu has a list of pages down the left, one topic each: Quests & NPCs, Buying & selling, Groups & people, Chat, Looting & comfort, Travel, Info bar and Threat meter.",
+            "Auras, Snack, Tracker and Ignore are under Tools in the same list, and open beside it.",
+            "New on the Chat page: put the chat scroll bar and its arrows on the left.",
+            "ChairTracker starts switched off on a new install. If you already use it, it stays as it is.",
+            "Fixed errors in the game's Options > Advanced list, from the nameplate preview.",
+        },
+    },
     ["1.5.0"] = {
         title = "Restock and profession cooldowns",
         lines = {
