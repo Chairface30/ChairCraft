@@ -195,3 +195,202 @@ function ns.ProbeNameplates()
     end
     if shown == 0 then ns.Print("  no nameplates on screen -- stand near some enemies.") end
 end
+
+-------------------------------------------------------------------------------
+-- Threat % on the nameplates
+-------------------------------------------------------------------------------
+-- A number inside each enemy plate's health bar during combat, so a whole
+-- pack can be read at a glance without tabbing through it:
+--
+--   you are the tank, and it is on you     the highest threat behind you,
+--                                          as a % of what pulls it off you
+--   you are the tank, and someone else     who has it, and your own % toward
+--   has it                                 taking it back ("Brakk 76%"), red
+--   you are not the tank                   your own %: 100 is where you pull
+--
+-- Green under 70%, amber to 90%, red past it. The % is the client's scaled
+-- threat (UnitDetailedThreatSituation), readable in combat on this client;
+-- rows it will not read are simply left out.
+
+local NP_TICK = 0.3
+local labels = {}      -- nameplate frame -> { frame, text }
+ns.npThreatLabels = labels   -- for the tests
+local npTicker
+
+local function NumberColor(pct)
+    if pct >= 90 then return 1, 0.25, 0.2 end
+    if pct >= 70 then return 1, 0.75, 0.2 end
+    return 0.4, 1, 0.4
+end
+
+local function FirstName(row)
+    local plain = row and ns.Text(row.name)
+    return plain and plain:match("^(%S+)") or nil
+end
+
+-- What a mob's plate says, and its color, or nil for nothing.
+function ns.NameplateThreatText(unit)
+    if not Bool(_G.UnitAffectingCombat, unit) then return nil end
+    local rows = ns.ThreatRows and ns.ThreatRows(unit)
+    if type(rows) ~= "table" or #rows == 0 then return nil end
+    local me, holder, bestOther
+    for _, row in ipairs(rows) do
+        if row.isMe then me = row
+        else
+            if row.tanking and not holder then holder = row end
+            if not bestOther then bestOther = row end   -- rows come highest first
+        end
+    end
+
+    if ns.PlayerIsTank and ns.PlayerIsTank() then
+        if me and me.tanking then
+            if not bestOther then return nil end
+            local pct = math.floor(bestOther.pct + 0.5)
+            return pct .. "%", NumberColor(pct)
+        end
+        if holder and me then
+            local pct = math.floor(me.pct + 0.5)
+            local name = FirstName(holder)
+            return (name and (name .. " ") or "") .. pct .. "%", 1, 0.25, 0.2
+        end
+        return nil
+    end
+
+    if not me then return nil end
+    local pct = math.floor(me.pct + 0.5)
+    return pct .. "%", NumberColor(pct)
+end
+
+local function Plate(unit)
+    local api = _G.C_NamePlate
+    if not (api and type(api.GetNamePlateForUnit) == "function") then return nil end
+    local ok, plate = pcall(api.GetNamePlateForUnit, unit)
+    if ok and type(plate) == "table" then return plate end
+    return nil
+end
+
+-- Our own frame on the plate, over its health bar: nothing of the plate's is
+-- changed, only anchored to.
+local function Label(unit)
+    local plate = Plate(unit)
+    local bar = HealthBar(unit)
+    if not (plate and bar) then return nil end
+    local label = labels[plate]
+    if not label then
+        local frame = CreateFrame("Frame", nil, plate)
+        frame:SetFrameLevel((ns.Num(bar:GetFrameLevel()) or 1) + 5)
+        local text = frame:CreateFontString(nil, "OVERLAY")
+        local okF = pcall(text.SetFont, text, "Fonts\FRIZQT__.TTF", 10, "OUTLINE")
+        if not okF then text:SetFontObject("GameFontHighlightSmall") end
+        label = { frame = frame, text = text }
+        labels[plate] = label
+    end
+    label.frame:ClearAllPoints()
+    label.frame:SetAllPoints(bar)
+    local align = ns.Get("npThreatTextAlign") or "CENTER"
+    local x = (align == "LEFT" and 3) or (align == "RIGHT" and -3) or 0
+    label.text:ClearAllPoints()
+    label.text:SetPoint(align, label.frame, align, x, 0)
+    label.text:SetJustifyH(align)
+    return label
+end
+
+local function ShowText(unit)
+    local label = Label(unit)
+    if not label then return end
+    local text, r, g, b
+    if ns.IsEnabled("npThreatText") then
+        local ok, t, rr, gg, bb = pcall(ns.NameplateThreatText, unit)
+        if ok then text, r, g, b = t, rr, gg, bb end
+    end
+    if text then
+        label.text:SetText(text)
+        label.text:SetTextColor(r or 1, g or 1, b or 1)
+        label.frame:Show()
+    else
+        label.frame:Hide()
+    end
+end
+ns.ShowNameplateThreatText = ShowText
+
+local textPlates = {}   -- unit -> true, the enemy plates on screen
+
+local function ShowAllText()
+    for unit in pairs(textPlates) do ShowText(unit) end
+end
+
+local function HideAllText()
+    for _, label in pairs(labels) do label.frame:Hide() end
+end
+
+local function StartTicker()
+    if npTicker or not (C_Timer and C_Timer.NewTicker) then return end
+    npTicker = C_Timer.NewTicker(NP_TICK, function() pcall(ShowAllText) end)
+end
+
+local function StopTicker()
+    if npTicker then npTicker:Cancel() end
+    npTicker = nil
+end
+
+local textDriver
+
+local function OnTextEvent(_, event, unit)
+    if event == "NAME_PLATE_UNIT_ADDED" then
+        if type(unit) == "string" and not Bool(_G.UnitIsFriend, "player", unit) then
+            textPlates[unit] = true
+            ShowText(unit)
+        end
+    elseif event == "NAME_PLATE_UNIT_REMOVED" then
+        if type(unit) == "string" then
+            local plate = Plate(unit)
+            if plate and labels[plate] then labels[plate].frame:Hide() end
+            textPlates[unit] = nil
+        end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        StartTicker()
+        ShowAllText()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        StopTicker()
+        HideAllText()
+    elseif event == "UNIT_THREAT_LIST_UPDATE" then
+        if type(unit) == "string" and textPlates[unit] then ShowText(unit) end
+    end
+end
+
+local TEXT_EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_THREAT_LIST_UPDATE",
+                      "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }
+
+ns.RegisterModule("npThreatText", {
+    title = "Threat % on nameplates",
+    desc = "During combat, a threat % inside each enemy nameplate's health bar. As the tank: the highest "
+        .. "threat behind you, or who has the mob and how close you are to taking it back. Otherwise: "
+        .. "your own threat on each mob.",
+    Apply = function(enabled)
+        if not textDriver then
+            textDriver = CreateFrame("Frame")
+            textDriver:SetScript("OnEvent", OnTextEvent)
+        end
+        for _, event in ipairs(TEXT_EVENTS) do
+            if enabled then
+                pcall(textDriver.RegisterEvent, textDriver, event)
+            else
+                pcall(textDriver.UnregisterEvent, textDriver, event)
+            end
+        end
+        if enabled then
+            -- Plates already on screen when it is switched on.
+            for i = 1, 40 do
+                local unit = "nameplate" .. i
+                if Bool(_G.UnitExists, unit) and not Bool(_G.UnitIsFriend, "player", unit) then
+                    textPlates[unit] = true
+                end
+            end
+            if Bool(_G.UnitAffectingCombat, "player") then StartTicker() end
+            ShowAllText()
+        else
+            StopTicker()
+            HideAllText()
+        end
+    end,
+})

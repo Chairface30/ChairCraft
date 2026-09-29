@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+**New**
+- **Threat % on enemy nameplates** (Threat meter, Nameplates page; off): during combat, a number inside each enemy nameplate's health bar, so a whole pack reads at a glance without tabbing.
+  - **As the tank:** the highest threat behind you on each mob you hold (100% pulls it off you). On one someone else has, their name and your % toward taking it back, in red.
+  - **Anyone else:** your own threat on each mob.
+  - Green under 70%, amber to 90%, red past it. **Position** puts it at the left, center or right of the bar.
+- The threat meter's Nameplate colors page is now just **Nameplates**.
+
 ## ChairCraft v1.6.0: a clearer menu
 
 **New**

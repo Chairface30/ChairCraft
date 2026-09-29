@@ -106,6 +106,7 @@ ChairCraft also publishes its own launcher, so other bar addons can show a chair
 - Click-through options, class colors, pets.
 - A warning, with optional sound, before you pull aggro.
 - **Nameplate colors by aggro:** you have it, it is changing hands, a non-tank has it, or another tank has it, each in a color you pick.
+- **Threat % on enemy nameplates** (in combat): as the tank, the highest threat behind you on each mob, or who has it and how close you are to taking it back; otherwise your own threat on each. Left, center or right in the health bar.
 
 **And more**
 - Faster auto loot.

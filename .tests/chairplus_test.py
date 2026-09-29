@@ -2612,6 +2612,74 @@ check("the bags get their handle once the frame exists",
       rt.eval("ContainerFrameCombinedBags.chairMoverHandle") is not None)
 
 
+print("\nThreat % on the nameplates")
+rt, g = fresh()
+rt.execute('''
+BOOT()
+NP_COMBAT = true
+function UnitAffectingCombat() return NP_COMBAT end
+TANK = true
+NS.PlayerIsTank = function() return TANK end
+ROWS = {}
+NS.ThreatRows = function() return ROWS end
+function NPTEXT(unit)
+    local t, r, g, b = NS.NameplateThreatText(unit or "nameplate1")
+    return t, r
+end
+''')
+rt.execute('ROWS = { { name = "Chairface Chippendale", pct = 100, tanking = true, isMe = true },'
+           ' { name = "Brakk Stonefist", pct = 72.4, tanking = false } }')
+check("tank holding it: the highest threat behind them", rt.eval("NPTEXT()") == ("72%", 1))
+rt.execute('ROWS = { { name = "Chairface Chippendale", pct = 100, tanking = true, isMe = true },'
+           ' { name = "Brakk Stonefist", pct = 34, tanking = false } }')
+check("well clear of it, the number is green", rt.eval("NPTEXT()") == ("34%", 0.4))
+rt.execute('ROWS = { { name = "Chairface Chippendale", pct = 100, tanking = true, isMe = true },'
+           ' { name = "Brakk Stonefist", pct = 93, tanking = false } }')
+check("about to lose it, red", rt.eval("NPTEXT()") == ("93%", 1) and
+      rt.eval("(function() local _, r, g = NS.NameplateThreatText('nameplate1') return g end)()") < 0.5)
+rt.execute('ROWS = { { name = "Chairface Chippendale", pct = 100, tanking = true, isMe = true } }')
+check("alone on it: nothing to show", rt.eval("(NPTEXT())") is None)
+rt.execute('ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true },'
+           ' { name = "Chairface Chippendale", pct = 76.2, tanking = false, isMe = true } }')
+check("someone else has it: their first name and the tank's own %",
+      rt.eval("NPTEXT()") == ("Brakk 76%", 1))
+rt.execute("TANK = false")
+rt.execute('ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true },'
+           ' { name = "Chairface Chippendale", pct = 58, tanking = false, isMe = true } }')
+check("not the tank: their own threat", rt.eval("NPTEXT()") == ("58%", 0.4))
+rt.execute("NP_COMBAT = false")
+check("out of combat: nothing", rt.eval("(NPTEXT())") is None)
+
+# On a plate: our own frame over the health bar, aligned as chosen.
+rt.execute('''
+NP_COMBAT = true
+PLATE = CreateFrame("Frame")
+PLATE.UnitFrame = CreateFrame("Frame")
+PLATE.UnitFrame.healthBar = CreateFrame("StatusBar")
+PLATE.UnitFrame.healthBar.SetStatusBarColor = function() end
+C_NamePlate = { GetNamePlateForUnit = function() return PLATE end }
+NS.Set("npThreatText", true)
+NS.ShowNameplateThreatText("nameplate1")
+''')
+label_text = rt.eval("(function() for _, f in ipairs(FRAMES) do local t = rawget(f, '_text') if t == '58%' then return t end end end)()")
+check("switched on, the % is drawn on the plate", label_text == "58%", label_text)
+check("the plate's own health bar is left alone",
+      rt.eval("rawget(PLATE.UnitFrame.healthBar, '_text')") is None)
+rt.execute('NS.Set("npThreatText", false) NS.ShowNameplateThreatText("nameplate1")')
+rt.execute('NS.Set("npThreatText", true) NS.ShowNameplateThreatText("nameplate1")')
+shown_on = rt.eval("NS.npThreatLabels[PLATE].frame:IsShown()")
+rt.execute('NS.Set("npThreatText", false) NS.ShowNameplateThreatText("nameplate1")')
+check("switched off, it hides", shown_on is True and rt.eval("NS.npThreatLabels[PLATE].frame:IsShown()") is False)
+rt.execute('NS.Set("npThreatText", true) NS.Set("npThreatTextAlign", "RIGHT") NS.ShowNameplateThreatText("nameplate1")')
+check("the Position setting moves it to the right",
+      rt.eval("NS.npThreatLabels[PLATE].text._point.point") == "RIGHT")
+rt.execute('NS.Set("npThreatTextAlign", "LEFT") NS.ShowNameplateThreatText("nameplate1")')
+check("and to the left", rt.eval("NS.npThreatLabels[PLATE].text._point.point") == "LEFT")
+check("the option is on the threat meter's Nameplates page",
+      any(rt.eval(f"NS.ROWS[{i}].key") == "npThreatText" and rt.eval(f"NS.ROWS[{i}].tab") == "threatnp"
+          for i in range(1, rt.eval("#NS.ROWS") + 1)))
+check("it ships off, centered", g.NS.defaults.npThreatText is False and g.NS.defaults.npThreatTextAlign == "CENTER")
+
 print("\nOther parts' settings inside the menu")
 EMBED_SETUP = """
 UISpecialFrames = { "FakeWin" }

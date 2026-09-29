@@ -241,6 +241,15 @@ local ROWS = {
       tip = "On a group member whose role is not Tank." },
     { key = "npOtherTank", label = "Another tank has aggro", tab = "threatnp", sub = "nameplateThreat",
       swatch = { "npOtherTankR", "npOtherTankG", "npOtherTankB" } },
+    { header = "Threat on nameplates", tab = "threatnp", newColumn = true },
+    { key = "npThreatText", label = "Show threat % on enemy nameplates", tab = "threatnp",
+      tip = "During combat, a threat % inside each enemy nameplate's health bar, so a whole pack reads at a glance. "
+         .. "As the tank: the highest threat behind you (100% pulls it off you), or, when someone else has it, "
+         .. "their name and your % toward taking it back, in red. Otherwise: your own threat on each mob. "
+         .. "Green under 70%, amber to 90%, red past it." },
+    { choice = "npThreatTextAlign", label = "Position", tab = "threatnp", sub = "npThreatText",
+      values = { { value = "LEFT", text = "left" }, { value = "CENTER", text = "center" },
+                 { value = "RIGHT", text = "right" } } },
 }
 -- Read by the welcome window (labels and tips for its switches) and by the
 -- menu's search box. Nothing outside this file changes it.
@@ -261,7 +270,7 @@ local PAGES = {
     { key = "osd",        label = "Info bar" },
     { key = "threat",     label = "Threat meter" },
     { key = "threatwhen", label = "When & where",     indent = true },
-    { key = "threatnp",   label = "Nameplate colors", indent = true },
+    { key = "threatnp",   label = "Nameplates",       indent = true },
 }
 local PAGE_ALIASES = { arrow = "travel" }
 local PAGE_LABELS = {}
