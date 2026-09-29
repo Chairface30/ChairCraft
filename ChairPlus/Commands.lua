@@ -241,7 +241,7 @@ local ROWS = {
       tip = "On a group member whose role is not Tank." },
     { key = "npOtherTank", label = "Another tank has aggro", tab = "threatnp", sub = "nameplateThreat",
       swatch = { "npOtherTankR", "npOtherTankG", "npOtherTankB" } },
-    { header = "Threat on nameplates", tab = "threatnp", newColumn = true },
+    { header = "Threat on nameplates", tab = "threatnp" },
     { key = "npThreatText", label = "Show threat % on enemy nameplates", tab = "threatnp",
       tip = "During combat, a threat % inside each enemy nameplate's health bar, so a whole pack reads at a glance. "
          .. "As the tank: the highest threat behind you (100% pulls it off you), or, when someone else has it, "
