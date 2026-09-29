@@ -1097,6 +1097,42 @@ check("and does not move the speed factor",
       is True, str(rt.eval("ChairPlusDB.flightSpeed")))
 
 print("")
+print("A /reload in the air")
+CLOCK = "SERVER = 1000 function GetServerTime() return SERVER end "
+rt = flight(CLOCK)
+rt.execute("HOOKS.TakeTaxiNode(2) ON_TAXI = true DRIVER_TICK()")
+check("taking off on a known route writes it down",
+      rt.eval("ChairPlusDB.flightInFlight and ChairPlusDB.flightInFlight.dest") == "Ironforge, Dun Morogh")
+who = rt.eval("ChairPlusDB.flightInFlight.who")
+src = rt.eval("ChairPlusDB.flightInFlight.source")
+note = f'{{ who = "{who}", at = 1000, source = "{src}", dest = "Ironforge, Dun Morogh" }}'
+rt.execute("NOW = NOW + 150 SERVER = SERVER + 150 ON_TAXI = false DRIVER_TICK()")
+check("landing clears it", rt.eval("ChairPlusDB.flightInFlight") is None)
+check("and an ordinary flight is still recorded",
+      rt.eval('ChairPlusDB.flights["Stormwind, Elwynn > Ironforge, Dun Morogh"] ~= nil') is True)
+
+# The reload: a fresh session, 60 seconds after takeoff, already on the taxi.
+rt = flight(CLOCK + f"SERVER = 1060 ON_TAXI = true ChairPlusDB = {{ flightInFlight = {note} }}")
+rt.execute("DRIVER_TICK()")
+text = rt.eval("TIMER_TEXT()")
+check("after the reload the clock carries on from the real takeoff", text is not None and text.startswith("01:0"), text)
+check("for the same flight", "Ironforge" in str(text), text)
+rt.execute("NOW = NOW + 90 SERVER = SERVER + 90 ON_TAXI = false DRIVER_TICK()")
+check("landing does not record a flight timed across a reload",
+      rt.eval('ChairPlusDB.flights["Stormwind, Elwynn > Ironforge, Dun Morogh"]') is None)
+check("and clears the note", rt.eval("ChairPlusDB.flightInFlight") is None)
+
+rt = flight(CLOCK + "ON_TAXI = true ChairPlusDB = { flightInFlight = { who = \"someone else\", at = 1000, "
+            "source = \"Stormwind, Elwynn\", dest = \"Ironforge, Dun Morogh\" } }")
+rt.execute("DRIVER_TICK()")
+check("another character's note is not picked up", "Ironforge" not in str(rt.eval("TIMER_TEXT()")))
+rt = flight(CLOCK + f"SERVER = 1000 + 3600 ON_TAXI = true ChairPlusDB = {{ flightInFlight = {note} }}")
+rt.execute("DRIVER_TICK()")
+check("nor one too old to be this flight", "Ironforge" not in str(rt.eval("TIMER_TEXT()")))
+rt = flight(CLOCK + f"ON_TAXI = false ChairPlusDB = {{ flightInFlight = {note} }}")
+check("logging in on the ground clears a leftover note", rt.eval("ChairPlusDB.flightInFlight") is None)
+
+print("")
 print("Flight speed changes")
 # A permanent speed increase scales every route by the same factor, so one
 # flight over a known route measures it.

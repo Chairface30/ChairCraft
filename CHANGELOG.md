@@ -9,6 +9,9 @@
   - Green under 70%, amber to 90%, red past it. **Position** puts it at the left, center or right of the bar.
 - The threat meter's Nameplate colors page is now just **Nameplates**.
 
+**Fixed**
+- **A /reload in the air no longer spoils the flight timer.** The flight is not recorded (its time would span the reload), and the countdown carries on from the real takeoff instead of starting over at 00:00.
+
 ## ChairCraft v1.6.0: a clearer menu
 
 **New**

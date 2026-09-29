@@ -87,6 +87,53 @@ local route = nil          -- { source =, dest =, expected = }
 local pending = nil        -- set when a node is chosen, before takeoff
 
 -------------------------------------------------------------------------------
+-- A flight across a reload
+-------------------------------------------------------------------------------
+-- A /reload mid-air wipes everything above: the session that lands never saw
+-- the takeoff. So the route and the takeoff time are written down when a
+-- known route takes off (ChairPlusDB.flightInFlight, with whose flight it is),
+-- and a session that finds itself already on a taxi picks them up again: the
+-- countdown carries on where the flight really is, and the flight is marked
+-- so it is never recorded -- its time spans a reload, and a wrong time is
+-- worse than none. Landing clears it; so does logging in on the ground.
+
+local IN_FLIGHT_MAX = 30 * 60   -- no taxi runs this long: an older note is stale
+
+local function WallClock()
+    local get = _G.GetServerTime or _G.time
+    return type(get) == "function" and ns.Num(get()) or nil
+end
+
+local function Owner()
+    return ns.profileKey and tostring(ns.profileKey) or nil
+end
+
+local function SaveInFlight(r)
+    local db = _G.ChairPlusDB
+    local now = WallClock()
+    if type(db) ~= "table" or not now or not (r and r.source and r.dest) then return end
+    db.flightInFlight = { who = Owner(), at = now, source = r.source, dest = r.dest,
+                          path = r.path, hardcoded = r.hardcoded }
+end
+
+local function ClearInFlight()
+    local db = _G.ChairPlusDB
+    if type(db) == "table" then db.flightInFlight = nil end
+end
+
+-- The saved flight, and how many seconds ago it took off, if it is ours and
+-- recent enough to be the one we are on.
+local function SavedInFlight()
+    local db = _G.ChairPlusDB
+    local saved = type(db) == "table" and db.flightInFlight or nil
+    local now = WallClock()
+    if type(saved) ~= "table" or not now then return nil end
+    local ago = now - (ns.Num(saved.at) or 0)
+    if saved.who ~= Owner() or ago < 0 or ago > IN_FLIGHT_MAX then return nil end
+    return saved, ago
+end
+
+-------------------------------------------------------------------------------
 -- The database
 -------------------------------------------------------------------------------
 -- Lives at the top of ChairPlusDB, shared by every character: settings are
@@ -871,6 +918,20 @@ local function Begin()
     pending = nil
 
     if route.source and route.dest then
+        SaveInFlight(route)
+    else
+        -- No destination picked this session: already in the air when the UI
+        -- loaded. If it is the flight written down at takeoff, carry on its
+        -- countdown from the real takeoff time -- and never record it.
+        local saved, ago = SavedInFlight()
+        if saved then
+            route = { source = saved.source, dest = saved.dest, path = saved.path,
+                      hardcoded = saved.hardcoded, noRecord = true }
+            startedAt = startedAt - ago
+        end
+    end
+
+    if route.source and route.dest then
         route.expected = ns.FlightTime(route.source, route.dest, route.path, route.hardcoded)
     end
 end
@@ -880,8 +941,16 @@ local function Finish()
     local seconds = now - startedAt
     flying = false
     HideCountdown()
+    ClearInFlight()
 
     if not route or not route.source or not route.dest then
+        route = nil
+        return
+    end
+
+    -- Timed across a reload: the countdown was worth carrying on, the time is
+    -- not worth keeping.
+    if route.noRecord then
         route = nil
         return
     end
@@ -1111,6 +1180,8 @@ ns.RegisterModule("flight", {
 
             InstallHooks()
             SeedDefaults()
+            -- On the ground: whatever flight was written down is over.
+            if not flying and not OnTaxi() then ClearInFlight() end
             BuildFrame()
             if ns.Get("flightLocked") then
                 frame:EnableMouse(false)
