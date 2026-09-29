@@ -2712,6 +2712,38 @@ rt.execute('''function UnitThreatSituation() return 1 end
 function UnitDetailedThreatSituation() return nil end''')
 check("no number at all, past the tank: still high", rt.eval("NPTEXT()") == ("high", 1))
 rt.execute("UnitDetailedThreatSituation = nil NS.IsSecret = REAL_ISSECRET")
+# The meter reads everyone's % on "target" in the clear; asked of a nameplate
+# unit, the client keeps it secret. A plate that is also your target (or a
+# group member's) reads its rows through that name.
+rt.execute('''TANK = false
+ASKED = {}
+NS.ThreatRows = function(mob)
+    ASKED[#ASKED + 1] = mob
+    if mob == "target" or mob == "party2target" then
+        return { { name = "Brakk Stonefist", pct = 100, tanking = true },
+                 { name = "Chairface Chippendale", pct = 64, tanking = false, isMe = true } }
+    end
+    return {}
+end
+ALIAS_OF = "target"
+function UnitExists(u) return u == "target" or u == "party2target" or u:match("^nameplate") ~= nil end
+function UnitIsUnit(a, b) return a == "nameplate1" and b == ALIAS_OF end
+function UnitThreatSituation() return 0 end''')
+check("a plate that is your target reads the threat list the meter reads",
+      rt.eval("NPTEXT()") == ("64%", 0.4) and rt.eval("ASKED[1]") == "target")
+rt.execute('''ASKED = {} ALIAS_OF = "party2target"''')
+check("one a party member is on borrows their target",
+      rt.eval("NPTEXT()") == ("64%", 0.4) and rt.eval("ASKED[1]") == "party2target")
+rt.execute('''ASKED = {} ALIAS_OF = "nobody"''')
+check("with no other name for it, the plate asks for itself",
+      rt.eval("NPTEXT()") == ("0%", 0.4) and rt.eval("ASKED[1]") == "nameplate1")
+rt.execute('''function UnitIsUnit() error("secret") end ASKED = {}''')
+check("a client that won't say whether two units match: the plate asks for itself",
+      rt.eval("NPTEXT()") == ("0%", 0.4) and rt.eval("ASKED[1]") == "nameplate1")
+rt.execute('''function UnitIsUnit() return false end
+function UnitExists() return false end
+UnitThreatSituation = nil
+NS.ThreatRows = function() return ROWS end''')
 rt.execute('''function UnitThreatSituation() return nil end''')
 rt.execute("TANK = true")
 check("the tank on an empty list: nothing, as before", rt.eval("(NPTEXT())") is None)
@@ -2764,6 +2796,24 @@ NS.ShowNameplateThreatText("nameplate1")''')
 check("and a client that won't draw it hides the label rather than erroring",
       rt.eval("NS.npThreatLabels[PLATE].frame:IsShown()") is False)
 rt.execute("UnitDetailedThreatSituation = nil UnitThreatSituation = nil NS.IsSecret = REAL_ISSECRET")
+rt.execute('''PRINTED = {}
+NS.Print = function(m) PRINTED[#PRINTED + 1] = m end
+function UnitExists(u) return u == "nameplate1" or u == "target" end
+function UnitIsUnit(a, b) return a == "nameplate1" and b == "target" end
+SECRET_PCT = setmetatable({}, { __tostring = function() error("secret") end })
+NS.IsSecret = function(v) return v == SECRET_PCT end
+function UnitDetailedThreatSituation(u, mob)
+    if mob == "target" then return false, 0, 64.4 end
+    return false, 0, SECRET_PCT
+end
+NS.ProbeNameplates()
+PROBE = table.concat(PRINTED, "\\n")
+NS.IsSecret = REAL_ISSECRET
+UnitDetailedThreatSituation = nil
+function UnitExists() return false end
+function UnitIsUnit() return false end''')
+check("the probe says which name answers: the plate's secret, the target's 64%",
+      "as nameplate1 secret; as target 64%" in rt.eval("PROBE"), rt.eval("PROBE"))
 check("the option is on the threat meter's Nameplates page",
       any(rt.eval(f"NS.ROWS[{i}].key") == "npThreatText" and rt.eval(f"NS.ROWS[{i}].tab") == "threatnp"
           for i in range(1, rt.eval("#NS.ROWS") + 1)))

@@ -183,13 +183,27 @@ function ns.ProbeNameplates()
             shown = shown + 1
             if shown <= 5 then
                 local okS, status = pcall(_G.UnitThreatSituation, "player", unit)
-                local statusText = not okS and "refused" or (status == nil and "none")
+                local statusText = not okS and "refused" or (ns.IsSecret(status) and "secret")
+                    or (status == nil and "none")
                     or (ns.Num(status) and tostring(ns.Num(status)) or "secret")
                 local okT, onMe = pcall(_G.UnitIsUnit, unit .. "target", "player")
                 local targetText = not okT and "refused" or (ns.Bool(onMe) == nil and "secret" or tostring(ns.Bool(onMe)))
                 ns.Print(string.format("  %s: threat status %s, targeting me %s, health bar %s, state %s",
                     unit, statusText, targetText, HealthBar(unit) and "yes" or "no",
                     tostring(ns.NameplateState(unit))))
+                -- Your own % asked through the plate, and through the name the
+                -- plate borrows (the meter's way), to see which one answers.
+                local function Pct(mob)
+                    local ok, _, _, scaled = pcall(_G.UnitDetailedThreatSituation, "player", mob)
+                    if not ok then return "refused" end
+                    if ns.IsSecret(scaled) then return "secret" end
+                    if scaled == nil then return "none" end
+                    local plain = ns.Num(scaled)
+                    return plain and (tostring(math.floor(plain + 0.5)) .. "%") or "secret"
+                end
+                local alias = ns.ThreatAlias(unit)
+                ns.Print(string.format("    my threat: as %s %s; as %s %s", unit, Pct(unit),
+                    alias or "(no other name)", alias and Pct(alias) or "-"))
             end
         end
     end
@@ -239,6 +253,39 @@ local function FirstName(row)
     return plain and plain:match("^(%S+)") or nil
 end
 
+-- The threat meter reads everyone's % on "target" in the clear, while the same
+-- question asked of a "nameplateN" unit comes back secret. So a plate borrows
+-- another name for its mob when one is going: your target first, then focus,
+-- mouseover, your pet's target, a group member's target, or a boss. Nil when
+-- none of them is this mob (or the client won't say).
+local ALIASES = { "target", "focus", "mouseover", "softenemy", "pettarget" }
+for i = 1, 4 do ALIASES[#ALIASES + 1] = "party" .. i .. "target" end
+for i = 1, 40 do ALIASES[#ALIASES + 1] = "raid" .. i .. "target" end
+for i = 1, 5 do ALIASES[#ALIASES + 1] = "boss" .. i end
+ns.npThreatAliases = ALIASES   -- for the tests
+
+function ns.ThreatAlias(unit)
+    for _, alias in ipairs(ALIASES) do
+        if Bool(_G.UnitExists, alias) then
+            local ok, same = pcall(_G.UnitIsUnit, unit, alias)
+            if ok and ns.Bool(same) then return alias end
+        end
+    end
+    return nil
+end
+
+-- Rows for a plate's mob: through a borrowed name first, since that is what
+-- answers in the clear, then the plate's own name.
+local function PlateRows(unit)
+    if not ns.ThreatRows then return nil end
+    local alias = ns.ThreatAlias(unit)
+    if alias then
+        local rows = ns.ThreatRows(alias)
+        if type(rows) == "table" and #rows > 0 then return rows end
+    end
+    return ns.ThreatRows(unit)
+end
+
 -- Your own scaled threat on a mob when the client keeps it secret (Forever
 -- does, in combat), or nil. A secret can't be rounded, compared or colored,
 -- but a font string can still draw it.
@@ -254,7 +301,7 @@ end
 -- a secret %, is drawn as it is when there is no text.
 function ns.NameplateThreatText(unit)
     if not Bool(_G.UnitAffectingCombat, unit) then return nil end
-    local rows = ns.ThreatRows and ns.ThreatRows(unit)
+    local rows = PlateRows(unit)
     if type(rows) ~= "table" then return nil end
     local me, holder, bestOther
     for _, row in ipairs(rows) do
