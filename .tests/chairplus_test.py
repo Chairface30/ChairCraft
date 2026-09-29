@@ -2647,6 +2647,45 @@ rt.execute("MakeWindow('ContainerFrameCombinedBags') FireEvent('ADDON_LOADED', '
 check("the bags get their handle once the frame exists",
       rt.eval("ContainerFrameCombinedBags.chairMoverHandle") is not None)
 
+# The spellbook. A SpellBookFrame made after login gets its handle when the
+# spellbook is opened; a newer client's PlayerSpellsFrame (load on demand, and
+# opened through PlayerSpellsUtil) gets it the same way.
+rt = lua51.LuaRuntime(unpack_returned_tuples=True)
+g = rt.globals()
+rt.execute(HARNESS)
+rt.execute(MOVERS_SETUP)
+rt.execute('''
+local plainHook = hooksecurefunc
+function hooksecurefunc(a, b, c)
+    if type(a) == "table" then
+        local original = a[b]
+        a[b] = function(...) local r = original(...) c(...) return r end
+        return
+    end
+    return plainHook(a, b)
+end
+function ToggleSpellBook() end
+PlayerSpellsUtil = { ToggleSpellBookFrame = function() end }
+''')
+rt.execute(LOAD)
+rt.execute('''
+BOOT()
+MakeWindow("SpellBookFrame")
+ToggleSpellBook()
+''')
+check("a spellbook made after login gets its handle when it opens",
+      rt.eval("SpellBookFrame.chairMoverHandle") is not None)
+check("and is made movable", rt.eval("rawget(SpellBookFrame, '_movable')") is True)
+rt.execute('MakeWindow("PlayerSpellsFrame") PlayerSpellsUtil.ToggleSpellBookFrame()')
+check("a newer client's PlayerSpellsFrame gets its handle when opened through PlayerSpellsUtil",
+      rt.eval("PlayerSpellsFrame.chairMoverHandle") is not None)
+rt.execute('''PRINTED = {} NS.Print = function(m) PRINTED[#PRINTED + 1] = m end
+SlashCmdList["CHAIRPLUS"]("movers")
+MOVERS_OUT = table.concat(PRINTED, "\\n")''')
+check("/chair plus movers lists the windows it can move",
+      "SpellBookFrame" in rt.eval("MOVERS_OUT") and "PlayerSpellsFrame" in rt.eval("MOVERS_OUT"),
+      rt.eval("MOVERS_OUT"))
+
 
 print("\nThreat % on the nameplates")
 rt, g = fresh()

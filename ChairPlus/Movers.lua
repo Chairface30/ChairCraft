@@ -49,7 +49,13 @@ local TARGETS = {
     -- trainer, macros, inspect, the group finder) are caught by ADDON_LOADED
     -- the first time they open.
     { name = "QuestLogFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
+    -- The spellbook. Older clients have SpellBookFrame, always loaded; newer
+    -- ones fold the spellbook and talents into PlayerSpellsFrame (loaded on
+    -- demand, Blizzard_PlayerSpells), and the one before that had talents in
+    -- ClassTalentFrame. Only the outer window is made movable.
     { name = "SpellBookFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
+    { name = "PlayerSpellsFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
+    { name = "ClassTalentFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
     { name = "PlayerTalentFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
     { name = "TalentFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
     { name = "MailFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
@@ -207,11 +213,37 @@ driver:SetScript("OnEvent", function(_, event)
     PrepareAll()
 end)
 
+-- The windows' own openers, so one created late (the spellbook and talents
+-- among them) gets its handle the first time it opens.
 for _, opener in ipairs({ "ToggleCharacter", "ToggleAllBags", "OpenAllBags", "ToggleBackpack",
-                          "ToggleGuildFrame", "ToggleCommunitiesFrame" }) do
+                          "ToggleGuildFrame", "ToggleCommunitiesFrame", "ToggleSpellBook",
+                          "ToggleTalentFrame", "TogglePlayerSpellsFrame" }) do
     if type(_G[opener]) == "function" then
         hooksecurefunc(opener, PrepareAll)
     end
+end
+-- Newer clients open the spellbook through PlayerSpellsUtil instead.
+local util = _G.PlayerSpellsUtil
+if type(util) == "table" then
+    for _, opener in ipairs({ "ToggleSpellBookFrame", "OpenToSpellBookTab", "TogglePlayerSpellsFrame",
+                              "ToggleClassTalentFrame", "OpenToClassTalentsTab" }) do
+        if type(util[opener]) == "function" then
+            hooksecurefunc(util, opener, PrepareAll)
+        end
+    end
+end
+
+-- For /chair plus movers: which of the windows this client has, and which
+-- have their handle.
+function ns.MoverStatus()
+    local found, ready = {}, {}
+    for _, target in ipairs(TARGETS) do
+        if _G[target.name] then
+            found[#found + 1] = target.name
+            if prepared[target.name] then ready[#ready + 1] = target.name end
+        end
+    end
+    return found, ready
 end
 
 -- Forgets the saved spots. Blizzard's own layout takes over the next time each

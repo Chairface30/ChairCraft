@@ -2250,6 +2250,22 @@ local function Handler(input)
         else
             ns.Print("Drag Blizzard's windows -- character, bags, bank, quest log, spellbook, talents, mail, merchant, group finder and more -- by their title bar. "
                 .. "|cffffd100/chair plus movers reset|r puts them back.")
+            -- Which windows this client has, so a window that won't drag can
+            -- be told apart from one that goes by another name here.
+            if ns.MoverStatus then
+                local found, ready = ns.MoverStatus()
+                local isReady = {}
+                for _, name in ipairs(ready) do isReady[name] = true end
+                local waiting = {}
+                for _, name in ipairs(found) do
+                    if not isReady[name] then waiting[#waiting + 1] = name end
+                end
+                ns.Print("  movable now: " .. (#ready > 0 and table.concat(ready, ", ") or "none"))
+                if #waiting > 0 then
+                    ns.Print("  found, not ready yet: " .. table.concat(waiting, ", "))
+                end
+                ns.Print("  windows that load when first opened (talents, trainer and others) join the list then.")
+            end
         end
 
     elseif cmd == "lfg" then

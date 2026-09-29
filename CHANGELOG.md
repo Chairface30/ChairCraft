@@ -11,6 +11,7 @@
 - The threat meter's Nameplate colors page is now just **Nameplates**.
 
 **Fixed**
+- **The spellbook can be dragged by its title bar again.** It only got its drag handle if it already existed when ChairCraft looked, so a spellbook the game created later never got one. It now gets one the first time it opens. Newer clients' combined spellbook and talents window (PlayerSpellsFrame) is covered too. `/chair plus movers` lists the windows it can move on this client.
 - **Combo pips drew nothing.** Their texture path had lost its backslashes, so the pips had no fill. Also, a plain 0 from the classic combo point call now gives way to your combo power, and a target the client won't call attackable still gets pips. `/chair threat combo` says what the client reports and why the pips did or did not show.
 - **Solo DPS read 0% on the mob beating on them.** A mob that's on you now reads 100%, even when the client leaves you off its threat list. When you're past the tank and the client gives no number, it reads "high".
 - **Threat % on nameplates showed nothing, or 0% for DPS and healers on every mob.** The game gives out everyone's threat on your target (which is how the threat meter reads it) but keeps it secret when asked through a nameplate. Now:
