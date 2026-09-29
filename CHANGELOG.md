@@ -1,26 +1,19 @@
 # Changelog
 
-## Unreleased
+## ChairCraft v1.7.0: threat on the nameplates
 
 **New**
 - **Threat % on enemy nameplates** (Threat meter, Nameplates page; off): during combat, a number inside each enemy nameplate's health bar, so a whole pack reads at a glance without tabbing.
-  - **As the tank:** the highest threat behind you on each mob you hold (100% pulls it off you). On one someone else has, their name and your % toward taking it back, in red.
-  - **Anyone else (DPS and healers):** your own threat on every mob in the fight, whatever your role. A mob you have not hit yet reads 0%.
+  - **DPS and healers:** your own threat on every mob in the fight. A mob that's on you reads 100%.
+  - **Tanks (in a group):** the highest threat behind you on each mob you hold, so you can see how close each one is to being pulled. On one someone else has, their name and your % toward taking it back, in red. Solo, you see your own threat.
   - Green under 70%, amber to 90%, red past it. **Position** puts it at the left, center or right of the bar.
-- **Combo points on your target's nameplate** (rogues, and druids in Cat Form; Threat meter, Nameplates page; off): your combo points as a row of pips along the bottom of the target's health bar. A druid sees them only in Cat Form, and they come and go as you shift. `/chair threat nameplates probe` also reports whether this client reads combo points.
+  - The game only gives out everyone's numbers for mobs that you, your pet or someone in your group has targeted (plus focus, mouseover and bosses), so those are the mobs with full, colored numbers. On any other mob you see your own %, as white text or, if the game won't let it be printed, as a thin colored bar along the top of the health bar.
+  - `/chair threat nameplates probe`, run in a fight, says what each plate shows and why.
+- **Combo points on your target's nameplate** (rogues, and druids in Cat Form; Threat meter, Nameplates page; off): your combo points as a row of pips along the bottom of the target's health bar. A druid sees them only in Cat Form, and they come and go as you shift. `/chair threat combo` says what the game reports and why the pips did or did not show.
 - The threat meter's Nameplate colors page is now just **Nameplates**.
 
 **Fixed**
 - **The spellbook can be dragged by its title bar again.** It only got its drag handle if it already existed when ChairCraft looked, so a spellbook the game created later never got one. It now gets one the first time it opens. Newer clients' combined spellbook and talents window (PlayerSpellsFrame) is covered too. `/chair plus movers` lists the windows it can move on this client.
-- **Combo pips drew nothing.** Their texture path had lost its backslashes, so the pips had no fill. Also, a plain 0 from the classic combo point call now gives way to your combo power, and a target the client won't call attackable still gets pips. `/chair threat combo` says what the client reports and why the pips did or did not show.
-- **Solo DPS read 0% on the mob beating on them.** A mob that's on you now reads 100%, even when the client leaves you off its threat list. When you're past the tank and the client gives no number, it reads "high".
-- **Threat % on nameplates showed nothing, or 0% for DPS and healers on every mob.** The game gives out everyone's threat on your target (which is how the threat meter reads it) but keeps it secret when asked through a nameplate. Now:
-  - **Mobs someone in your group has targeted** (you, a party or raid member, your pet), plus your focus, mouseover and bosses, are read the meter's way: real, colored numbers. As a DPS or healer that's your own %; as the tank, the highest threat behind you.
-  - **Any other mob** shows your own % as the game gives it. If the game won't let that number be printed, it shows as a thin bar along the top of the health bar instead, filled to your % and colored green, amber or red.
-  - **A mob whose in-combat state the game won't reveal** still shows while you're fighting, rather than being skipped.
-  - **The tank view is for groups only.** Solo with Tank ticked in the group finder, you see your own threat instead of nothing.
-  - `/chair threat nameplates probe` says which view you're in, whether each plate's threat reads through the plate or a borrowed name, and what each plate shows and why.
-- **Threat % on nameplates could draw nothing at all.** Its font path was missing a backslash, so the text had no font. It now checks the font took and falls back to the game's own.
 - **A /reload in the air no longer spoils the flight timer.** The flight is not recorded (its time would span the reload), and the countdown carries on from the real takeoff instead of starting over at 00:00.
 
 ## ChairCraft v1.6.0: a clearer menu

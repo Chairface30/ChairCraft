@@ -11,6 +11,16 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.7.0"] = {
+        title = "Threat on the nameplates",
+        lines = {
+            "Threat % on enemy nameplates (Threat meter, Nameplates page): DPS and healers see their own threat on every mob in the fight; tanks see the highest threat behind them.",
+            "Full, colored numbers on mobs someone in your group has targeted; your own % on the rest.",
+            "Combo points as pips on your target's nameplate, for rogues and druids in Cat Form.",
+            "The spellbook can be dragged by its title bar again.",
+            "A /reload in the air no longer resets the flight timer.",
+        },
+    },
     ["1.6.0"] = {
         title = "A clearer menu",
         lines = {
