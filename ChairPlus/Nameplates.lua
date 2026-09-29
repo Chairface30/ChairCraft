@@ -176,6 +176,9 @@ function ns.ProbeNameplates()
         .. ((api and type(api.GetNamePlateForUnit) == "function") and "yes" or "missing"))
     ns.Print("  CompactUnitFrame_UpdateHealthColor: "
         .. (type(_G.CompactUnitFrame_UpdateHealthColor) == "function" and "yes" or "missing"))
+    ns.Print("  threat %: " .. (not ns.IsEnabled("npThreatText") and "switched off on this character"
+        or (ns.NameplateTankView and ns.NameplateTankView() and "on, tank view (the highest behind you)"
+        or "on, your own threat")))
     local shown = 0
     for i = 1, 40 do
         local unit = "nameplate" .. i
@@ -204,6 +207,11 @@ function ns.ProbeNameplates()
                 local alias = ns.ThreatAlias(unit)
                 ns.Print(string.format("    my threat: as %s %s; as %s %s", unit, Pct(unit),
                     alias or "(no other name)", alias and Pct(alias) or "-"))
+                -- What the plate shows now, and why.
+                if ns.IsEnabled("npThreatText") and ns.ShowNameplateThreatText then
+                    ns.ShowNameplateThreatText(unit)
+                    ns.Print("    plate: " .. tostring(ns.npThreatWhy and ns.npThreatWhy[unit] or "nothing drawn"))
+                end
             end
         end
     end
@@ -233,9 +241,13 @@ end
 --                                          on one you have not touched yet
 --
 -- Green under 70%, amber to 90%, red past it. The % is the client's scaled
--- threat (UnitDetailedThreatSituation). Forever keeps it secret in combat, so
--- those rows never make the list; your own secret % is then drawn as it is,
--- in white (a secret can't be compared, so it can't pick a color).
+-- threat (UnitDetailedThreatSituation). Forever answers it in the clear for
+-- "target" (and a group member's target) but keeps it secret through a
+-- "nameplateN" unit, so each plate borrows such a name for its mob when one
+-- is going. Otherwise your own secret % is drawn as it is: as white text if
+-- the client will print it, else as a thin bar in the three color bands.
+-- The tank's view is for groups only. Each plate's reason is kept for
+-- /chair threat nameplates probe.
 
 local NP_TICK = 0.3
 local labels = {}      -- nameplate frame -> { frame, text }
@@ -276,9 +288,8 @@ end
 
 -- Rows for a plate's mob: through a borrowed name first, since that is what
 -- answers in the clear, then the plate's own name.
-local function PlateRows(unit)
+local function PlateRows(unit, alias)
     if not ns.ThreatRows then return nil end
-    local alias = ns.ThreatAlias(unit)
     if alias then
         local rows = ns.ThreatRows(alias)
         if type(rows) == "table" and #rows > 0 then return rows end
@@ -297,12 +308,44 @@ local function SecretOwnPct(unit)
     return nil
 end
 
+-- Why each plate last showed what it did, for the probe.
+local whyByUnit = {}
+ns.npThreatWhy = whyByUnit
+local function Why(unit, reason)
+    whyByUnit[unit] = reason
+    return nil
+end
+
+local function InGroup()
+    local ok, inGroup = pcall(_G.IsInGroup)
+    return (ok and ns.Bool(inGroup)) and true or false
+end
+
+-- The tank's view only in a group: solo there is nobody behind you to show,
+-- and the group finder's ticked roles would otherwise make a solo player with
+-- Tank ticked see nothing at all.
+local function TankView()
+    return InGroup() and ns.PlayerIsTank ~= nil and ns.PlayerIsTank() and true or false
+end
+ns.NameplateTankView = TankView
+
 -- What a mob's plate says, and its color, or nil for nothing. A fifth value,
 -- a secret %, is drawn as it is when there is no text.
 function ns.NameplateThreatText(unit)
-    if not Bool(_G.UnitAffectingCombat, unit) then return nil end
-    local rows = PlateRows(unit)
-    if type(rows) ~= "table" then return nil end
+    local alias = ns.ThreatAlias(unit)
+    local mob = alias or unit
+    -- In the fight? Asked the same way as the rows. A client that won't say is
+    -- let through while you are fighting yourself.
+    local fighting = Bool(_G.UnitAffectingCombat, mob)
+    if fighting == nil and alias then fighting = Bool(_G.UnitAffectingCombat, unit) end
+    if fighting == false then return Why(unit, "the mob is not in combat") end
+    local meFighting = Bool(_G.UnitAffectingCombat, "player")
+    if fighting == nil and not meFighting then
+        return Why(unit, "you are out of combat, and the game won't say whether the mob is in it")
+    end
+    local rows = PlateRows(unit, alias)
+    if type(rows) ~= "table" then return Why(unit, "no threat API on this client") end
+    local via = "through " .. mob
     local me, holder, bestOther
     for _, row in ipairs(rows) do
         if row.isMe then me = row
@@ -312,43 +355,60 @@ function ns.NameplateThreatText(unit)
         end
     end
 
-    if ns.PlayerIsTank and ns.PlayerIsTank() then
+    if TankView() then
         if me and me.tanking then
-            if not bestOther then return nil end
+            if not bestOther then return Why(unit, "tank view: you hold it and nobody else is on its list") end
             local pct = math.floor(bestOther.pct + 0.5)
+            Why(unit, "tank view: the highest behind you, " .. via)
             return pct .. "%", NumberColor(pct)
         end
         if holder and me then
             local pct = math.floor(me.pct + 0.5)
             local name = FirstName(holder)
+            Why(unit, "tank view: someone else holds it, your % to take it back, " .. via)
             return (name and (name .. " ") or "") .. pct .. "%", 1, 0.25, 0.2
         end
-        return nil
+        if alias then return Why(unit, "tank view: no readable threat list " .. via) end
+        return Why(unit, "tank view: nobody has this mob targeted, and its threat list is secret "
+            .. "through the nameplate")
     end
 
     -- Anyone else: their own threat on every mob in the fight. The mob being
     -- on you is 100% whatever the number says: solo, the client can leave you
     -- off the list (or give no number) while the mob beats on you. A mob you
     -- are not on the list of, and that is not on you, is 0%.
-    if not Bool(_G.UnitAffectingCombat, "player") and not me then return nil end
+    if not meFighting and not me then return Why(unit, "you are out of combat and not on its list") end
     local pct = me and math.floor(me.pct + 0.5) or 0
+    local reason = me and ("your %, " .. via) or "not on its list"
     if pct < 100 then
-        local okS, status = pcall(_G.UnitThreatSituation, "player", unit)
+        local okS, status = pcall(_G.UnitThreatSituation, "player", mob)
         status = okS and ns.Num(status) or nil
         if (me and me.tanking) or status == 2 or status == 3
-                or Bool(_G.UnitIsUnit, unit .. "target", "player") then
+                or Bool(_G.UnitIsUnit, mob .. "target", "player") then
             pct = 100
+            reason = "the mob is on you"
         elseif not me then
-            -- Left off the list because the number is secret: show it as it is,
-            -- in white, since a secret can't pick its own color.
-            local secret = SecretOwnPct(unit)
-            if ns.IsSecret(secret) then return nil, 1, 1, 1, secret end
+            -- Left off the list because the number is secret: hand it on as it
+            -- is, since a secret can't be rounded or pick its own color.
+            local secret = SecretOwnPct(mob)
+            if not ns.IsSecret(secret) and alias then secret = SecretOwnPct(unit) end
+            if ns.IsSecret(secret) then
+                Why(unit, "your % is secret " .. via)
+                return nil, 1, 1, 1, secret
+            end
             if status == 1 then
                 -- Past the tank, no number to say by how much.
+                Why(unit, "past the tank, no number")
                 return "high", NumberColor(100)
+            end
+            if fighting == nil then
+                -- Not on its list, and the game won't say whether it is in the
+                -- fight: nothing, rather than 0% on every mob around.
+                return Why(unit, "not on its list, and the game won't say whether it is in the fight")
             end
         end
     end
+    Why(unit, reason)
     return pct .. "%", NumberColor(pct)
 end
 
@@ -389,6 +449,59 @@ local function Label(unit)
     return label
 end
 
+-- A secret % as a thin bar along the top of the health bar, for a client that
+-- won't print it. Three status bars side by side, one per color band (green to
+-- 70, amber to 90, red to 100), each handed the secret as it is and clamping
+-- it the way the combo pips do, so the fill and its color are exact without
+-- the number ever being read. nil hides it. True when it drew.
+local BANDS = {
+    { 0, 70, 0.4, 1, 0.4 },
+    { 70, 90, 1, 0.75, 0.2 },
+    { 90, 100, 1, 0.25, 0.2 },
+}
+local BAR_H = 3
+
+local function SecretBar(label, secret)
+    if not ns.IsSecret(secret) then
+        if label.bands then
+            for _, band in ipairs(label.bands) do band:Hide() end
+        end
+        return false
+    end
+    if not label.bands then
+        label.bands = {}
+        for i, b in ipairs(BANDS) do
+            local band = CreateFrame("StatusBar", nil, label.frame)
+            band:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+            band:SetStatusBarColor(b[3], b[4], b[5])
+            band:SetMinMaxValues(b[1], b[2])
+            local back = band:CreateTexture(nil, "BACKGROUND")
+            back:SetAllPoints()
+            back:SetColorTexture(0, 0, 0, 0.6)
+            label.bands[i] = band
+        end
+    end
+    local okW, width = pcall(label.frame.GetWidth, label.frame)
+    width = okW and ns.Num(width) or 0
+    if width <= 0 then width = 110 end
+    local x = 0
+    local drew = true
+    for i, b in ipairs(BANDS) do
+        local band = label.bands[i]
+        local w = width * (b[2] - b[1]) / 100
+        band:ClearAllPoints()
+        band:SetPoint("TOPLEFT", label.frame, "TOPLEFT", x, 0)
+        band:SetSize(w, BAR_H)
+        x = x + w
+        if not pcall(band.SetValue, band, secret) then drew = false end
+        band:Show()
+    end
+    if not drew then
+        for _, band in ipairs(label.bands) do band:Hide() end
+    end
+    return drew
+end
+
 local function ShowText(unit)
     local label = Label(unit)
     if not label then return end
@@ -397,14 +510,28 @@ local function ShowText(unit)
         local ok, t, rr, gg, bb, sp = pcall(ns.NameplateThreatText, unit)
         if ok then text, r, g, b, secret = t, rr, gg, bb, sp end
     end
+    SecretBar(label, nil)
     if text then
         label.text:SetText(text)
         label.text:SetTextColor(r or 1, g or 1, b or 1)
+        label.text:Show()
         label.frame:Show()
-    elseif ns.IsSecret(secret)
-            and pcall(label.text.SetFormattedText, label.text, "%d%%", secret) then
-        label.text:SetTextColor(r or 1, g or 1, b or 1)
-        label.frame:Show()
+    elseif ns.IsSecret(secret) then
+        -- A secret as text, if the client will print it; if not, as a bar,
+        -- which takes a secret the way the combo pips do.
+        local shown = pcall(label.text.SetFormattedText, label.text, "%d%%", secret)
+            or pcall(function() label.text:SetText(string.format("%d%%", secret)) end)
+        if shown then
+            label.text:SetTextColor(r or 1, g or 1, b or 1)
+            label.text:Show()
+            whyByUnit[unit] = (whyByUnit[unit] or "") .. " (drawn as text)"
+        else
+            label.text:Hide()
+            shown = SecretBar(label, secret)
+            whyByUnit[unit] = (whyByUnit[unit] or "") .. (shown and " (drawn as a bar: the game won't print it)"
+                or " (the game refused both the text and the bar)")
+        end
+        if shown then label.frame:Show() else label.frame:Hide() end
     else
         label.frame:Hide()
     end

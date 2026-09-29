@@ -2656,6 +2656,8 @@ NP_COMBAT = true
 function UnitAffectingCombat() return NP_COMBAT end
 TANK = true
 NS.PlayerIsTank = function() return TANK end
+IN_GROUP = true
+function IsInGroup() return IN_GROUP end
 ROWS = {}
 NS.ThreatRows = function() return ROWS end
 function NPTEXT(unit)
@@ -2747,11 +2749,25 @@ NS.ThreatRows = function() return ROWS end''')
 rt.execute('''function UnitThreatSituation() return nil end''')
 rt.execute("TANK = true")
 check("the tank on an empty list: nothing, as before", rt.eval("(NPTEXT())") is None)
+rt.execute('ROWS = { { name = "Chairface Chippendale", pct = 100, tanking = true, isMe = true } }')
+rt.execute("IN_GROUP = false")
+check("solo with Tank ticked in the group finder: their own threat, not the tank's view",
+      rt.eval("NPTEXT()") == ("100%", 1))
+check("and the reason is kept for the probe",
+      rt.eval("NS.npThreatWhy['nameplate1']") is not None)
+rt.execute("IN_GROUP = true ROWS = {}")
 rt.execute("TANK = false")
 rt.execute('ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true },'
            ' { name = "Chairface Chippendale", pct = 58, tanking = false, isMe = true } }')
 rt.execute("NP_COMBAT = false")
 check("out of combat: nothing", rt.eval("(NPTEXT())") is None)
+# The mob's own combat flag comes back secret: while you fight, it still shows.
+rt.execute('''function UnitAffectingCombat(u) if u == "player" then return true end error("secret") end''')
+check("a mob that won't say it is fighting still shows while you are", rt.eval("NPTEXT()") == ("58%", 0.4))
+rt.execute('ROWS = {}')
+check("but not 0% on every mob around when you are not on its list", rt.eval("(NPTEXT())") is None)
+rt.execute('''ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true }, { name = "Chairface Chippendale", pct = 58, tanking = false, isMe = true } }
+function UnitAffectingCombat() return NP_COMBAT end''')
 
 # On a plate: our own frame over the health bar, aligned as chosen.
 rt.execute('''
@@ -2791,10 +2807,29 @@ NS.ShowNameplateThreatText("nameplate1")''')
 check("a secret % is drawn on the plate straight from the value",
       rt.eval("DREW_FMT") == "%d%%" and rt.eval("DREW_VALUE == SECRET_PCT") is True
       and rt.eval("NS.npThreatLabels[PLATE].frame:IsShown()") is True)
-rt.execute('''NS.npThreatLabels[PLATE].text.SetFormattedText = function() error("secret") end
-NS.ShowNameplateThreatText("nameplate1")''')
-check("and a client that won't draw it hides the label rather than erroring",
+rt.execute('''BAND_VALUES = {}
+NS.npThreatLabels[PLATE].text.SetFormattedText = function() error("secret") end
+REAL_FORMAT = string.format
+string.format = function(f, v, ...) if v == SECRET_PCT then error("secret") end return REAL_FORMAT(f, v, ...) end
+NS.ShowNameplateThreatText("nameplate1")
+string.format = REAL_FORMAT
+local label = NS.npThreatLabels[PLATE]''')
+check("a client that won't print the secret gets a bar instead, one band per color",
+      rt.eval("NS.npThreatLabels[PLATE].frame:IsShown()") is True
+      and rt.eval("#NS.npThreatLabels[PLATE].bands") == 3
+      and rt.eval("NS.npThreatLabels[PLATE].bands[3]:IsShown()") is True
+      and rt.eval("NS.npThreatLabels[PLATE].text:IsShown()") is False)
+check("and the probe's reason says so",
+      "drawn as a bar" in (rt.eval("NS.npThreatWhy['nameplate1']") or ""))
+rt.execute('''for _, band in ipairs(NS.npThreatLabels[PLATE].bands) do
+    band.SetValue = function() error("secret") end
+end
+string.format = function(f, v, ...) if v == SECRET_PCT then error("secret") end return REAL_FORMAT(f, v, ...) end
+NS.ShowNameplateThreatText("nameplate1")
+string.format = REAL_FORMAT''')
+check("and one that refuses the bar too hides the label rather than erroring",
       rt.eval("NS.npThreatLabels[PLATE].frame:IsShown()") is False)
+rt.execute('''NS.ShowNameplateThreatText("nameplate1")''')
 rt.execute("UnitDetailedThreatSituation = nil UnitThreatSituation = nil NS.IsSecret = REAL_ISSECRET")
 rt.execute('''PRINTED = {}
 NS.Print = function(m) PRINTED[#PRINTED + 1] = m end
@@ -2814,6 +2849,8 @@ function UnitExists() return false end
 function UnitIsUnit() return false end''')
 check("the probe says which name answers: the plate's secret, the target's 64%",
       "as nameplate1 secret; as target 64%" in rt.eval("PROBE"), rt.eval("PROBE"))
+check("and which view is on, and what each plate shows and why",
+      "threat %: on" in rt.eval("PROBE") and "plate: " in rt.eval("PROBE"), rt.eval("PROBE"))
 check("the option is on the threat meter's Nameplates page",
       any(rt.eval(f"NS.ROWS[{i}].key") == "npThreatText" and rt.eval(f"NS.ROWS[{i}].tab") == "threatnp"
           for i in range(1, rt.eval("#NS.ROWS") + 1)))
