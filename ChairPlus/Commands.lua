@@ -255,7 +255,7 @@ local ROWS = {
     { key = "npComboPoints", label = "Show combo points on my target's nameplate", tab = "threatnp",
       classes = { ROGUE = true },
       tip = "Your combo points as a row of pips along the bottom of your target's nameplate health bar. "
-         .. "/chair threat nameplates probe says whether this client reads them." },
+         .. "/chair threat combo says what the client reports and why the pips did or did not show." },
 }
 -- Read by the welcome window (labels and tips for its switches) and by the
 -- menu's search box. Nothing outside this file changes it.
@@ -2203,6 +2203,8 @@ local function Handler(input)
             ns.TogglePanel(cmd)
         elseif sub == "nameplates" and cmd == "threat" then
             if ns.ProbeNameplates then ns.ProbeNameplates() end
+        elseif sub == "combo" and cmd == "threat" then
+            if ns.ProbeCombo then ns.ProbeCombo() end
         elseif sub == "preview" and cmd == "threat" then
             if not ns.IsEnabled("threat") then ns.Set("threat", true) end
             ns.SetThreatPreview(not ns.threatPreview)

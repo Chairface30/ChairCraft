@@ -266,15 +266,22 @@ function ns.NameplateThreatText(unit)
         return nil
     end
 
-    -- Anyone else: their own threat on every mob in the fight. One they are
-    -- not on the list of yet is 0%, while they are fighting themselves.
-    local pct
-    if me then
-        pct = math.floor(me.pct + 0.5)
-    elseif Bool(_G.UnitAffectingCombat, "player") then
-        pct = 0
-    else
-        return nil
+    -- Anyone else: their own threat on every mob in the fight. The mob being
+    -- on you is 100% whatever the number says: solo, the client can leave you
+    -- off the list (or give no number) while the mob beats on you. A mob you
+    -- are not on the list of, and that is not on you, is 0%.
+    if not Bool(_G.UnitAffectingCombat, "player") and not me then return nil end
+    local pct = me and math.floor(me.pct + 0.5) or 0
+    if pct < 100 then
+        local okS, status = pcall(_G.UnitThreatSituation, "player", unit)
+        status = okS and ns.Num(status) or nil
+        if (me and me.tanking) or status == 2 or status == 3
+                or Bool(_G.UnitIsUnit, unit .. "target", "player") then
+            pct = 100
+        elseif status == 1 and not me then
+            -- Past the tank, no number to say by how much.
+            return "high", NumberColor(100)
+        end
     end
     return pct .. "%", NumberColor(pct)
 end
@@ -446,17 +453,26 @@ local function ComboPower()
     return (enum and ns.Num(enum.ComboPoints)) or COMBO_POWER
 end
 
+local function Call(fn, ...)
+    if type(fn) ~= "function" then return nil end
+    local ok, n = pcall(fn, ...)
+    if ok and type(n) == "number" then return n end
+    return nil
+end
+
 -- The count, secret or plain, and which call gave it. The classic call first:
--- there the points sit on the target.
+-- there the points sit on the target. A plain 0 from it is not the last word,
+-- since on this engine the points can live on the player instead: then the
+-- player's combo power answers, if it has anything (or will not say).
 function ns.ComboPointCount()
-    if type(_G.GetComboPoints) == "function" then
-        local ok, n = pcall(_G.GetComboPoints, "player", "target")
-        if ok and type(n) == "number" then return n, "GetComboPoints" end
-    end
-    if type(_G.UnitPower) == "function" then
-        local ok, n = pcall(_G.UnitPower, "player", ComboPower())
-        if ok and type(n) == "number" then return n, "UnitPower" end
-    end
+    local classic = Call(_G.GetComboPoints, "player", "target")
+    local classicPlain = classic and ns.Num(classic)
+    if classic and classicPlain ~= 0 then return classic, "GetComboPoints" end
+    local power = Call(_G.UnitPower, "player", ComboPower())
+    local powerPlain = power and ns.Num(power)
+    if power and powerPlain ~= 0 then return power, "UnitPower" end
+    if classic then return classic, "GetComboPoints" end
+    if power then return power, "UnitPower" end
     return nil
 end
 
@@ -492,7 +508,7 @@ local function LayOut(combo, bar, count)
         if i <= count then
             if not pip then
                 pip = CreateFrame("StatusBar", nil, combo.frame)
-                pip:SetStatusBarTexture("Interface\TargetingFrame\UI-StatusBar")
+                pip:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
                 pip:SetStatusBarColor(1, 0.82, 0.1)
                 local back = pip:CreateTexture(nil, "BACKGROUND")
                 back:SetAllPoints()
@@ -514,22 +530,33 @@ local function HideCombos()
     for _, combo in pairs(combos) do combo.frame:Hide() end
 end
 
+-- Why the pips last did or did not show, for /chair threat combo.
+local comboWhy = "not run yet"
+
 local function ShowCombo()
     HideCombos()
-    if not (ns.IsEnabled("npComboPoints") and IsRogue()) then return end
-    if not (Bool(_G.UnitExists, "target") and Bool(_G.UnitCanAttack, "player", "target")) then return end
+    if not ns.IsEnabled("npComboPoints") then comboWhy = "switched off" return end
+    if not IsRogue() then comboWhy = "not a rogue" return end
+    if not Bool(_G.UnitExists, "target") then comboWhy = "no target" return end
+    -- Only a plain "no" stops it: a client that will not say is let through.
+    if Bool(_G.UnitCanAttack, "player", "target") == false then comboWhy = "target is friendly" return end
     local plate = Plate("target")
+    if not plate then comboWhy = "no nameplate for the target (plates off, or a protected one)" return end
     local bar = HealthBar("target")
-    if not (plate and bar) then return end
+    if not bar then comboWhy = "the target's nameplate has no health bar I can find" return end
     local combo = Pips(plate, bar)
     local count = ComboMax()
     LayOut(combo, bar, count)
     local points = ns.ComboPointCount() or 0
+    local failed
     for i = 1, count do
         -- The count straight in: see above.
-        pcall(combo.pips[i].SetValue, combo.pips[i], points)
+        local ok, err = pcall(combo.pips[i].SetValue, combo.pips[i], points)
+        if not ok and not failed then failed = ns.Text(err) or "refused" end
     end
     combo.frame:Show()
+    comboWhy = failed and ("shown, but the pips refused the count: " .. failed)
+        or ("shown, " .. count .. " pips")
 end
 ns.ShowNameplateCombo = ShowCombo
 
@@ -543,7 +570,27 @@ end
 
 local COMBO_EVENTS = { "PLAYER_TARGET_CHANGED", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED",
                        "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER",
-                       "PLAYER_ENTERING_WORLD" }
+                       "PLAYER_ENTERING_WORLD",
+                       -- The older clients' own event, where it still exists.
+                       "UNIT_COMBO_POINTS" }
+
+-- /chair threat combo: what each call says, and why the pips did or did not
+-- show. Run it with a target and a few points up.
+function ns.ProbeCombo()
+    ShowCombo()
+    local function Say(n)
+        if type(n) ~= "number" then return "nothing" end
+        local plain = ns.Num(n)
+        return plain and tostring(plain) or "secret"
+    end
+    ns.Print("Combo points probe:")
+    ns.Print("  GetComboPoints(player, target): " .. Say(Call(_G.GetComboPoints, "player", "target")))
+    ns.Print("  UnitPower(player, " .. ComboPower() .. "): " .. Say(Call(_G.UnitPower, "player", ComboPower())))
+    ns.Print("  UnitPowerMax: " .. Say(Call(_G.UnitPowerMax, "player", ComboPower())))
+    local _, from = ns.ComboPointCount()
+    ns.Print("  using: " .. (from or "neither"))
+    ns.Print("  pips: " .. comboWhy)
+end
 
 ns.RegisterModule("npComboPoints", {
     title = "Combo points on nameplates",

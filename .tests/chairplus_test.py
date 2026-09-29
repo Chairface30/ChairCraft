@@ -2687,6 +2687,17 @@ rt.execute('ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true } }')
 check("not the tank, a mob in the fight they have not hit: 0%", rt.eval("NPTEXT()") == ("0%", 0.4))
 rt.execute('ROWS = {}')
 check("and with nobody from the group on it yet, still 0%", rt.eval("NPTEXT()") == ("0%", 0.4))
+rt.execute('ROWS = { { name = "Chairface Chippendale", pct = 0, tanking = true, isMe = true } }')
+check("solo DPS holding the mob: 100%, whatever the number says", rt.eval("NPTEXT()") == ("100%", 1))
+rt.execute('''ROWS = {}
+function UnitIsUnit(a, b) return a == "nameplate1target" and b == "player" end''')
+check("solo DPS left off the list, the mob on them: 100%", rt.eval("NPTEXT()") == ("100%", 1))
+rt.execute('''function UnitIsUnit() return false end
+function UnitThreatSituation() return 3 end''')
+check("and by threat status alone: 100%", rt.eval("NPTEXT()") == ("100%", 1))
+rt.execute('''function UnitThreatSituation() return 1 end''')
+check("past the tank with no number: high, in red", rt.eval("NPTEXT()") == ("high", 1))
+rt.execute('''function UnitThreatSituation() return nil end''')
 rt.execute("TANK = true")
 check("the tank on an empty list: nothing, as before", rt.eval("(NPTEXT())") is None)
 rt.execute("TANK = false")
@@ -2727,6 +2738,31 @@ check("it ships off, centered", g.NS.defaults.npThreatText is False and g.NS.def
 check("the font path is a real path, backslash and all",
       "Fonts\\\\FRIZQT__.TTF" in open("ChairPlus/Nameplates.lua", encoding="utf-8").read())
 
+# Lua 5.1 drops the backslash of an escape it does not know, so
+# "Interface\TargetingFrame" quietly becomes a path to nothing: a texture
+# or font that never draws, and no error anywhere. The harness runs 5.1 too,
+# so it has to be looked for.
+def bad_escapes():
+    known = set('abfnrtv\\"\'\n0123456789')
+    string_re = re.compile(r'"((?:[^"\\\n]|\\.)*)"|\'((?:[^\'\\\n]|\\.)*)\'')
+    found = []
+    for path in glob.glob("**/*.lua", recursive=True):
+        for n, line in enumerate(open(path, encoding="utf-8", errors="replace"), 1):
+            for m in string_re.finditer(line):
+                s = m.group(1) if m.group(1) is not None else m.group(2)
+                i = 0
+                while i < len(s):
+                    if s[i] == "\\":
+                        if i + 1 < len(s) and s[i + 1] not in known:
+                            found.append(f"{path}:{n}")
+                            break
+                        i += 2
+                    else:
+                        i += 1
+    return found
+bad = bad_escapes()
+check("no string in any Lua file loses a backslash", not bad, bad)
+
 print("\nCombo points on the target's nameplate")
 rt.execute('''
 MY_CLASS = "ROGUE"
@@ -2753,6 +2789,17 @@ check("and it shows", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is True)
 rt.execute('function GetComboPoints() return nil end function UnitPower() return 4 end')
 check("without the classic call, the player's combo power answers",
       rt.eval("(function() local n, from = NS.ComboPointCount() return from end)()") == "UnitPower")
+rt.execute('function GetComboPoints() return 0 end')
+check("a plain 0 from the classic call gives way to the combo power",
+      rt.eval("(function() local n, from = NS.ComboPointCount() return n, from end)()") == (4, "UnitPower"))
+rt.execute('function UnitPower() return 0 end')
+check("both 0: 0", rt.eval("(NS.ComboPointCount())") == 0)
+rt.execute('UnitCanAttack = function() return nil end NS.ShowNameplateCombo()')
+check("a target the client will not say it can attack still gets them",
+      rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is True)
+rt.execute('PRINTED = {} NS.Print = function(...) PRINTED[#PRINTED + 1] = table.concat({...}, " ") end NS.ProbeCombo()')
+check("/chair threat combo says why",
+      any("pips: shown" in (rt.eval(f"PRINTED[{i}]") or "") for i in range(1, rt.eval("#PRINTED") + 1)))
 rt.execute('NS.Set("npComboPoints", false) NS.ShowNameplateCombo()')
 check("switched off, it hides", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is False)
 rt.execute('NS.Set("npComboPoints", true) MY_CLASS = "WARRIOR" NS.ShowNameplateCombo()')
