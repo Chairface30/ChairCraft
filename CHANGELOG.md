@@ -7,7 +7,7 @@
   - **As the tank:** the highest threat behind you on each mob you hold (100% pulls it off you). On one someone else has, their name and your % toward taking it back, in red.
   - **Anyone else (DPS and healers):** your own threat on every mob in the fight, whatever your role. A mob you have not hit yet reads 0%.
   - Green under 70%, amber to 90%, red past it. **Position** puts it at the left, center or right of the bar.
-- **Combo points on your target's nameplate** (rogues only; Threat meter, Nameplates page; off): your combo points as a row of pips along the bottom of the target's health bar. `/chair threat nameplates probe` also reports whether this client reads combo points.
+- **Combo points on your target's nameplate** (rogues, and druids in Cat Form; Threat meter, Nameplates page; off): your combo points as a row of pips along the bottom of the target's health bar. A druid sees them only in Cat Form, and they come and go as you shift. `/chair threat nameplates probe` also reports whether this client reads combo points.
 - The threat meter's Nameplate colors page is now just **Nameplates**.
 
 **Fixed**

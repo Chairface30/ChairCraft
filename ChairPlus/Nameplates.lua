@@ -510,11 +510,25 @@ local combos = {}      -- nameplate frame -> { frame, pips }
 ns.npComboPips = combos   -- for the tests
 local comboDriver
 
-local function IsRogue()
+local ENERGY = 3   -- Enum.PowerType.Energy, where the enum is missing
+
+-- Who has combo points right now: a rogue always, a druid in Cat Form. Cat
+-- Form is the druid's energy form, so the power type says so without form
+-- numbers, which differ between clients. False comes with the reason.
+local function ComboClass()
     local ok, _, class = pcall(_G.UnitClass, "player")
-    return ok and ns.Text(class) == "ROGUE"
+    class = ok and ns.Text(class) or nil
+    if class == "ROGUE" then return true end
+    if class == "DRUID" then
+        local enum = _G.Enum and _G.Enum.PowerType
+        local energy = (enum and ns.Num(enum.Energy)) or ENERGY
+        local okP, powerType = pcall(_G.UnitPowerType, "player")
+        if okP and ns.Num(powerType) == energy then return true end
+        return false, "a druid out of Cat Form"
+    end
+    return false, "not a rogue or druid"
 end
-ns.NameplateComboClass = IsRogue
+ns.NameplateComboClass = ComboClass
 
 local COMBO_POWER = 4   -- Enum.PowerType.ComboPoints, where the enum is missing
 
@@ -606,7 +620,8 @@ local comboWhy = "not run yet"
 local function ShowCombo()
     HideCombos()
     if not ns.IsEnabled("npComboPoints") then comboWhy = "switched off" return end
-    if not IsRogue() then comboWhy = "not a rogue" return end
+    local fits, whyNot = ComboClass()
+    if not fits then comboWhy = whyNot return end
     if not Bool(_G.UnitExists, "target") then comboWhy = "no target" return end
     -- Only a plain "no" stops it: a client that will not say is let through.
     if Bool(_G.UnitCanAttack, "player", "target") == false then comboWhy = "target is friendly" return end
@@ -631,8 +646,8 @@ end
 ns.ShowNameplateCombo = ShowCombo
 
 local function OnComboEvent(_, event, unit)
-    if (event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER")
-            and unit ~= "player" then
+    if (event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER"
+            or event == "UNIT_DISPLAYPOWER") and unit ~= "player" then
         return
     end
     ShowCombo()
@@ -641,6 +656,8 @@ end
 local COMBO_EVENTS = { "PLAYER_TARGET_CHANGED", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED",
                        "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER",
                        "PLAYER_ENTERING_WORLD",
+                       -- A druid shifting in or out of Cat Form.
+                       "UPDATE_SHAPESHIFT_FORM", "UNIT_DISPLAYPOWER",
                        -- The older clients' own event, where it still exists.
                        "UNIT_COMBO_POINTS" }
 
@@ -664,7 +681,7 @@ end
 
 ns.RegisterModule("npComboPoints", {
     title = "Combo points on nameplates",
-    desc = "Rogues: your combo points as pips along the bottom of your target's nameplate health bar.",
+    desc = "Rogues, and druids in Cat Form: your combo points as pips along the bottom of your target's nameplate health bar.",
     Apply = function(enabled)
         if not comboDriver then
             comboDriver = CreateFrame("Frame")

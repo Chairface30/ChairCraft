@@ -251,10 +251,10 @@ local ROWS = {
     { choice = "npThreatTextAlign", label = "Position", tab = "threatnp", sub = "npThreatText",
       values = { { value = "LEFT", text = "left" }, { value = "CENTER", text = "center" },
                  { value = "RIGHT", text = "right" } } },
-    { header = "Combo points", tab = "threatnp", classes = { ROGUE = true } },
+    { header = "Combo points", tab = "threatnp", classes = { ROGUE = true, DRUID = true } },
     { key = "npComboPoints", label = "Show combo points on my target's nameplate", tab = "threatnp",
-      classes = { ROGUE = true },
-      tip = "Your combo points as a row of pips along the bottom of your target's nameplate health bar. "
+      classes = { ROGUE = true, DRUID = true },
+      tip = "Your combo points (a druid's in Cat Form) as a row of pips along the bottom of your target's nameplate health bar. "
          .. "/chair threat combo says what the client reports and why the pips did or did not show." },
 }
 -- Read by the welcome window (labels and tips for its switches) and by the
@@ -284,7 +284,7 @@ for _, page in ipairs(PAGES) do PAGE_LABELS[page.key] = page.label end
 
 -- A row's tooltip: its own tip, or the description of the module it switches.
 -- Whether a row is for this character: a row with `classes` only shows for
--- those classes (combo points are a rogue's).
+-- those classes (combo points are a rogue's and a druid's).
 local function RowFits(row)
     if not row.classes then return true end
     local ok, _, class = pcall(_G.UnitClass, "player")

@@ -2886,12 +2886,31 @@ check("/chair threat combo says why",
 rt.execute('NS.Set("npComboPoints", false) NS.ShowNameplateCombo()')
 check("switched off, it hides", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is False)
 rt.execute('NS.Set("npComboPoints", true) MY_CLASS = "WARRIOR" NS.ShowNameplateCombo()')
-check("not a rogue: nothing", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is False)
+check("not a rogue or druid: nothing", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is False)
 check("the option is only offered to rogues",
       rt.eval('(function() for _, r in ipairs(NS.ROWS) do if r.key == "npComboPoints" then return NS.RowFits(r) end end end)()') is False)
 rt.execute('MY_CLASS = "ROGUE"')
 check("and a rogue sees it",
       rt.eval('(function() for _, r in ipairs(NS.ROWS) do if r.key == "npComboPoints" then return NS.RowFits(r) end end end)()') is True)
+# Druids have combo points in Cat Form, their energy form.
+rt.execute('''MY_CLASS = "DRUID"
+MY_POWER = 3
+function UnitPowerType() return MY_POWER end
+function GetComboPoints() return 2 end
+NS.ShowNameplateCombo()''')
+check("a druid in Cat Form gets the pips", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is True)
+rt.execute("MY_POWER = 1 NS.ShowNameplateCombo()")
+check("in Bear Form (rage): nothing", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is False)
+rt.execute("MY_POWER = 0 NS.ShowNameplateCombo()")
+check("in caster form (mana): nothing", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is False)
+rt.execute('PRINTED = {} NS.ProbeCombo()')
+check("/chair threat combo says it is the form",
+      any("out of Cat Form" in (rt.eval(f"PRINTED[{i}]") or "") for i in range(1, rt.eval("#PRINTED") + 1)))
+rt.execute("MY_POWER = 3 FireEvent('UPDATE_SHAPESHIFT_FORM')")
+check("shifting into Cat Form brings them back", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is True)
+check("the option is offered to druids",
+      rt.eval('(function() for _, r in ipairs(NS.ROWS) do if r.key == "npComboPoints" then return NS.RowFits(r) end end end)()') is True)
+rt.execute('MY_CLASS = "ROGUE" UnitPowerType = nil')
 check("it ships off", g.NS.defaults.npComboPoints is False)
 
 print("\nOther parts' settings inside the menu")
