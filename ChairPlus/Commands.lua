@@ -245,11 +245,17 @@ local ROWS = {
     { key = "npThreatText", label = "Show threat % on enemy nameplates", tab = "threatnp",
       tip = "During combat, a threat % inside each enemy nameplate's health bar, so a whole pack reads at a glance. "
          .. "As the tank: the highest threat behind you (100% pulls it off you), or, when someone else has it, "
-         .. "their name and your % toward taking it back, in red. Otherwise: your own threat on each mob. "
+         .. "their name and your % toward taking it back, in red. Otherwise: your own threat on every mob "
+         .. "in the fight, 0% on one you have not hit yet. "
          .. "Green under 70%, amber to 90%, red past it." },
     { choice = "npThreatTextAlign", label = "Position", tab = "threatnp", sub = "npThreatText",
       values = { { value = "LEFT", text = "left" }, { value = "CENTER", text = "center" },
                  { value = "RIGHT", text = "right" } } },
+    { header = "Combo points", tab = "threatnp", classes = { ROGUE = true } },
+    { key = "npComboPoints", label = "Show combo points on my target's nameplate", tab = "threatnp",
+      classes = { ROGUE = true },
+      tip = "Your combo points as a row of pips along the bottom of your target's nameplate health bar. "
+         .. "/chair threat nameplates probe says whether this client reads them." },
 }
 -- Read by the welcome window (labels and tips for its switches) and by the
 -- menu's search box. Nothing outside this file changes it.
@@ -277,6 +283,16 @@ local PAGE_LABELS = {}
 for _, page in ipairs(PAGES) do PAGE_LABELS[page.key] = page.label end
 
 -- A row's tooltip: its own tip, or the description of the module it switches.
+-- Whether a row is for this character: a row with `classes` only shows for
+-- those classes (combo points are a rogue's).
+local function RowFits(row)
+    if not row.classes then return true end
+    local ok, _, class = pcall(_G.UnitClass, "player")
+    class = ok and ns.Text(class) or nil
+    return class ~= nil and row.classes[class] == true
+end
+ns.RowFits = RowFits
+
 local function RowTip(row)
     if row.tip then return row.tip end
     local key = row.key or row.slider or row.choice
@@ -675,7 +691,7 @@ function ns.SearchSettings(query)
     local byLabel, byTip = {}, {}
     for _, row in ipairs(ROWS) do
         local label = row.label or row.action
-        if label and not row.header then
+        if label and not row.header and RowFits(row) then
             local page = PAGE_LABELS[row.tab] or row.tab
             if Has(label) then
                 byLabel[#byLabel + 1] = { label = label, where = page, row = row }
@@ -970,7 +986,11 @@ local function BuildPanel()
         pageWidgets[page.key][#pageWidgets[page.key] + 1] = heading
     end
 
+    local fitting = {}
     for _, row in ipairs(ROWS) do
+        if RowFits(row) then fitting[#fitting + 1] = row end
+    end
+    for _, row in ipairs(fitting) do
         local tab = row.tab
         local y = tabY[tab]
 

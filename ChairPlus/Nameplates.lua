@@ -194,6 +194,14 @@ function ns.ProbeNameplates()
         end
     end
     if shown == 0 then ns.Print("  no nameplates on screen -- stand near some enemies.") end
+    -- Combo points: which call answers, and whether it answers in the clear.
+    -- Run it with a few points up to know the pips will fill.
+    if ns.ComboPointCount then
+        local n, from = ns.ComboPointCount()
+        local plain = ns.Num(n)
+        ns.Print("  combo points: " .. (from or "no call answered") .. ", "
+            .. (type(n) ~= "number" and "none" or (plain and tostring(plain) or "secret")))
+    end
 end
 
 -------------------------------------------------------------------------------
@@ -206,7 +214,9 @@ end
 --                                          as a % of what pulls it off you
 --   you are the tank, and someone else     who has it, and your own % toward
 --   has it                                 taking it back ("Brakk 76%"), red
---   you are not the tank                   your own %: 100 is where you pull
+--   you are not the tank                   your own %: 100 is where you pull,
+--                                          on every mob in the fight, so 0%
+--                                          on one you have not touched yet
 --
 -- Green under 70%, amber to 90%, red past it. The % is the client's scaled
 -- threat (UnitDetailedThreatSituation), readable in combat on this client;
@@ -232,7 +242,7 @@ end
 function ns.NameplateThreatText(unit)
     if not Bool(_G.UnitAffectingCombat, unit) then return nil end
     local rows = ns.ThreatRows and ns.ThreatRows(unit)
-    if type(rows) ~= "table" or #rows == 0 then return nil end
+    if type(rows) ~= "table" then return nil end
     local me, holder, bestOther
     for _, row in ipairs(rows) do
         if row.isMe then me = row
@@ -256,8 +266,16 @@ function ns.NameplateThreatText(unit)
         return nil
     end
 
-    if not me then return nil end
-    local pct = math.floor(me.pct + 0.5)
+    -- Anyone else: their own threat on every mob in the fight. One they are
+    -- not on the list of yet is 0%, while they are fighting themselves.
+    local pct
+    if me then
+        pct = math.floor(me.pct + 0.5)
+    elseif Bool(_G.UnitAffectingCombat, "player") then
+        pct = 0
+    else
+        return nil
+    end
     return pct .. "%", NumberColor(pct)
 end
 
@@ -280,8 +298,11 @@ local function Label(unit)
         local frame = CreateFrame("Frame", nil, plate)
         frame:SetFrameLevel((ns.Num(bar:GetFrameLevel()) or 1) + 5)
         local text = frame:CreateFontString(nil, "OVERLAY")
-        local okF = pcall(text.SetFont, text, "Fonts\FRIZQT__.TTF", 10, "OUTLINE")
-        if not okF then text:SetFontObject("GameFontHighlightSmall") end
+        -- A font that did not take leaves the string with none, and SetText
+        -- then throws: check it is there, not just that the call returned.
+        local okF, took = pcall(text.SetFont, text, "Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+        local okG, font = pcall(text.GetFont, text)
+        if not (okF and took ~= false and okG and font) then text:SetFontObject("GameFontHighlightSmall") end
         label = { frame = frame, text = text }
         labels[plate] = label
     end
@@ -365,7 +386,7 @@ ns.RegisterModule("npThreatText", {
     title = "Threat % on nameplates",
     desc = "During combat, a threat % inside each enemy nameplate's health bar. As the tank: the highest "
         .. "threat behind you, or who has the mob and how close you are to taking it back. Otherwise: "
-        .. "your own threat on each mob.",
+        .. "your own threat on every mob in the fight.",
     Apply = function(enabled)
         if not textDriver then
             textDriver = CreateFrame("Frame")
@@ -392,5 +413,153 @@ ns.RegisterModule("npThreatText", {
             StopTicker()
             HideAllText()
         end
+    end,
+})
+
+-------------------------------------------------------------------------------
+-- Combo points on the target's nameplate
+-------------------------------------------------------------------------------
+-- A rogue's combo points as a row of pips along the bottom of the target's
+-- plate health bar.
+--
+-- Power reads come back secret on this client, and a secret cannot be
+-- compared or printed. So nothing here does either: each pip is its own
+-- status bar spanning one point (pip 3 runs from 2 to 3) and is handed the
+-- count as it is. The bar clamps it, so pip 3 is full at 3 or more and empty
+-- at 2 or less -- exact, secret or not.
+
+local PIP_H, PIP_GAP = 4, 2
+local combos = {}      -- nameplate frame -> { frame, pips }
+ns.npComboPips = combos   -- for the tests
+local comboDriver
+
+local function IsRogue()
+    local ok, _, class = pcall(_G.UnitClass, "player")
+    return ok and ns.Text(class) == "ROGUE"
+end
+ns.NameplateComboClass = IsRogue
+
+local COMBO_POWER = 4   -- Enum.PowerType.ComboPoints, where the enum is missing
+
+local function ComboPower()
+    local enum = _G.Enum and _G.Enum.PowerType
+    return (enum and ns.Num(enum.ComboPoints)) or COMBO_POWER
+end
+
+-- The count, secret or plain, and which call gave it. The classic call first:
+-- there the points sit on the target.
+function ns.ComboPointCount()
+    if type(_G.GetComboPoints) == "function" then
+        local ok, n = pcall(_G.GetComboPoints, "player", "target")
+        if ok and type(n) == "number" then return n, "GetComboPoints" end
+    end
+    if type(_G.UnitPower) == "function" then
+        local ok, n = pcall(_G.UnitPower, "player", ComboPower())
+        if ok and type(n) == "number" then return n, "UnitPower" end
+    end
+    return nil
+end
+
+local function ComboMax()
+    local ok, n = pcall(_G.UnitPowerMax, "player", ComboPower())
+    n = ok and ns.Num(n) or nil
+    if not n or n < 1 then return 5 end
+    return math.min(math.floor(n), 10)
+end
+
+local function Pips(plate, bar)
+    local combo = combos[plate]
+    if not combo then
+        local frame = CreateFrame("Frame", nil, plate)
+        combo = { frame = frame, pips = {} }
+        combos[plate] = combo
+    end
+    combo.frame:SetFrameLevel((ns.Num(bar:GetFrameLevel()) or 1) + 6)
+    combo.frame:ClearAllPoints()
+    combo.frame:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+    combo.frame:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+    combo.frame:SetHeight(PIP_H)
+    return combo
+end
+
+local function LayOut(combo, bar, count)
+    local okW, width = pcall(bar.GetWidth, bar)
+    width = okW and ns.Num(width) or 0
+    if width <= 0 then width = 110 end
+    local size = (width - PIP_GAP * (count - 1)) / count
+    for i = 1, math.max(count, #combo.pips) do
+        local pip = combo.pips[i]
+        if i <= count then
+            if not pip then
+                pip = CreateFrame("StatusBar", nil, combo.frame)
+                pip:SetStatusBarTexture("Interface\TargetingFrame\UI-StatusBar")
+                pip:SetStatusBarColor(1, 0.82, 0.1)
+                local back = pip:CreateTexture(nil, "BACKGROUND")
+                back:SetAllPoints()
+                back:SetColorTexture(0, 0, 0, 0.6)
+                combo.pips[i] = pip
+            end
+            pip:SetMinMaxValues(i - 1, i)
+            pip:ClearAllPoints()
+            pip:SetPoint("BOTTOMLEFT", combo.frame, "BOTTOMLEFT", (i - 1) * (size + PIP_GAP), 0)
+            pip:SetSize(size, PIP_H)
+            pip:Show()
+        elseif pip then
+            pip:Hide()
+        end
+    end
+end
+
+local function HideCombos()
+    for _, combo in pairs(combos) do combo.frame:Hide() end
+end
+
+local function ShowCombo()
+    HideCombos()
+    if not (ns.IsEnabled("npComboPoints") and IsRogue()) then return end
+    if not (Bool(_G.UnitExists, "target") and Bool(_G.UnitCanAttack, "player", "target")) then return end
+    local plate = Plate("target")
+    local bar = HealthBar("target")
+    if not (plate and bar) then return end
+    local combo = Pips(plate, bar)
+    local count = ComboMax()
+    LayOut(combo, bar, count)
+    local points = ns.ComboPointCount() or 0
+    for i = 1, count do
+        -- The count straight in: see above.
+        pcall(combo.pips[i].SetValue, combo.pips[i], points)
+    end
+    combo.frame:Show()
+end
+ns.ShowNameplateCombo = ShowCombo
+
+local function OnComboEvent(_, event, unit)
+    if (event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER")
+            and unit ~= "player" then
+        return
+    end
+    ShowCombo()
+end
+
+local COMBO_EVENTS = { "PLAYER_TARGET_CHANGED", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED",
+                       "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER",
+                       "PLAYER_ENTERING_WORLD" }
+
+ns.RegisterModule("npComboPoints", {
+    title = "Combo points on nameplates",
+    desc = "Rogues: your combo points as pips along the bottom of your target's nameplate health bar.",
+    Apply = function(enabled)
+        if not comboDriver then
+            comboDriver = CreateFrame("Frame")
+            comboDriver:SetScript("OnEvent", OnComboEvent)
+        end
+        for _, event in ipairs(COMBO_EVENTS) do
+            if enabled then
+                pcall(comboDriver.RegisterEvent, comboDriver, event)
+            else
+                pcall(comboDriver.UnregisterEvent, comboDriver, event)
+            end
+        end
+        ShowCombo()
     end,
 })

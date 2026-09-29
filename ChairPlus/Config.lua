@@ -130,6 +130,7 @@ ns.defaults = {
     nameplateThreat     = false,
     npThreatText        = false,     -- threat % inside enemy nameplates (Nameplates.lua)
     npThreatTextAlign   = "CENTER",  -- LEFT, CENTER or RIGHT in the health bar
+    npComboPoints       = false,     -- rogues: combo pips on the target's plate (Nameplates.lua)
     npMine              = true,  npMineR = 0.2,  npMineG = 0.8,  npMineB = 0.2,
     npChanging          = true,  npChangingR = 1, npChangingG = 0.6, npChangingB = 0,
     npNonTank           = true,  npNonTankR = 1, npNonTankG = 0.1, npNonTankB = 0.1,

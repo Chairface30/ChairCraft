@@ -2683,6 +2683,15 @@ rt.execute("TANK = false")
 rt.execute('ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true },'
            ' { name = "Chairface Chippendale", pct = 58, tanking = false, isMe = true } }')
 check("not the tank: their own threat", rt.eval("NPTEXT()") == ("58%", 0.4))
+rt.execute('ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true } }')
+check("not the tank, a mob in the fight they have not hit: 0%", rt.eval("NPTEXT()") == ("0%", 0.4))
+rt.execute('ROWS = {}')
+check("and with nobody from the group on it yet, still 0%", rt.eval("NPTEXT()") == ("0%", 0.4))
+rt.execute("TANK = true")
+check("the tank on an empty list: nothing, as before", rt.eval("(NPTEXT())") is None)
+rt.execute("TANK = false")
+rt.execute('ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true },'
+           ' { name = "Chairface Chippendale", pct = 58, tanking = false, isMe = true } }')
 rt.execute("NP_COMBAT = false")
 check("out of combat: nothing", rt.eval("(NPTEXT())") is None)
 
@@ -2715,6 +2724,45 @@ check("the option is on the threat meter's Nameplates page",
       any(rt.eval(f"NS.ROWS[{i}].key") == "npThreatText" and rt.eval(f"NS.ROWS[{i}].tab") == "threatnp"
           for i in range(1, rt.eval("#NS.ROWS") + 1)))
 check("it ships off, centered", g.NS.defaults.npThreatText is False and g.NS.defaults.npThreatTextAlign == "CENTER")
+check("the font path is a real path, backslash and all",
+      "Fonts\\\\FRIZQT__.TTF" in open("ChairPlus/Nameplates.lua", encoding="utf-8").read())
+
+print("\nCombo points on the target's nameplate")
+rt.execute('''
+MY_CLASS = "ROGUE"
+function UnitClass() return "Rogue", MY_CLASS end
+function UnitExists() return true end
+function UnitCanAttack() return true end
+POINTS = 3
+function GetComboPoints() return POINTS end
+function UnitPowerMax() return 5 end
+PIP_VALUES = {}
+NS.Set("npComboPoints", true)
+NS.ApplyModule("npComboPoints")
+local combo = NS.npComboPips[PLATE]
+for i, pip in ipairs(combo and combo.pips or {}) do
+    rawset(pip, "SetValue", function(self, v) PIP_VALUES[i] = v end)
+    rawset(pip, "GetMinMaxValues", nil)
+end
+NS.ShowNameplateCombo()
+''')
+check("a rogue gets five pips on the target's plate", rt.eval("#NS.npComboPips[PLATE].pips") == 5)
+check("each pip is handed the count as it is, to clamp itself",
+      all(rt.eval(f"PIP_VALUES[{i}]") == 3 for i in range(1, 6)))
+check("and it shows", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is True)
+rt.execute('function GetComboPoints() return nil end function UnitPower() return 4 end')
+check("without the classic call, the player's combo power answers",
+      rt.eval("(function() local n, from = NS.ComboPointCount() return from end)()") == "UnitPower")
+rt.execute('NS.Set("npComboPoints", false) NS.ShowNameplateCombo()')
+check("switched off, it hides", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is False)
+rt.execute('NS.Set("npComboPoints", true) MY_CLASS = "WARRIOR" NS.ShowNameplateCombo()')
+check("not a rogue: nothing", rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is False)
+check("the option is only offered to rogues",
+      rt.eval('(function() for _, r in ipairs(NS.ROWS) do if r.key == "npComboPoints" then return NS.RowFits(r) end end end)()') is False)
+rt.execute('MY_CLASS = "ROGUE"')
+check("and a rogue sees it",
+      rt.eval('(function() for _, r in ipairs(NS.ROWS) do if r.key == "npComboPoints" then return NS.RowFits(r) end end end)()') is True)
+check("it ships off", g.NS.defaults.npComboPoints is False)
 
 print("\nOther parts' settings inside the menu")
 EMBED_SETUP = """

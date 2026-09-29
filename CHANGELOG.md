@@ -5,11 +5,13 @@
 **New**
 - **Threat % on enemy nameplates** (Threat meter, Nameplates page; off): during combat, a number inside each enemy nameplate's health bar, so a whole pack reads at a glance without tabbing.
   - **As the tank:** the highest threat behind you on each mob you hold (100% pulls it off you). On one someone else has, their name and your % toward taking it back, in red.
-  - **Anyone else:** your own threat on each mob.
+  - **Anyone else (DPS and healers):** your own threat on every mob in the fight, whatever your role. A mob you have not hit yet reads 0%.
   - Green under 70%, amber to 90%, red past it. **Position** puts it at the left, center or right of the bar.
+- **Combo points on your target's nameplate** (rogues only; Threat meter, Nameplates page; off): your combo points as a row of pips along the bottom of the target's health bar. `/chair threat nameplates probe` also reports whether this client reads combo points.
 - The threat meter's Nameplate colors page is now just **Nameplates**.
 
 **Fixed**
+- **Threat % on nameplates could draw nothing at all.** Its font path was missing a backslash, so the text had no font. It now checks the font took and falls back to the game's own.
 - **A /reload in the air no longer spoils the flight timer.** The flight is not recorded (its time would span the reload), and the countdown carries on from the real takeoff instead of starting over at 00:00.
 
 ## ChairCraft v1.6.0: a clearer menu
