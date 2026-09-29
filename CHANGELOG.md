@@ -13,6 +13,7 @@
 **Fixed**
 - **Combo pips drew nothing.** Their texture path had lost its backslashes, so the pips had no fill. Also, a plain 0 from the classic combo point call now gives way to your combo power, and a target the client won't call attackable still gets pips. `/chair threat combo` says what the client reports and why the pips did or did not show.
 - **Solo DPS read 0% on the mob beating on them.** A mob that's on you now reads 100%, even when the client leaves you off its threat list. When you're past the tank and the client gives no number, it reads "high".
+- **Threat % on nameplates read 0% for DPS and healers on every mob.** In combat the game keeps your threat % secret, and a secret number was being treated as no number. Your real % now shows, in white: a secret number can't be compared, so it can't be colored green, amber or red. As the tank, the plates still show nothing when the numbers are secret.
 - **Threat % on nameplates could draw nothing at all.** Its font path was missing a backslash, so the text had no font. It now checks the font took and falls back to the game's own.
 - **A /reload in the air no longer spoils the flight timer.** The flight is not recorded (its time would span the reload), and the countdown carries on from the real takeoff instead of starting over at 00:00.
 

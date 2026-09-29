@@ -2697,6 +2697,21 @@ function UnitThreatSituation() return 3 end''')
 check("and by threat status alone: 100%", rt.eval("NPTEXT()") == ("100%", 1))
 rt.execute('''function UnitThreatSituation() return 1 end''')
 check("past the tank with no number: high, in red", rt.eval("NPTEXT()") == ("high", 1))
+# Forever keeps the % secret in combat, so the row never makes the list. The
+# secret itself is handed on for the plate to draw; it can't be rounded or
+# colored, so it comes in white.
+rt.execute('''SECRET_PCT = setmetatable({}, { __tostring = function() error("secret") end })
+REAL_ISSECRET = NS.IsSecret
+NS.IsSecret = function(v) return v == SECRET_PCT end
+function UnitDetailedThreatSituation(u, mob) if u == "player" then return false, 0, SECRET_PCT, 40, 1000 end end''')
+check("a secret % of their own: handed on as it is, in white",
+      rt.eval("(function() local t, r, g, b, s = NS.NameplateThreatText('nameplate1') return t == nil and r == 1 and g == 1 and b == 1 and s == SECRET_PCT end)()") is True)
+rt.execute('''function UnitThreatSituation() return 3 end''')
+check("the mob on them still reads 100%, secret or not", rt.eval("NPTEXT()") == ("100%", 1))
+rt.execute('''function UnitThreatSituation() return 1 end
+function UnitDetailedThreatSituation() return nil end''')
+check("no number at all, past the tank: still high", rt.eval("NPTEXT()") == ("high", 1))
+rt.execute("UnitDetailedThreatSituation = nil NS.IsSecret = REAL_ISSECRET")
 rt.execute('''function UnitThreatSituation() return nil end''')
 rt.execute("TANK = true")
 check("the tank on an empty list: nothing, as before", rt.eval("(NPTEXT())") is None)
@@ -2731,6 +2746,24 @@ check("the Position setting moves it to the right",
       rt.eval("NS.npThreatLabels[PLATE].text._point.point") == "RIGHT")
 rt.execute('NS.Set("npThreatTextAlign", "LEFT") NS.ShowNameplateThreatText("nameplate1")')
 check("and to the left", rt.eval("NS.npThreatLabels[PLATE].text._point.point") == "LEFT")
+rt.execute('''NS.Set("npThreatTextAlign", "CENTER")
+SECRET_PCT = setmetatable({}, { __tostring = function() error("secret") end })
+REAL_ISSECRET = NS.IsSecret
+NS.IsSecret = function(v) return v == SECRET_PCT end
+ROWS = {}
+function UnitThreatSituation() return 0 end
+function UnitDetailedThreatSituation(u) if u == "player" then return false, 0, SECRET_PCT end end
+local text = NS.npThreatLabels[PLATE].text
+text.SetFormattedText = function(self, fmt, v) DREW_FMT, DREW_VALUE = fmt, v end
+NS.ShowNameplateThreatText("nameplate1")''')
+check("a secret % is drawn on the plate straight from the value",
+      rt.eval("DREW_FMT") == "%d%%" and rt.eval("DREW_VALUE == SECRET_PCT") is True
+      and rt.eval("NS.npThreatLabels[PLATE].frame:IsShown()") is True)
+rt.execute('''NS.npThreatLabels[PLATE].text.SetFormattedText = function() error("secret") end
+NS.ShowNameplateThreatText("nameplate1")''')
+check("and a client that won't draw it hides the label rather than erroring",
+      rt.eval("NS.npThreatLabels[PLATE].frame:IsShown()") is False)
+rt.execute("UnitDetailedThreatSituation = nil UnitThreatSituation = nil NS.IsSecret = REAL_ISSECRET")
 check("the option is on the threat meter's Nameplates page",
       any(rt.eval(f"NS.ROWS[{i}].key") == "npThreatText" and rt.eval(f"NS.ROWS[{i}].tab") == "threatnp"
           for i in range(1, rt.eval("#NS.ROWS") + 1)))

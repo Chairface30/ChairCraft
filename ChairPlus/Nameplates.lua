@@ -219,8 +219,9 @@ end
 --                                          on one you have not touched yet
 --
 -- Green under 70%, amber to 90%, red past it. The % is the client's scaled
--- threat (UnitDetailedThreatSituation), readable in combat on this client;
--- rows it will not read are simply left out.
+-- threat (UnitDetailedThreatSituation). Forever keeps it secret in combat, so
+-- those rows never make the list; your own secret % is then drawn as it is,
+-- in white (a secret can't be compared, so it can't pick a color).
 
 local NP_TICK = 0.3
 local labels = {}      -- nameplate frame -> { frame, text }
@@ -238,7 +239,19 @@ local function FirstName(row)
     return plain and plain:match("^(%S+)") or nil
 end
 
--- What a mob's plate says, and its color, or nil for nothing.
+-- Your own scaled threat on a mob when the client keeps it secret (Forever
+-- does, in combat), or nil. A secret can't be rounded, compared or colored,
+-- but a font string can still draw it.
+local function SecretOwnPct(unit)
+    local detailed = _G.UnitDetailedThreatSituation
+    if type(detailed) ~= "function" then return nil end
+    local ok, _, _, scaled = pcall(detailed, "player", unit)
+    if ok and ns.IsSecret(scaled) then return scaled end
+    return nil
+end
+
+-- What a mob's plate says, and its color, or nil for nothing. A fifth value,
+-- a secret %, is drawn as it is when there is no text.
 function ns.NameplateThreatText(unit)
     if not Bool(_G.UnitAffectingCombat, unit) then return nil end
     local rows = ns.ThreatRows and ns.ThreatRows(unit)
@@ -278,9 +291,15 @@ function ns.NameplateThreatText(unit)
         if (me and me.tanking) or status == 2 or status == 3
                 or Bool(_G.UnitIsUnit, unit .. "target", "player") then
             pct = 100
-        elseif status == 1 and not me then
-            -- Past the tank, no number to say by how much.
-            return "high", NumberColor(100)
+        elseif not me then
+            -- Left off the list because the number is secret: show it as it is,
+            -- in white, since a secret can't pick its own color.
+            local secret = SecretOwnPct(unit)
+            if ns.IsSecret(secret) then return nil, 1, 1, 1, secret end
+            if status == 1 then
+                -- Past the tank, no number to say by how much.
+                return "high", NumberColor(100)
+            end
         end
     end
     return pct .. "%", NumberColor(pct)
@@ -326,13 +345,17 @@ end
 local function ShowText(unit)
     local label = Label(unit)
     if not label then return end
-    local text, r, g, b
+    local text, r, g, b, secret
     if ns.IsEnabled("npThreatText") then
-        local ok, t, rr, gg, bb = pcall(ns.NameplateThreatText, unit)
-        if ok then text, r, g, b = t, rr, gg, bb end
+        local ok, t, rr, gg, bb, sp = pcall(ns.NameplateThreatText, unit)
+        if ok then text, r, g, b, secret = t, rr, gg, bb, sp end
     end
     if text then
         label.text:SetText(text)
+        label.text:SetTextColor(r or 1, g or 1, b or 1)
+        label.frame:Show()
+    elseif ns.IsSecret(secret)
+            and pcall(label.text.SetFormattedText, label.text, "%d%%", secret) then
         label.text:SetTextColor(r or 1, g or 1, b or 1)
         label.frame:Show()
     else
