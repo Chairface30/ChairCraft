@@ -846,7 +846,9 @@ local function RefreshCooldownText(button, itemID)
         return false
     end
 
+    -- A secret cooldown has no number to show; the swirl still shows it.
     local start, duration = GetItemCooldown(itemID)
+    start, duration = addon.Num(start), addon.Num(duration)
     if not start or not duration or duration <= 0 then
         button.cooldownText:Hide()
         return false
@@ -988,25 +990,11 @@ local function RefreshLiveButton(button, db)
 
     -- Cooldown swirl and its number.
     if itemID then
-        local start, duration = GetItemCooldown(itemID)
-        if start and duration and duration > 0 then
-            button.cooldown:SetCooldown(start, duration)
-            button.cooldown:Show()
-            if start + duration - GetTime() > 0 then counting = true end
-        else
-            button.cooldown:Clear()
-        end
+        if addon.DrawCooldown(button.cooldown, GetItemCooldown(itemID)) then counting = true end
     elseif isTable and itemData.spellID and addon.GetSpellCooldown then
         -- Same reasoning as the appearance pass, but this is the one that runs
         -- while the cooldown is actually ticking.
-        local start, duration = addon.GetSpellCooldown(itemData.spellID)
-        if start and duration and duration > 0 then
-            button.cooldown:SetCooldown(start, duration)
-            button.cooldown:Show()
-            if start + duration - GetTime() > 0 then counting = true end
-        else
-            button.cooldown:Clear()
-        end
+        if addon.DrawCooldown(button.cooldown, addon.GetSpellCooldown(itemData.spellID)) then counting = true end
     else
         button.cooldown:Clear()
     end
@@ -1074,12 +1062,7 @@ local function UpdateButtonAppearance(button, itemData, db)
         if itemData.spellID and addon.GetSpellCooldown then
             spellStart, spellDuration = addon.GetSpellCooldown(itemData.spellID)
         end
-        if spellStart and spellDuration and spellDuration > 0 then
-            button.cooldown:SetCooldown(spellStart, spellDuration)
-            button.cooldown:Show()
-        else
-            button.cooldown:Clear()
-        end
+        addon.DrawCooldown(button.cooldown, spellStart, spellDuration)
         button.cooldownText:Hide()
         button.keybindText:SetText("")
         button.upgradeIcon:Hide()

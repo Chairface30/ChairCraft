@@ -385,6 +385,7 @@ LOAD = r'''
 NS = {}
 SUITE_TABLE = { ChairPlus = NS }
 SUITE_TABLE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit) if not ok or a == nil then return nil end a = tostring(a) if b ~= nil and tostring(b) ~= "" then return a .. " " .. tostring(b) end return a end
+SUITE_TABLE.IsSecret = function(v) return not pcall(function() return "" .. tostring(v) end) end
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "Quests.lua", "Gossip.lua",
     "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "Arrow.lua",
@@ -2687,6 +2688,23 @@ check("/chair plus movers lists the windows it can move",
       rt.eval("MOVERS_OUT"))
 
 
+print("\nSecrets are tested for before anything else")
+rt, g = fresh()
+rt.execute('''BOOT()
+-- A value that throws on any comparison or test, as a secret does under taint.
+STRICT = setmetatable({}, {
+    __tostring = function() error("secret") end,
+    __eq = function() error("compared a secret") end,
+    __lt = function() error("compared a secret") end,
+    __concat = function() error("joined a secret") end,
+})''')
+check("ns.Bool gives nil for a secret", rt.eval("NS.Bool(STRICT)") is None)
+check("ns.Text gives nil for a secret", rt.eval("NS.Text(STRICT)") is None)
+check("ns.Num gives nil for a secret", rt.eval("NS.Num(STRICT)") is None)
+check("and plain values pass as before",
+      rt.eval("NS.Bool(false)") is False and rt.eval("NS.Bool(1)") is True
+      and rt.eval("NS.Text('x')") == "x" and rt.eval("NS.Num(3.5)") == 3.5)
+
 print("\nThreat % on the nameplates")
 rt, g = fresh()
 rt.execute('''
@@ -2805,6 +2823,16 @@ rt.execute('''function UnitAffectingCombat(u) if u == "player" then return true 
 check("a mob that won't say it is fighting still shows while you are", rt.eval("NPTEXT()") == ("58%", 0.4))
 rt.execute('ROWS = {}')
 check("but not 0% on every mob around when you are not on its list", rt.eval("(NPTEXT())") is None)
+# In combat the client keeps your own combat flag secret too (found in game:
+# plates you had not targeted showed nothing). A secret flag is a yes.
+rt.execute('''SECRET_FLAG = setmetatable({}, { __tostring = function() error("secret") end })
+function UnitAffectingCombat() return SECRET_FLAG end
+ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true }, { name = "Chairface Chippendale", pct = 58, tanking = false, isMe = true } }''')
+check("your own combat flag kept secret counts as fighting", rt.eval("NS.PlayerFighting()") is True)
+check("and the plate of a mob you have not targeted still shows your threat",
+      rt.eval("NPTEXT()") == ("58%", 0.4))
+rt.execute('''function UnitAffectingCombat() return false end''')
+check("a plain no is still a no", rt.eval("NS.PlayerFighting()") is False and rt.eval("(NPTEXT())") is None)
 rt.execute('''ROWS = { { name = "Brakk Stonefist", pct = 100, tanking = true }, { name = "Chairface Chippendale", pct = 58, tanking = false, isMe = true } }
 function UnitAffectingCombat() return NP_COMBAT end''')
 

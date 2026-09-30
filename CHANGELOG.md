@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+**Fixed**
+- **Threat % on nameplates for mobs you have not targeted.** In combat the game keeps your own "in combat" flag hidden from addons, and ChairCraft read a hidden flag as "not fighting". A plate whose mob the game also wouldn't confirm was in the fight was then skipped, which is every plate except your target's. A hidden flag now counts as in combat, so those plates show your own threat (as text, or as the thin colored bar when the game won't print the number). The nameplate colors and the threat meter read the flag the same way.
+- **Hidden values, everywhere.** A sweep of every part for values the game can hide in combat:
+  - **ChairSnack:** an item or spell cooldown the game hides is still drawn on the button's swirl; only the number is left off. Your pet's family and level are read safely.
+  - **ChairAuras:** a trigger that asks a yes/no the game hides (Player status, In range, Threat) reads as unknown instead of failing. Load conditions treat a hidden answer as unknown too.
+  - **ChairAuras:** the Weapon enchant trigger now sees the off hand's enchant, and an item trigger gets its icon on clients without the item cache call. Both were cut off by a helper that passed on only the first six values.
+  - **Threat meter:** "is this me", "can I attack it" and your group role are read safely. A mob the game won't say you can attack is no longer ruled out.
+  - Every part now tests for a hidden value before doing anything else with it.
+
 ## ChairCraft v1.7.0: threat on the nameplates
 
 **New**

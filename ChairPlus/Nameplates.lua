@@ -53,7 +53,10 @@ end
 
 -- Which state a mob is in, or nil for its normal color.
 function ns.NameplateState(unit)
-    if not Bool(_G.UnitAffectingCombat, unit) then return nil end
+    -- A mob the client won't say is fighting is let through while you are.
+    local fighting = Bool(_G.UnitAffectingCombat, unit)
+    if fighting == false then return nil end
+    if fighting == nil and not ns.PlayerFighting() then return nil end
     local okS, status = pcall(_G.UnitThreatSituation, "player", unit)
     status = okS and ns.Num(status) or nil
     if status == 3 then return "npMine" end
@@ -339,7 +342,8 @@ function ns.NameplateThreatText(unit)
     local fighting = Bool(_G.UnitAffectingCombat, mob)
     if fighting == nil and alias then fighting = Bool(_G.UnitAffectingCombat, unit) end
     if fighting == false then return Why(unit, "the mob is not in combat") end
-    local meFighting = Bool(_G.UnitAffectingCombat, "player")
+    -- (your own flag is kept secret in combat too: that reads as fighting)
+    local meFighting = ns.PlayerFighting()
     if fighting == nil and not meFighting then
         return Why(unit, "you are out of combat, and the game won't say whether the mob is in it")
     end
@@ -611,7 +615,7 @@ ns.RegisterModule("npThreatText", {
                     textPlates[unit] = true
                 end
             end
-            if Bool(_G.UnitAffectingCombat, "player") then StartTicker() end
+            if ns.PlayerFighting() then StartTicker() end
             ShowAllText()
         else
             StopTicker()

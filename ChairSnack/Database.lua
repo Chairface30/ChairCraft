@@ -341,9 +341,14 @@ local resolvedKey = nil
 -- take the whole profile lookup with it and leave the addon on defaults, which
 -- is exactly what "it forgot my settings" looks like from the outside.
 local function SafeText(value)
+    if Chaircraft.IsSecret(value) then return nil end
     if value == nil then return nil end
-    local ok, text = pcall(function() return "" .. tostring(value) end)
-    if ok and text ~= "" then return text end
+    local ok, text = pcall(function()
+        local s = "" .. tostring(value)
+        if s == "" then return nil end
+        return s
+    end)
+    if ok then return text end
     return nil
 end
 

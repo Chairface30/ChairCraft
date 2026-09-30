@@ -72,6 +72,7 @@ end
 -- keeps it secret. Even testing a secret boolean throws on a tainted stack,
 -- so the test itself is what sits inside the pcall.
 function ns.Bool(value)
+    if ns.IsSecret(value) then return nil end
     if value == nil then return nil end
     local ok, answer = pcall(function()
         if value then return true end
@@ -90,6 +91,7 @@ end
 -- the `~= ""` outside the pcall, a secret unit name in the threat meter got
 -- through the concat and then threw here, from the line meant to guard it.
 function ns.Text(value)
+    if ns.IsSecret(value) then return nil end
     if value == nil then return nil end
     local ok, text = pcall(function()
         local s = "" .. tostring(value)

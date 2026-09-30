@@ -39,7 +39,7 @@ Load.UNKNOWN = UNKNOWN
 local function Read(fn, ...)
     if type(fn) ~= "function" then return UNKNOWN end
     local ok, value = pcall(fn, ...)
-    if not ok then return UNKNOWN end
+    if not ok or ns.IsSecret(value) then return UNKNOWN end
     return value
 end
 

@@ -489,7 +489,8 @@ addon.FAMILY_ORDER = FAMILY_ORDER
 
 function addon:GetPetFamily()
     if not UnitExists("pet") then return nil end
-    local family = UnitCreatureFamily and UnitCreatureFamily("pet")
+    -- (nil too when the client keeps it secret: it is compared and looked up)
+    local family = addon.Text(UnitCreatureFamily and UnitCreatureFamily("pet"))
     if family == "" then return nil end
     return family
 end
@@ -521,7 +522,7 @@ end
 function addon:RatePetFood(itemID, family)
     if family and family ~= self:GetPetFamily() then return "good" end
 
-    local petLevel = UnitLevel("pet")
+    local petLevel = addon.Num(UnitLevel("pet"))
     if not petLevel or petLevel <= 0 then return "good" end
 
     local _, _, _, _, minLevel = GetItemInfo(itemID)

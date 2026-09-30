@@ -423,7 +423,8 @@ local FERAL_FORMS = { "CAT_FORM", "BEAR_FORM", "DIRE_BEAR_FORM" }
 
 local function FeralFormActive()
     local okClass, _, class = pcall(UnitClass, "player")
-    if not okClass or class ~= "DRUID" then return false end
+    local issecret = _G.issecretvalue
+    if not okClass or (issecret and issecret(class)) or class ~= "DRUID" then return false end
 
     local okForm, formID = pcall(GetShapeshiftFormID)
     formID = okForm and Printable(formID) or nil
@@ -2287,9 +2288,17 @@ end
 -- come up on defaults: indistinguishable from "it never saved my settings".
 -- Every value that reaches a concat in this file goes through SafeText first.
 local function SafeText(value)
+    local issecret = _G.issecretvalue
+    if issecret and issecret(value) then return nil end
     if value == nil then return nil end
-    local ok, text = pcall(function() return "" .. tostring(value) end)
-    if ok and text ~= "" then return text end
+    -- The comparison sits inside the pcall: a secret string joins happily and
+    -- throws on the first comparison after.
+    local ok, text = pcall(function()
+        local s = "" .. tostring(value)
+        if s == "" then return nil end
+        return s
+    end)
+    if ok then return text end
     return nil
 end
 
@@ -3012,7 +3021,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
         print("|cff88aadd[WOWFT]|r === weapon skills ===")
 
         local okLevel, level = pcall(UnitLevel, "player")
-        local cap = ((okLevel and tonumber(level)) or 0) * 5
+        local cap = ((okLevel and not (_G.issecretvalue and _G.issecretvalue(level)) and tonumber(level)) or 0) * 5
         print("  Level cap on a weapon skill: |cffffcc00" .. cap .. "|r")
 
         -- 1. The character sheet. Needs nothing on screen and answers only for

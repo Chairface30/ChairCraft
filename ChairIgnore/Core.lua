@@ -31,6 +31,7 @@ ns.GAME_LIST_MAX = 50
 -- the client goes through here first; nil means unreadable.
 
 function ns.Text(value)
+    if Chaircraft.IsSecret(value) then return nil end
     if value == nil then return nil end
     local ok, text = pcall(function()
         local s = "" .. tostring(value)

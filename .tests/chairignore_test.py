@@ -163,6 +163,7 @@ end
 
 SUITE = { ChairIgnore = {} }
 SUITE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit) if not ok or a == nil then return nil end a = tostring(a) if b ~= nil and tostring(b) ~= "" then return a .. " " .. tostring(b) end return a end
+SUITE.IsSecret = function(v) return not pcall(function() return "" .. tostring(v) end) end
 SUITE.FindPart = function(token) if token == "ignore" then return { Open = function() OPENED = true return true end } end end
 NS = SUITE.ChairIgnore
 function LOAD(path)

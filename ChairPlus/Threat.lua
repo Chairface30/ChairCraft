@@ -50,14 +50,22 @@ local function Now()
     return ok and ns.Num(t) or 0
 end
 
+-- In combat, by your own combat flag. The client keeps the flag secret only
+-- while you are fighting, so a secret answer is a yes.
+function ns.PlayerFighting()
+    local ok, fighting = pcall(_G.UnitAffectingCombat, "player")
+    if not ok then return false end
+    if ns.IsSecret(fighting) then return true end
+    return ns.Bool(fighting) and true or false
+end
+
 -- Combat as the regen events see it, which is what click-through listens to.
 local function InCombat()
     if type(_G.InCombatLockdown) == "function" then
         local ok, locked = pcall(_G.InCombatLockdown)
         return (ok and locked) and true or false
     end
-    local okC, fighting = pcall(_G.UnitAffectingCombat, "player")
-    return (okC and fighting) and true or false
+    return ns.PlayerFighting()
 end
 
 -------------------------------------------------------------------------------
@@ -87,7 +95,7 @@ end
 local function IsMe(unit)
     if unit == "player" then return true end
     local ok, same = pcall(_G.UnitIsUnit, unit, "player")
-    return (ok and same) and true or false
+    return (ok and ns.Bool(same)) and true or false
 end
 
 -- One sorted list of { name, pct, tanking, status, class, isMe }, highest
@@ -129,9 +137,12 @@ end
 
 local function Hostile(unit)
     local okT, exists = pcall(_G.UnitExists, unit)
-    if not (okT and exists) then return false end
+    if not (okT and ns.Bool(exists)) then return false end
     local okA, attackable = pcall(_G.UnitCanAttack, "player", unit)
-    return (okA and attackable) and true or false
+    -- Only a plain "no" rules a unit out: the client can keep the answer
+    -- secret for the very mob you are fighting.
+    if okA and ns.IsSecret(attackable) then return true end
+    return (okA and ns.Bool(attackable)) and true or false
 end
 
 -- The mob whose threat is shown: your target, or -- for a healer with the tank
@@ -169,8 +180,7 @@ function ns.ThreatWanted()
         return false
     end
 
-    local okC, fighting = pcall(_G.UnitAffectingCombat, "player")
-    fighting = (okC and fighting) and true or false
+    local fighting = ns.PlayerFighting()
     if not fighting and not ns.Get("threatOutOfCombat") then return false end
 
     -- Out of combat the meter is asked to stay up, so it does, with or without
@@ -309,16 +319,16 @@ local function Try(fn, ...)
 end
 
 function ns.PlayerIsTank()
-    local role = Try(_G.UnitGroupRolesAssigned, "player")
+    local role = ns.Text(Try(_G.UnitGroupRolesAssigned, "player"))
     if role == "TANK" then return true end
     if role == "HEALER" or role == "DAMAGER" then return false end
 
     -- Nothing assigned: the roles chosen in the group finder.
     local list = _G.C_LFGList
     local roles = list and Try(list.GetRoles)
-    if type(roles) == "table" then return roles.tank and true or false end
+    if type(roles) == "table" then return ns.Bool(roles.tank) and true or false end
     local _, tank = Try(_G.GetLFGRoles)
-    return tank and true or false
+    return ns.Bool(tank) and true or false
 end
 
 -- Your threat against the warning line. Fires once per climb: it re-arms when

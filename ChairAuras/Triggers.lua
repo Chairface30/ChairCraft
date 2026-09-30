@@ -47,11 +47,27 @@ end
 -- Helpers
 -------------------------------------------------------------------------------
 
+-- Everything the call returned, or nothing if it failed. (It used to hand
+-- back the first six, which cut GetItemInfo's icon and the off hand's enchant
+-- off the end.)
+local function Results(ok, ...)
+    if ok then return ... end
+    return nil
+end
+
 local function Try(fn, ...)
     if type(fn) ~= "function" then return nil end
-    local ok, a, b, c, d, e, f = pcall(fn, ...)
-    if ok then return a, b, c, d, e, f end
-    return nil
+    return Results(pcall(fn, ...))
+end
+
+-- A yes/no from Try: true or false, or nil with the trigger marked unknown
+-- when the client keeps the answer secret.
+local function Yes(ts, answer)
+    if ns.IsSecret(answer) then
+        ts.unknown = true
+        return nil
+    end
+    return answer and true or false
 end
 
 local function Num(v) return ns.SafeNumber(v) end
@@ -155,7 +171,7 @@ Register("usable", {
         end
         if met and trigger.inRange then
             local inRange = Try(spell and spell.IsSpellInRange, id, "target")
-            if inRange == false then met = false end
+            if not ns.IsSecret(inRange) and inRange == false then met = false end
         end
         ts.met = met
     end,
@@ -187,7 +203,9 @@ Register("range", {
         if unit == "player" then unit = "target" end
         local spell = _G.C_Spell
         local answer = Try(spell and spell.IsSpellInRange, id, unit)
+        if ns.IsSecret(answer) then ts.unknown = true return end
         if answer == nil then answer = Try(_G.IsSpellInRange, ns.Engine:SpellName(id), unit) end
+        if ns.IsSecret(answer) then ts.unknown = true return end
         ts.met = (answer == true or answer == 1)
     end,
 })
@@ -414,8 +432,10 @@ Register("threat", {
     },
     Evaluate = function(trigger, ts)
         local unit = Field(trigger, "unit", "target")
-        if not Try(_G.UnitExists, unit) then ts.met = false return end
+        if not Yes(ts, Try(_G.UnitExists, unit)) then ts.met = false return end
         local tanking, _, pct = Try(_G.UnitDetailedThreatSituation, "player", unit)
+        if ns.IsSecret(pct) then ts.unknown = true ts.count = nil return end
+        tanking = Yes(ts, tanking)
         pct = Num(pct)
         if pct == nil then ts.met = false ts.count = nil return end
         ts.count, ts.countKnown = math.floor(pct + 0.5), true
@@ -546,7 +566,11 @@ local STATUS_TEST = {
     flying    = function() return Try(_G.IsFlying) end,
     group     = function() return Try(_G.IsInGroup) end,
     raid      = function() return Try(_G.IsInRaid) end,
-    alive     = function() return not Try(_G.UnitIsDeadOrGhost, "player") end,
+    alive     = function()
+        local dead = Try(_G.UnitIsDeadOrGhost, "player")
+        if ns.IsSecret(dead) then return dead end   -- for the trigger to call unknown
+        return not dead
+    end,
     target    = function() return Try(_G.UnitExists, "target") end,
     hostile   = function() return Try(_G.UnitCanAttack, "player", "target") end,
     pvp       = function() return Try(_G.UnitIsPVP, "player") end,
@@ -563,7 +587,8 @@ Register("status", {
     },
     Evaluate = function(trigger, ts)
         local test = STATUS_TEST[Field(trigger, "status", "combat")]
-        local yes = test and test() and true or false
+        local yes = Yes(ts, test and test())
+        if yes == nil then return end
         if trigger.negate then yes = not yes end
         ts.met = yes
     end,
@@ -687,7 +712,7 @@ Register("health", {
     fields = { { kind = "choice", key = "unit", label = "Unit", values = UNITS } },
     Evaluate = function(trigger, ts)
         local unit = Field(trigger, "unit", "player")
-        ts.met = Try(_G.UnitExists, unit) and true or false
+        ts.met = Yes(ts, Try(_G.UnitExists, unit)) or false
         ts.live = ts.met and { kind = "health", unit = unit } or nil
         ts.name = ns.SafeText(Chaircraft.UnitFullName(unit)) or ts.name
     end,
@@ -700,7 +725,7 @@ Register("power", {
     fields = { { kind = "choice", key = "unit", label = "Unit", values = UNITS } },
     Evaluate = function(trigger, ts)
         local unit = Field(trigger, "unit", "player")
-        ts.met = Try(_G.UnitExists, unit) and true or false
+        ts.met = Yes(ts, Try(_G.UnitExists, unit)) or false
         ts.live = ts.met and { kind = "power", unit = unit } or nil
         ts.name = ns.SafeText(Chaircraft.UnitFullName(unit)) or ts.name
     end,
@@ -718,7 +743,9 @@ function ns.DrawLive(bar, live)
     else
         current, maximum = Try(_G.UnitPower, live.unit), Try(_G.UnitPowerMax, live.unit)
     end
-    if current == nil or maximum == nil then return false end
+    -- (asked without comparing a secret: these are what the bar is here to draw)
+    local function Missing(value) return not ns.IsSecret(value) and value == nil end
+    if Missing(current) or Missing(maximum) then return false end
     if not pcall(bar.SetMinMaxValues, bar, 0, maximum) then return false end
     local ok = pcall(bar.SetValue, bar, current)
     return ok

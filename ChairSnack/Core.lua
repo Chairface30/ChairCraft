@@ -54,6 +54,42 @@ local function Pick(namespace, namespaceName, key, globalName)
     return fn
 end
 
+-- Secrets. In combat the client keeps cooldown times (and much about your
+-- pet) secret: they can be handed to a cooldown swirl to draw, and throw when
+-- compared or added up.
+addon.IsSecret = Chaircraft.IsSecret
+
+-- A number that can be compared and added up, or nil.
+function addon.Num(value)
+    if addon.IsSecret(value) or type(value) ~= "number" then return nil end
+    return value
+end
+
+-- A string that can be compared and joined, or nil.
+function addon.Text(value)
+    if addon.IsSecret(value) or type(value) ~= "string" then return nil end
+    return value
+end
+
+-- A cooldown onto a button's swirl. True when one is running, false when not,
+-- nil when the client keeps it secret: the swirl is then drawn by the client
+-- from the values as they are, and nothing here reads them.
+function addon.DrawCooldown(cooldown, start, duration)
+    if addon.IsSecret(start) or addon.IsSecret(duration) then
+        if pcall(cooldown.SetCooldown, cooldown, start, duration) then
+            cooldown:Show()
+        end
+        return nil
+    end
+    if start and duration and duration > 0 then
+        cooldown:SetCooldown(start, duration)
+        cooldown:Show()
+        return start + duration - GetTime() > 0
+    end
+    cooldown:Clear()
+    return false
+end
+
 -- Items
 addon.GetItemInfo = Pick(C_Item, "C_Item", "GetItemInfo")
 addon.GetItemInfoInstant = Pick(C_Item, "C_Item", "GetItemInfoInstant")

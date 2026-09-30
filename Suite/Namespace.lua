@@ -39,6 +39,23 @@ local function TocField(field)
 end
 Chaircraft.version = TocField("Version") or "?"
 
+-- Whether the client keeps a value secret. Asked before anything else is done
+-- with a value read from the client: a secret throws when it is compared,
+-- tested, added up, joined or used as a table key, and `value == nil` is a
+-- comparison too.
+local issecretvalue, canaccessvalue = _G.issecretvalue, _G.canaccessvalue
+function Chaircraft.IsSecret(value)
+    if issecretvalue then
+        local ok, secret = pcall(issecretvalue, value)
+        if ok then return secret and true or false end
+    end
+    if canaccessvalue then
+        local ok, can = pcall(canaccessvalue, value)
+        if ok then return not can end
+    end
+    return not pcall(function() return "" .. tostring(value) end)
+end
+
 -- A unit's name as chat gives it. On WoW Forever every character has a
 -- surname, and UnitName returns it as its SECOND value -- the slot other
 -- clients use for a realm: UnitName("player") -> "Highley", "Regarded", while
@@ -49,6 +66,7 @@ function Chaircraft.UnitFullName(unit)
     local ok, first, second = pcall(UnitName, unit)
     if not ok then return nil end
     local function Plain(value)
+        if Chaircraft.IsSecret(value) then return nil end
         if value == nil then return nil end
         local okText, text = pcall(function()
             local s = "" .. tostring(value)
