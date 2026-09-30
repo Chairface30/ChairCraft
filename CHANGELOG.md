@@ -11,6 +11,9 @@
   - **Threat meter:** "is this me", "can I attack it" and your group role are read safely. A mob the game won't say you can attack is no longer ruled out.
   - Every part now tests for a hidden value before doing anything else with it.
 
+**For developers**
+- Two checkers in `.tests/tools`: `secret_audit.py` lists every place a value the game can hide is compared, tested, added up, joined or used as a table key, following it through locals, fields and function results. `globals_audit.py` lists the game functions an addon calls, and the calls to ones WoW Forever is known not to have. Both also run on Z-Perl and ItemRack.
+
 ## ChairCraft v1.7.0: threat on the nameplates
 
 **New**
