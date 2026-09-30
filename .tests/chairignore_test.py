@@ -224,14 +224,34 @@ ChairIgnoreCharDB = { settings = { enabled = true, spareFriends = false }, gameL
 """, on=False)
 check("a character's old switches come with it to the account",
       ev("NS.Get('enabled')") is True and ev("NS.Get('spareFriends')") is False)
-check("and are retired from the character", ev("ChairIgnoreCharDB.settings") is None
-      and ev("ChairIgnoreCharDB.gameListRead") is True)
+check("and are retired from the character", ev("ChairIgnoreCharDB.settings") is None)
 rt, ev = fresh("""
 ChairIgnoreDB = { players = {}, settings = { enabled = true } }
 ChairIgnoreCharDB = { settings = { enabled = false } }
 """, on=False)
 check("a second character's leftovers do not undo them",
       ev("NS.Get('enabled')") is True and ev("ChairIgnoreCharDB.settings") is None)
+
+print("\nOne list of people")
+# Up to 1.7.0 each character kept its own record of its game ignore list in a
+# file of its own. The records live in the account table now, and everyone on
+# any of them is on the one list.
+rt, ev = fresh("""
+ChairIgnoreDB = { players = {}, gameLists = { ["guid:Player-1-B"] = {
+    gameList = { ["spammer two-homerealm"] = "Spammer Two-HomeRealm" }, gameListRead = true } } }
+ChairIgnoreCharDB = { gameList = { ["spammer one-homerealm"] = "Spammer One-HomeRealm" }, gameListRead = true }
+""", on=False)
+check("this character's record moves into the account table",
+      ev("ChairIgnoreCharDB.gameList") is None and ev("ChairIgnoreCharDB.gameListRead") is None
+      and ev("NS.CharStore(true).gameListRead") is True
+      and ev("NS.CharStore(true).gameList['spammer one-homerealm']") == "Spammer One-HomeRealm")
+check("everyone on any character's game list joins the one list",
+      ev("ChairIgnoreDB.players['spammer one-homerealm'].name") == "Spammer One-HomeRealm"
+      and ev("ChairIgnoreDB.players['spammer two-homerealm'].name") == "Spammer Two-HomeRealm")
+rt.execute("NS.Remove('Spammer Two')")
+rt.execute('EVENT("PLAYER_LOGIN")')
+check("and a name taken off the list is not brought back by an old record",
+      ev("ChairIgnoreDB.players['spammer two-homerealm']") is None)
 
 print("\nNames")
 rt, ev = fresh()

@@ -1675,9 +1675,9 @@ rt, sel = gossip('GOSSIP_OPTIONS = { { name = "Continue", gossipOptionID = 7 } }
 check("and the option switches it off", sel == [], str(sel))
 
 print("")
-print("Settings per character")
-# Only the auras are account-wide. ChairPlus settings and window positions are
-# kept per character, keyed by GUID; learned flight times stay shared.
+print("Settings for the account")
+# ChairPlus settings and window positions are shared by every character, in
+# the account profile; learned flight times stay at the top of the table.
 CHARS = """
 PLAYER_GUID = "Player-1-A"
 function UnitGUID(u) if u == "player" then return PLAYER_GUID end return NPC_GUID end
@@ -1689,55 +1689,76 @@ rt, g = fresh(stock=True)
 rt.execute(CHARS)
 rt.execute('BOOT() NS.Set("osd", true) NS.Set("osdFontSize", 22)')
 rt.execute('AS("Player-1-B")')
-check("a second character starts on the defaults, not the first's settings",
-      g.NS.IsEnabled("osd") is False and g.NS.Get("osdFontSize") == 14,
+check("a second character finds the first's settings",
+      g.NS.IsEnabled("osd") is True and g.NS.Get("osdFontSize") == 22,
       str(g.NS.Get("osdFontSize")))
 rt.execute('NS.Set("osdFontSize", 30)')
 rt.execute('AS("Player-1-A")')
-check("and changing it leaves the first character's alone",
-      g.NS.IsEnabled("osd") is True and g.NS.Get("osdFontSize") == 22,
+check("and a change on one is a change on all", g.NS.Get("osdFontSize") == 30,
       str(g.NS.Get("osdFontSize")))
-check("each is kept under its own GUID",
-      rt.eval('ChairPlusDB.profiles["guid:Player-1-A"].settings.osdFontSize') == 22
-      and rt.eval('ChairPlusDB.profiles["guid:Player-1-B"].settings.osdFontSize') == 30)
+check("kept under the one account key, no GUID needed",
+      rt.eval('ChairPlusDB.profiles.account.settings.osdFontSize') == 30
+      and rt.eval('ChairPlusDB.profiles["guid:Player-1-A"] == nil') is True
+      and rt.eval("(NS.ProfileKey())") == "account",
+      str((rt.eval('ChairPlusDB.profiles.account.settings.osdFontSize'),
+           rt.eval('ChairPlusDB.profiles["guid:Player-1-A"] == nil'), rt.eval("(NS.ProfileKey())"))))
 
 rt.execute('AS("Player-1-B") NS.Profile().movers.CharacterFrame = { x = 5, y = 6 } AS("Player-1-A")')
-check("window positions are per character too",
-      rt.eval("NS.Profile().movers.CharacterFrame") is None)
+check("window positions are shared too",
+      rt.eval("NS.Profile().movers.CharacterFrame.x") == 5)
 
 rt.execute('ChairPlusDB.flights = { ["A > B"] = { base = 60 } } AS("Player-1-B")')
-check("learned flight times stay shared by every character",
+check("learned flight times stay where they were",
       rt.eval('ChairPlusDB.flights["A > B"].base') == 60)
 
-# The day this changed: the shared settings every character was using become
-# each character's starting point, so nobody logs in to a reset setup.
+# The day this changed: the fullest character profile becomes the account's
+# (this character's own on a tie), and the character profiles are left as
+# they were, so nobody logs in to a reset setup and nothing is thrown away.
+rt, g = fresh(stock=True)
+rt.execute(CHARS)
+rt.execute('ChairPlusDB = { profiles = { '
+           '["guid:Player-1-A"] = { label = "Alpha-Forever", settings = { osd = true } }, '
+           '["guid:Player-1-B"] = { label = "Beta-Forever", settings = { osd = true, osdFontSize = 20 }, '
+           'movers = { BankFrame = { x = 1, y = 2 } } } } }')
+rt.execute("BOOT()")
+check("the fullest character's setup becomes the account's",
+      g.NS.IsEnabled("osd") is True and g.NS.Get("osdFontSize") == 20
+      and rt.eval("NS.Profile().movers.BankFrame.x") == 1)
+check("and is named for the load report", rt.eval("NS.adoptedProfileFrom") == "Beta-Forever",
+      str(rt.eval("NS.adoptedProfileFrom")))
+rt.execute('NS.Set("osdFontSize", 25)')
+check("the character profiles are left as they were",
+      rt.eval('ChairPlusDB.profiles["guid:Player-1-B"].settings.osdFontSize') == 20
+      and rt.eval('ChairPlusDB.profiles["guid:Player-1-A"].settings.osdFontSize') is None)
+rt, g = fresh(stock=True)
+rt.execute(CHARS)
+rt.execute('ChairPlusDB = { profiles = { ["guid:Player-1-A"] = { settings = { osdFontSize = 17 } }, '
+           '["guid:Player-1-B"] = { settings = { osdFontSize = 18 } } } }')
+rt.execute("BOOT()")
+check("on a tie, this character's own", g.NS.Get("osdFontSize") == 17, str(g.NS.Get("osdFontSize")))
+
+# Before profiles, settings were shared in ChairPlusDB.settings: still the
+# starting point when there is no character profile at all.
 rt, g = fresh(stock=True)
 rt.execute(CHARS)
 rt.execute('ChairPlusDB = { settings = { osd = true, osdFontSize = 20 }, '
            'movers = { BankFrame = { x = 1, y = 2 } } }')
 rt.execute("BOOT()")
-check("an existing setup is carried into the character's profile",
+check("an old shared setup is carried into the account profile",
       g.NS.IsEnabled("osd") is True and g.NS.Get("osdFontSize") == 20
       and rt.eval("NS.Profile().movers.BankFrame.x") == 1)
-rt.execute('NS.Set("osdFontSize", 25) AS("Player-1-B")')
-check("and every other character starts from that same setup, not the change",
-      g.NS.Get("osdFontSize") == 20, str(g.NS.Get("osdFontSize")))
 rt.execute('NS.Set("osdFontSize", 9)')
 check("the old shared settings themselves are never written again",
       rt.eval("ChairPlusDB.settings.osdFontSize") == 20)
 
-# A GUID the client cannot read yet at ADDON_LOADED: the profile made under the
-# name moves to the GUID at login instead of being left behind.
+# A GUID the client cannot read yet at ADDON_LOADED changes nothing: the key
+# is the account's either way.
 rt, g = fresh(stock=True)
 rt.execute(CHARS)
 rt.execute('PLAYER_GUID = nil FireEvent("ADDON_LOADED", "Chaircraft") NS.Set("osdFontSize", 18)')
-check("before the GUID is readable, the name is the key",
-      rt.eval('ChairPlusDB.profiles["Chairface-Forever"] ~= nil') is True)
 rt.execute('PLAYER_GUID = "Player-1-A" FireEvent("PLAYER_LOGIN")')
-check("at login the profile moves to the GUID",
-      rt.eval('ChairPlusDB.profiles["guid:Player-1-A"].settings.osdFontSize') == 18
-      and rt.eval('ChairPlusDB.profiles["Chairface-Forever"] == nil') is True)
-check("with the setting still in force", g.NS.Get("osdFontSize") == 18)
+check("a setting made before the GUID is readable is still in force after login",
+      g.NS.Get("osdFontSize") == 18 and rt.eval('ChairPlusDB.profiles.account.settings.osdFontSize') == 18)
 
 print("")
 print("Menu tabs")
@@ -3225,9 +3246,11 @@ point = rt.eval("rawget(WorldMapFrame, '_point')")
 check("back in its window, it returns to its saved spot",
       point.x == 300 and point.y == -180, f"{point.x} {point.y}")
 
-print("\nCopying another character's settings")
+print("\nCopying a character's old settings")
+# Profiles saved while settings were per character can be copied over the
+# account's; ChairTracker's, still per character, go to this character's.
 COPY = """
-PLAYER_GUID = "Player-1-A"
+PLAYER_GUID = "Player-1-B"
 function UnitGUID(u) if u == "player" then return PLAYER_GUID end return NPC_GUID end
 function UnitName(u) return PLAYER_GUID == "Player-1-A" and "Alpha" or "Beta" end
 function GetRealmName() return "Forever" end
@@ -3235,28 +3258,30 @@ function AS(guid) PLAYER_GUID = guid NS.LoadSettings() end
 """
 rt, g = fresh(stock=True)
 rt.execute(COPY)
-rt.execute('BOOT() NS.Set("osd", true) NS.Set("osdFontSize", 21) '
-           'NS.Profile().movers.BankFrame = { x = 3, y = 4 }')
-rt.execute('AS("Player-1-B")')
+rt.execute('ChairPlusDB = { profiles = { ["guid:Player-1-A"] = { label = "Alpha-Forever", '
+           'settings = { osd = true, osdFontSize = 21 }, movers = { BankFrame = { x = 3, y = 4 } } } } }')
+rt.execute('BOOT() NS.Set("osd", false) NS.Set("osdFontSize", 9) NS.Profile().movers.BankFrame = nil')
 others = rt.eval("NS.OtherCharacters()")
-check("the other character is offered by name and realm",
+check("the old profile is offered by name and realm",
       len(others) == 1 and others[1].label == "Alpha-Forever",
       str([others[i].label for i in range(1, len(others) + 1)]))
 rt.execute('WOWFTrackerAccountDB = { profiles = { ["guid:Player-1-A"] = { label = "Alpha-Forever", '
            'settings = { barWidth = 300 } }, ["guid:Player-1-B"] = { label = "Beta-Forever" } } }')
+check("the tracker's own profile for this character is not offered",
+      len(rt.eval("NS.OtherCharacters()")) == 1)
 rt.execute('PARTS = NS.CopyCharacter("guid:Player-1-A")')
-check("copying takes ChairPlus's settings", g.NS.IsEnabled("osd") is True
-      and g.NS.Get("osdFontSize") == 21)
+check("copying takes ChairPlus's settings into the account's", g.NS.IsEnabled("osd") is True
+      and g.NS.Get("osdFontSize") == 21 and rt.eval("ChairPlusDB.profiles.account.settings.osdFontSize") == 21)
 check("and its window positions", rt.eval("NS.Profile().movers.BankFrame.x") == 3)
-check("and ChairTracker's",
+check("and ChairTracker's, into this character's",
       rt.eval('WOWFTrackerAccountDB.profiles["guid:Player-1-B"].settings.barWidth') == 300)
 check("keeping this character's own label",
       rt.eval('WOWFTrackerAccountDB.profiles["guid:Player-1-B"].label') == "Beta-Forever")
 rt.execute('NS.Set("osdFontSize", 9)')
-rt.execute('AS("Player-1-A")')
-check("and the source is left alone", g.NS.Get("osdFontSize") == 21)
-rt.execute('AS("Player-1-B") NS.OpenPanel("general")')
-check("the General page offers the copy", rt.eval('SHOWN_BUTTON("Import")') is True
+check("and the source is left alone",
+      rt.eval('ChairPlusDB.profiles["guid:Player-1-A"].settings.osdFontSize') == 21)
+rt.execute('NS.OpenPanel("general")')
+check("the Home page offers the copy", rt.eval('SHOWN_BUTTON("Import")') is True
       and any_text(rt, "|cffffffffAlpha-Forever|r"))
 check("and the settings backup beside it",
       rt.eval('SHOWN_BUTTON("Export settings")') is True and rt.eval('SHOWN_BUTTON("Import settings")') is True)

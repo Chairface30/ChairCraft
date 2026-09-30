@@ -167,7 +167,7 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 2. If you still have the standalone ChairPlus, ChairAuras, SnapSnack or WOW Forever Tracker, disable them. ChairCraft warns you if they are running alongside it.
 3. Log in and type `/chair`.
 
-Saved settings from the standalone addons carry over: the saved-variable names are unchanged. Settings are per character, except auras and ChairIgnore, which are account-wide.
+Saved settings from the standalone addons carry over: the saved-variable names are unchanged. Settings are shared by every character on the account, except ChairTracker's bars and factions, which are per character.
 
 ## For developers
 

@@ -9,13 +9,16 @@
 -- filter (Filters.lua), which reads this list, not the game's.
 --
 -- Saved:
---   ChairIgnoreDB       account: everything -- the players, the chat filters
---                       and every switch. ChairIgnore is set up once and is the
---                       same on every character.
---   ChairIgnoreCharDB   this character: only which names its own game list
---                       held last time it was read (how a name you unignored
---                       is told from one never added), since each character
---                       has a game list of its own
+--   ChairIgnoreDB       account: everything -- the players, the chat filters,
+--                       every switch, and for each character which names its
+--                       own game list held last time it was read (how a name
+--                       you unignored is told from one never added), since
+--                       each character has a game list of its own. ChairIgnore
+--                       is set up once and is the same on every character.
+--   ChairIgnoreCharDB   this character, up to 1.7.0: its game-list record,
+--                       moved into ChairIgnoreDB.gameLists at load so every
+--                       character's is in the one file and everyone on any of
+--                       them is on the one list.
 
 local suiteName, Chaircraft = ...
 local ns = Chaircraft.ChairIgnore
@@ -359,7 +362,7 @@ end
 -- used /ignore, /unignore or the game's menus), then filling its free slots
 -- from ours, newest first.
 function ns.SyncGameList()
-    local fl, char = FL(), _G.ChairIgnoreCharDB
+    local fl, char = FL(), ns.CharStore(true)
     if not (fl and fl.AddIgnore and type(char) == "table" and type(DB()) == "table") then return end
     local current, count = GameList()
     if not current then return end
@@ -625,11 +628,78 @@ if SlashCmdList then SlashCmdList.CHAIRIGNORE = Command end
 -- Loading
 -------------------------------------------------------------------------------
 
-local function InitDB()
+-- Which character this is, for its game-list record: "guid:" and the GUID.
+-- The GUID is not always readable as early as ADDON_LOADED; until `final`
+-- (PLAYER_LOGIN) the answer is nil rather than a name that might not match
+-- next time.
+local function CharKey(final)
+    local guid = ns.Text(UnitGUID and UnitGUID("player"))
+    if guid then return "guid:" .. guid end
+    if not final then return nil end
+    return ns.FullName(Chaircraft.UnitFullName("player")) or "Unknown"
+end
+
+-- This character's record in ChairIgnoreDB.gameLists: { gameList,
+-- gameListRead }, made on first use. Nil until the character can be named.
+function ns.CharStore(final)
+    local db = DB()
+    if type(db) ~= "table" then return nil end
+    db.gameLists = type(db.gameLists) == "table" and db.gameLists or {}
+    local key = ns.charKey or CharKey(final)
+    if not key then return nil end
+    ns.charKey = key
+    local store = db.gameLists[key]
+    if type(store) ~= "table" then
+        store = {}
+        db.gameLists[key] = store
+    end
+    return store
+end
+
+-- Up to 1.7.0 the record was in a file per character. It moves into the
+-- account table the first time the character is in after that.
+local function AdoptCharacterList(final)
+    local char = _G.ChairIgnoreCharDB
+    if type(char) ~= "table" then return end
+    if type(char.gameList) ~= "table" and not char.gameListRead then return end
+    local store = ns.CharStore(final)
+    if not store then return end
+    if type(char.gameList) == "table" then
+        store.gameList = type(store.gameList) == "table" and store.gameList or {}
+        for key, full in pairs(char.gameList) do store.gameList[key] = full end
+    end
+    if char.gameListRead then store.gameListRead = true end
+    char.gameList, char.gameListRead = nil, nil
+end
+
+-- Everyone on any character's game list joins the one list. Each record is
+-- taken in once: a name you later take off the list is not brought back by
+-- a record that still holds it. Returns how many were added.
+function ns.MergeGameLists()
+    local db = DB()
+    if type(db) ~= "table" or type(db.gameLists) ~= "table" then return 0 end
+    local added = 0
+    for _, store in pairs(db.gameLists) do
+        if type(store) == "table" and type(store.gameList) == "table" and not store.merged then
+            for key, full in pairs(store.gameList) do
+                if type(key) == "string" and type(full) == "string" and not db.players[key] then
+                    db.players[key] = { name = full, added = Now() }
+                    added = added + 1
+                end
+            end
+            store.merged = true
+        end
+    end
+    if added > 0 then Changed() end
+    return added
+end
+
+local function InitDB(final)
     if type(_G.ChairIgnoreDB) ~= "table" then _G.ChairIgnoreDB = {} end
     local db = _G.ChairIgnoreDB
     db.players = type(db.players) == "table" and db.players or {}
     db.settings = type(db.settings) == "table" and db.settings or {}
+    db.gameLists = type(db.gameLists) == "table" and db.gameLists or {}
     if type(_G.ChairIgnoreCharDB) ~= "table" then _G.ChairIgnoreCharDB = {} end
     local char = _G.ChairIgnoreCharDB
     -- Up to 1.5.0 the switches were kept per character. The first character
@@ -641,6 +711,8 @@ local function InitDB()
         end
         char.settings = nil
     end
+    AdoptCharacterList(final)
+    ns.MergeGameLists()
     if ns.InitFilters then ns.InitFilters(db) end
 end
 ns.InitDB = InitDB
@@ -654,7 +726,11 @@ driver:SetScript("OnEvent", function(_, event, arg)
         InitDB()
         ns.loaded = true
     elseif event == "PLAYER_LOGIN" then
-        if not ns.loaded then InitDB() ns.loaded = true end
+        if not ns.loaded then InitDB(true) ns.loaded = true end
+        -- The GUID can be read by now: a record left in the per-character
+        -- file at ADDON_LOADED for want of it moves over here.
+        AdoptCharacterList(true)
+        ns.MergeGameLists()
         if ns.On() then ns.PruneExpired() end
         if ns.ApplyChat then ns.ApplyChat() end
         -- The game list can still be empty this early. IGNORELIST_UPDATE

@@ -31,11 +31,14 @@ local function DeepCopy(value)
     return out
 end
 
--- What this character has, part by part.
+-- What the account has, part by part, with this character's tracker setup.
 local function Collect(withAuras)
     local out = { v = 1 }
     local profile = ns.Profile()
-    out.who = profile.label
+    local name = ns.Text(Chaircraft.UnitFullName("player"))
+    local okR, realm = pcall(_G.GetRealmName)
+    realm = okR and ns.Text(realm) or nil
+    out.who = name and (realm and (name .. "-" .. realm) or name) or profile.label
     out.plus = { settings = DeepCopy(profile.settings), movers = DeepCopy(profile.movers) }
 
     local snack = Chaircraft.ChairSnack
@@ -46,8 +49,9 @@ local function Collect(withAuras)
     end
 
     local tracker = _G.WOWFTrackerAccountDB
-    if type(tracker) == "table" and type(tracker.profiles) == "table" and ns.profileKey then
-        out.tracker = DeepCopy(tracker.profiles[ns.profileKey])
+    local mine = ns.CharacterKey and ns.CharacterKey() or nil
+    if type(tracker) == "table" and type(tracker.profiles) == "table" and mine then
+        out.tracker = DeepCopy(tracker.profiles[mine])
     end
 
     local auras = _G.ChairAurasDB

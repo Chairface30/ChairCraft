@@ -1826,9 +1826,9 @@ function ns.OpenPage(part)
     return true
 end
 
--- Copy `pick` (from ns.OtherCharacters) over this character, after asking.
--- The other parts read their settings at load, so the UI reloads afterwards
--- when any of them took a copy.
+-- Copy `pick` (from ns.OtherCharacters) over the account's settings, after
+-- asking. The other parts read their settings at load, so the UI reloads
+-- afterwards when any of them took a copy.
 local function DoCopy(pick)
     local parts = ns.CopyCharacter(pick.key)
     if #parts == 0 then
@@ -1853,7 +1853,7 @@ function ns.ConfirmCopyCharacter(pick)
         return
     end
     StaticPopupDialogs["CHAIRCRAFT_COPY_CHARACTER"] = {
-        text = "Replace this character's ChairCraft settings with " .. pick.label
+        text = "Replace the ChairCraft settings, shared by every character, with " .. pick.label
             .. "'s? The interface reloads afterwards.",
         button1 = "Copy",
         button2 = "Cancel",
@@ -2040,8 +2040,7 @@ local function Shown(value)
 end
 
 local function PrintStatus()
-    ns.Print("v" .. (ns.version or "?") .. " -- options for this character only ("
-        .. tostring(ns.profileKey or "no profile") .. "):")
+    ns.Print("v" .. (ns.version or "?") .. " -- options, shared by every character on the account:")
 
     local listed = {}
     for _, row in ipairs(ROWS) do

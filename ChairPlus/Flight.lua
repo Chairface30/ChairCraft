@@ -104,8 +104,10 @@ local function WallClock()
     return type(get) == "function" and ns.Num(get()) or nil
 end
 
+-- The note is about this character's flight, not the account's.
 local function Owner()
-    return ns.profileKey and tostring(ns.profileKey) or nil
+    local key = ns.CharacterKey and ns.CharacterKey() or nil
+    return key and tostring(key) or nil
 end
 
 local function SaveInFlight(r)

@@ -1,9 +1,11 @@
 -- SnapSnack Database.lua
--- SavedVariables schema, migration, and per-character profiles.
+-- SavedVariables schema, migration, and the account profile.
 --
 -- Shape:
 --   SnapSnackDB.version              -- schema version
---   SnapSnackDB.profiles["Name-Realm"] = { grids, nextGridID, minimap }
+--   SnapSnackDB.profiles.account     = { grids, nextGridID, minimap }
+--   SnapSnackDB.profiles["guid:..."] -- per character up to 1.7.0, kept as
+--                                       they were for the Profiles tab to copy
 --   SnapSnackDB.global               = { bankItems, altItems }
 --
 -- Bank/alt item counts are deliberately account-wide: the item tooltips show
@@ -333,7 +335,9 @@ end
 -- The readable name still matters -- it is what the profile list shows -- so
 -- it is stored inside the profile instead of being used as its address.
 
-local resolvedKey = nil
+-- One profile for the account, shared by every character (since 1.8.0).
+local ACCOUNT_KEY = "account"
+addon.ACCOUNT_KEY = ACCOUNT_KEY
 
 -- This client hands back "secret" values from some APIs. A secret survives
 -- tostring() and throws only when something actually reads it, so the concat --
@@ -368,49 +372,59 @@ local function IsGUIDKey(key)
     return type(key) == "string" and key:sub(1, 5) == "guid:"
 end
 
--- Re-file a profile written under the old name-shaped key onto the GUID key.
--- Exact spelling first, then the loose comparison above. Returns the old key
--- so the load can say what it picked up.
-local function AdoptLegacyProfile(key)
+-- How much of a setup a stored profile holds: its bars and what was set on them.
+local function SetupSize(profile)
+    if type(profile) ~= "table" or type(profile.grids) ~= "table" then return 0 end
+    local n = 0
+    for _, grid in pairs(profile.grids) do
+        n = n + 1
+        if type(grid) == "table" then
+            for _ in pairs(grid) do n = n + 1 end
+        end
+    end
+    return n
+end
+
+-- First login after settings went account-wide: the account profile starts
+-- as a copy of the fullest character profile, this character's own on a tie
+-- (found by GUID, or by name for one saved before GUID keys). The character
+-- profiles stay where they are, for the Profiles tab to copy from. Returns
+-- what the profile taken was called, so the load can say what it picked up.
+local function AdoptAccountProfile()
     local profiles = SnapSnackDB and SnapSnackDB.profiles
-    if not profiles or profiles[key] then return nil end
+    if not profiles or profiles[ACCOUNT_KEY] then return nil end
 
-    local label = addon:CharLabel()
-    local legacyKey = profiles[label] and label or nil
-
-    if not legacyKey then
-        local wanted = Squash(label)
-        for otherKey in pairs(profiles) do
-            if not IsGUIDKey(otherKey) and Squash(otherKey) == wanted then
-                legacyKey = otherKey
+    local guid = SafeText(UnitGUID and UnitGUID("player"))
+    local mineKey = guid and ("guid:" .. guid) or nil
+    if not (mineKey and profiles[mineKey]) then
+        local wanted = Squash(addon:CharLabel())
+        for key in pairs(profiles) do
+            if not IsGUIDKey(key) and Squash(key) == wanted then
+                mineKey = key
                 break
             end
         end
     end
 
-    if not legacyKey then return nil end
+    local best, bestKey, bestSize = nil, nil, -1
+    if mineKey and profiles[mineKey] then
+        best, bestKey, bestSize = profiles[mineKey], mineKey, SetupSize(profiles[mineKey])
+    end
+    for key, profile in pairs(profiles) do
+        if SetupSize(profile) > bestSize then
+            best, bestKey, bestSize = profile, key, SetupSize(profile)
+        end
+    end
+    if not best then return nil end
 
-    profiles[key] = profiles[legacyKey]
-    profiles[legacyKey] = nil
-    return legacyKey
+    profiles[ACCOUNT_KEY] = addon.DeepCopy(best)
+    return addon:ProfileLabel(bestKey)
 end
 
--- Resolved once, then fixed for the session. A key that changed halfway
--- through would file the second half of a session's settings somewhere the
--- first half is not, which is the failure this whole scheme exists to stop.
+-- The key the settings are filed under: the account's, for every character.
+-- (The name stays what it was from the days each character had its own.)
 function addon:CharKey()
-    if resolvedKey then return resolvedKey end
-
-    local guid = SafeText(UnitGUID and UnitGUID("player"))
-    if not guid then
-        -- No GUID yet. Answer with the name rather than inventing something,
-        -- and do not cache it, so the GUID is taken the moment it exists.
-        return self:CharLabel()
-    end
-
-    resolvedKey = "guid:" .. guid
-    self.adoptedProfileFrom = AdoptLegacyProfile(resolvedKey)
-    return resolvedKey
+    return ACCOUNT_KEY
 end
 
 -- What to call a stored profile in the UI, now that the key no longer says.
@@ -428,7 +442,7 @@ function addon:GetProfile()
     local profile = SnapSnackDB.profiles[key]
     if not profile then
         profile = NewProfile()
-        profile.label = self:CharLabel()
+        profile.label = "Account"
         SnapSnackDB.profiles[key] = profile
     end
     return profile
@@ -511,11 +525,14 @@ function addon:InitDatabase()
     -- [family][itemID] = true accepted / false rejected, learned by feeding.
     SnapSnackDB.global.petFoodKnowledge = SnapSnackDB.global.petFoodKnowledge or {}
 
+    self.adoptedProfileFrom = AdoptAccountProfile()
+
     if not SnapSnackDB.profiles[charKey] then
-        -- Starting from nothing is normal on a new character and alarming on
-        -- one that has been set up before, and the two are indistinguishable
-        -- once the bars are on screen. Count what else is stored so the load
-        -- can say so out loud instead of quietly handing back the defaults.
+        -- Starting from nothing is normal on a first run and alarming on an
+        -- account that has been set up before, and the two are
+        -- indistinguishable once the bars are on screen. Count what else is
+        -- stored so the load can say so out loud instead of quietly handing
+        -- back the defaults.
         local others = 0
         for _ in pairs(SnapSnackDB.profiles) do others = others + 1 end
         self.profileWasNew = true
@@ -524,7 +541,7 @@ function addon:InitDatabase()
         SnapSnackDB.profiles[charKey] = NewProfile()
     end
 
-    SnapSnackDB.profiles[charKey].label = self:CharLabel()
+    SnapSnackDB.profiles[charKey].label = "Account"
 
     self:RepairProfile(SnapSnackDB.profiles[charKey])
     -- Runs against the grid contents the previous session left behind, so it
@@ -871,8 +888,9 @@ end
 -- Profile Management
 -------------------------------
 
--- Every stored profile except the current one, sorted by the name it shows
--- under rather than by its key, which is now a GUID and sorts meaninglessly.
+-- Every stored profile except the account's -- the ones saved per character
+-- up to 1.7.0 -- sorted by the name each shows under rather than by its key,
+-- which is a GUID and sorts meaninglessly.
 function addon:ListOtherProfiles()
     local current = self:CharKey()
     local list = {}
@@ -892,9 +910,9 @@ function addon:CopyProfileFrom(sourceKey)
     if not source or sourceKey == self:CharKey() then return false end
 
     local copy = addon.DeepCopy(source)
-    -- The copy belongs to this character now; carrying the donor's name over
-    -- would leave the profile list showing two of them.
-    copy.label = self:CharLabel()
+    -- The copy is the account's now; carrying the donor's name over would
+    -- leave the profile list showing two of them.
+    copy.label = "Account"
     SnapSnackDB.profiles[self:CharKey()] = copy
     self:RepairProfile(copy)
     return true
@@ -902,7 +920,7 @@ end
 
 function addon:ResetProfile()
     local fresh = NewProfile()
-    fresh.label = self:CharLabel()
+    fresh.label = "Account"
     SnapSnackDB.profiles[self:CharKey()] = fresh
 end
 

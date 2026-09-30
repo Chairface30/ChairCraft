@@ -308,19 +308,21 @@ local function CoerceToDefault(key, value)
 end
 
 -------------------------------------------------------------------------------
--- Per-character profiles
+-- One profile for the account
 -------------------------------------------------------------------------------
--- Settings and window positions belong to the character. They live in
--- ChairPlusDB.profiles, keyed by player GUID the way ChairTracker keys its
--- own: a name and a realm are strings the client can render differently from
--- one login to the next, and a key that comes back different is a key that is
--- not there. What was learned rather than chosen -- flight times, the flight
--- speed factor -- stays at the top of ChairPlusDB, shared by every character.
+-- Settings and window positions are shared by every character on the account,
+-- in ChairPlusDB.profiles.account. Up to 1.7.0 they were kept per character,
+-- keyed by player GUID; those profiles are left in the file untouched when the
+-- account profile is first made from one of them (see AdoptAccountProfile), so
+-- nothing anyone set up is thrown away, and the Home page can still copy one
+-- across. What was learned rather than chosen -- flight times, the flight
+-- speed factor -- stays at the top of ChairPlusDB as before.
 --
--- Settings used to be account-wide, in ChairPlusDB.settings and .movers. Those
--- are left in place as the starting point for any character that has no
--- profile yet, so each character keeps the setup it had the day this changed
--- and nobody logs in to find everything reset.
+-- Before profiles, settings were shared in ChairPlusDB.settings and .movers.
+-- Those still count as the starting point when there is nothing else.
+
+local ACCOUNT_KEY = "account"
+ns.ACCOUNT_KEY = ACCOUNT_KEY
 
 local function DeepCopy(value)
     if type(value) ~= "table" then return value end
@@ -329,19 +331,60 @@ local function DeepCopy(value)
     return out
 end
 
--- The key, and whether it came from the GUID. Before the GUID can be read the
--- name is used, and PLAYER_LOGIN asks again (see Core.lua).
-function ns.ProfileKey()
-    local okG, guid = pcall(_G.UnitGUID, "player")
-    guid = okG and ns.Text(guid) or nil
-    if guid then return "guid:" .. guid, true end
-    local okN, name = true, Chaircraft.UnitFullName("player")
-    local okR, realm = pcall(_G.GetRealmName)
-    return (okN and ns.Text(name) or "Unknown") .. "-"
-        .. (okR and ns.Text(realm) or "Unknown"), false
+-- This character, for what is still kept per character (ChairTracker's bars
+-- and factions, the in-flight note): "guid:" and the GUID, nil until the
+-- client can read it.
+function ns.CharacterKey()
+    local ok, guid = pcall(_G.UnitGUID, "player")
+    guid = ok and ns.Text(guid) or nil
+    return guid and ("guid:" .. guid) or nil
 end
 
--- This character's profile: { label, settings, movers }.
+-- Which profile is in use: the account's, always, and it never has to wait
+-- for the GUID.
+function ns.ProfileKey()
+    return ACCOUNT_KEY, true
+end
+
+-- How much of a setup a stored profile holds.
+local function SetupSize(profile)
+    if type(profile) ~= "table" then return 0 end
+    local n = 0
+    if type(profile.settings) == "table" then for _ in pairs(profile.settings) do n = n + 1 end end
+    if type(profile.movers) == "table" then for _ in pairs(profile.movers) do n = n + 1 end end
+    return n
+end
+
+-- First login after settings went account-wide: the account profile starts as
+-- a copy of the fullest character profile, this character's own on a tie.
+-- With no character profile at all, the pre-profile shared settings.
+local function AdoptAccountProfile(db)
+    local mineKey = ns.CharacterKey()
+    local best, bestKey, bestSize = nil, nil, -1
+    if mineKey and type(db.profiles[mineKey]) == "table" then
+        best, bestKey, bestSize = db.profiles[mineKey], mineKey, SetupSize(db.profiles[mineKey])
+    end
+    for key, profile in pairs(db.profiles) do
+        if key ~= ACCOUNT_KEY and SetupSize(profile) > bestSize then
+            best, bestKey, bestSize = profile, key, SetupSize(profile)
+        end
+    end
+    if best then
+        db.profiles[ACCOUNT_KEY] = {
+            settings = DeepCopy(type(best.settings) == "table" and best.settings or {}),
+            movers = DeepCopy(type(best.movers) == "table" and best.movers or {}),
+        }
+        ns.adoptedProfileFrom = (type(best.label) == "string" and best.label ~= "") and best.label or bestKey
+        return
+    end
+    db.profiles[ACCOUNT_KEY] = {
+        settings = type(db.settings) == "table" and DeepCopy(db.settings) or {},
+        movers = type(db.movers) == "table" and DeepCopy(db.movers) or {},
+    }
+    ns.profileWasNew = true
+end
+
+-- The account's profile: { label, settings, movers }.
 function ns.Profile()
     local db = _G.ChairPlusDB
     if type(db) ~= "table" then
@@ -349,43 +392,24 @@ function ns.Profile()
         _G.ChairPlusDB = db
     end
     if type(db.profiles) ~= "table" then db.profiles = {} end
+    if type(db.profiles[ACCOUNT_KEY]) ~= "table" then AdoptAccountProfile(db) end
 
-    local key, fromGuid = ns.ProfileKey()
-    local profile = db.profiles[key]
-    -- A profile made under this session's name-based key, before the GUID
-    -- could be read, moves to the GUID key rather than being left behind.
-    if type(profile) ~= "table" and fromGuid and ns.profileKey
-        and not ns.profileKeyFromGuid and type(db.profiles[ns.profileKey]) == "table" then
-        profile = db.profiles[ns.profileKey]
-        db.profiles[ns.profileKey] = nil
-        db.profiles[key] = profile
-    end
-    if type(profile) ~= "table" then
-        profile = {
-            settings = type(db.settings) == "table" and DeepCopy(db.settings) or {},
-            movers = type(db.movers) == "table" and DeepCopy(db.movers) or {},
-        }
-        db.profiles[key] = profile
-        ns.profileWasNew = true
-    end
+    local profile = db.profiles[ACCOUNT_KEY]
     if type(profile.settings) ~= "table" then profile.settings = {} end
     if type(profile.movers) ~= "table" then profile.movers = {} end
-    local okN, name = true, Chaircraft.UnitFullName("player")
-    local okR, realm = pcall(_G.GetRealmName)
-    name, realm = okN and ns.Text(name) or nil, okR and ns.Text(realm) or nil
-    if name then profile.label = realm and (name .. "-" .. realm) or name end
+    profile.label = "Account"
 
-    ns.profileKey, ns.profileKeyFromGuid = key, fromGuid
+    ns.profileKey, ns.profileKeyFromGuid = ACCOUNT_KEY, true
     return profile
 end
 
 -------------------------------------------------------------------------------
--- Copying another character's settings
+-- Copying a character's settings
 -------------------------------------------------------------------------------
--- Every part that keeps settings per character keys them the same way --
--- "guid:" and the character's GUID -- so one character can be copied across
--- all of them at once: ChairPlus here, ChairSnack's bars and ChairTracker's
--- bars and factions. Auras are account-wide and have nothing to copy.
+-- Profiles saved while settings were per character -- ChairPlus's and
+-- ChairSnack's, keyed "guid:" and the GUID -- can be copied over the account's
+-- from the Home page. ChairTracker still keeps its bars and factions per
+-- character, so its copy goes to this character's. Auras have nothing to copy.
 
 local function Stores()
     local snack = Chaircraft.ChairSnack
@@ -399,17 +423,19 @@ local function Stores()
     }
 end
 
--- Every other character with settings in any part: { key, label, parts }.
+-- Every character with settings in any part: { key, label, parts }.
 function ns.OtherCharacters()
     ns.Profile()
-    local here = ns.profileKey
+    local mine = ns.CharacterKey()
     local stores = Stores()
     local byKey = {}
-    local function Add(key, label, part)
-        if type(key) ~= "string" or key == here then return end
+    local function Add(key, label, part, perCharacter)
+        if type(key) ~= "string" then return end
         -- Only GUID keys: a name key is a leftover from before the GUID could
-        -- be read, and is the same character as a GUID one.
+        -- be read, and is the same character as a GUID one. A part that is
+        -- still per character has nothing to offer from this character.
         if key:sub(1, 5) ~= "guid:" then return end
+        if perCharacter and key == mine then return end
         local entry = byKey[key]
         if not entry then
             entry = { key = key, parts = {} }
@@ -422,7 +448,7 @@ function ns.OtherCharacters()
     end
     for key, p in pairs(stores.plus or {}) do Add(key, type(p) == "table" and p.label, "Plus") end
     for key, p in pairs(stores.snack or {}) do Add(key, type(p) == "table" and p.label, "Snack") end
-    for key, p in pairs(stores.tracker or {}) do Add(key, type(p) == "table" and p.label, "Tracker") end
+    for key, p in pairs(stores.tracker or {}) do Add(key, type(p) == "table" and p.label, "Tracker", true) end
 
     local list = {}
     for _, entry in pairs(byKey) do
@@ -433,18 +459,19 @@ function ns.OtherCharacters()
     return list
 end
 
--- Copy `key`'s settings over this character's in every part that has them.
--- ChairPlus takes effect at once; the other parts read their profile at load,
--- so the caller reloads the UI afterwards. Returns the parts copied.
+-- Copy `key`'s settings over the account's (ChairPlus, ChairSnack) and this
+-- character's (ChairTracker) in every part that has them. ChairPlus takes
+-- effect at once; the other parts read their profile at load, so the caller
+-- reloads the UI afterwards. Returns the parts copied.
 function ns.CopyCharacter(key)
     local stores = Stores()
     local copied = {}
-    if type(key) ~= "string" or key == ns.profileKey then return copied end
+    if type(key) ~= "string" or key == ACCOUNT_KEY then return copied end
 
     local source = stores.plus and stores.plus[key]
     if type(source) == "table" then
         local profile = ns.Profile()
-        -- In place, so everything holding this character's tables sees it.
+        -- In place, so everything holding the account's tables sees it.
         wipe(profile.settings)
         for k, v in pairs(DeepCopy(source.settings or {})) do profile.settings[k] = v end
         wipe(profile.movers)
@@ -461,8 +488,8 @@ function ns.CopyCharacter(key)
     end
 
     local tracker = stores.tracker
-    local mine = ns.profileKey
-    if tracker and type(tracker[key]) == "table" and mine then
+    local mine = ns.CharacterKey()
+    if tracker and type(tracker[key]) == "table" and mine and key ~= mine then
         local copy = DeepCopy(tracker[key])
         copy.label = tracker[mine] and tracker[mine].label or copy.label
         tracker[mine] = copy

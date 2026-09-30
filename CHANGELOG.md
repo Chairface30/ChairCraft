@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**Changed**
+- **Settings are shared by every character on the account**, except ChairTracker's bars and factions, which stay per character. ChairPlus's options and window positions and ChairSnack's bars, keybinds and positions start from your fullest character's setup (your own on a tie). The old per-character profiles are kept: the Home page's "Copy settings from" and ChairSnack's Profiles tab can still copy one across. Auras and ChairIgnore were already account-wide.
+- **ChairIgnore keeps one list of people.** Each character's record of its game ignore list now lives in the account file, and anyone on any character's game list who was not yet on ChairIgnore's list is added to it.
+
 **New**
 - **The Map & Quest Log window can be dragged by its title bar**, like the other Blizzard windows, and stays where you drop it. It is kept by its top left corner, so opening the quest log beside the map still grows the window to the right. Maximized, the map fills the screen as before and can't be dragged; back in its window it returns to your spot. `/chair plus movers reset` hands it back to Blizzard.
 

@@ -228,10 +228,14 @@ boot:SetScript("OnEvent", function(_, event, arg1)
         -- Settings are normally in by now. On a cold start where the client
         -- never hands the saved file back they are the in-code defaults, which
         -- is the whole reason those exist.
-        -- The GUID is not always readable as early as ADDON_LOADED. If the
-        -- profile was picked by name then, pick again now it is: otherwise
-        -- the settings land under a key this character never finds again.
-        if not ns.settings or not ns.profileKeyFromGuid then ns.LoadSettings() end
+        if not ns.settings then ns.LoadSettings() end
         ns.ApplyAll()
+        -- The first login after settings went account-wide: say where the
+        -- shared setup came from, once.
+        if ns.adoptedProfileFrom and not ns.adoptionAnnounced then
+            ns.adoptionAnnounced = true
+            ns.Print("Settings are shared by every character on the account now, starting from "
+                .. tostring(ns.adoptedProfileFrom) .. "'s. The Home page can copy another character's old setup across instead.")
+        end
     end
 end)

@@ -1987,7 +1987,7 @@ local function BuildGeneralPanel(parent)
         "/chair snack petfood - Pet food order and what was learned\n" ..
         "/chair snack lock - Lock all grids\n" ..
         "/chair snack unlock - Unlock all grids\n" ..
-        "/chair snack reset - Reset this character settings"
+        "/chair snack reset - Reset the settings (shared by every character)"
     )
 
     local tipsTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -2032,8 +2032,9 @@ local function BuildProfilesPanel(parent)
     desc:SetPoint("TOPLEFT", 10, -34)
     desc:SetWidth(420)
     desc:SetJustifyH("LEFT")
-    desc:SetText("Each character has its own grids, positions, and keybinds. " ..
-                 "Copying takes a snapshot -- the two profiles stay independent afterwards.")
+    desc:SetText("Grids, positions and keybinds are shared by every character on the account. " ..
+                 "Profiles saved before that, one per character, are listed here: copying one " ..
+                 "takes a snapshot of it as the shared setup.")
 
     local currentLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     currentLabel:SetPoint("TOPLEFT", 10, -75)
@@ -2044,7 +2045,7 @@ local function BuildProfilesPanel(parent)
 
     local copyLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     copyLabel:SetPoint("TOPLEFT", 10, -115)
-    copyLabel:SetText("|cffFFD100Copy from another character|r")
+    copyLabel:SetText("|cffFFD100Copy a character's old profile|r")
 
     -- Rebuilt whenever the panel refreshes, since the profile list changes.
     panel.dropdownHolder = CreateFrame("Frame", nil, panel)
@@ -2063,7 +2064,7 @@ local function BuildProfilesPanel(parent)
         end
         local sourceName = addon:ProfileLabel(source)
         StaticPopupDialogs["SNAPSNACK_COPY_PROFILE"] = {
-            text = "Replace this character settings with those from '" .. sourceName .. "'?",
+            text = "Replace the shared ChairSnack settings with those from '" .. sourceName .. "'?",
             button1 = "Copy",
             button2 = "Cancel",
             OnAccept = function()
@@ -2108,10 +2109,10 @@ local function BuildProfilesPanel(parent)
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(150, 22)
     resetBtn:SetPoint("TOPLEFT", 10, -238)
-    resetBtn:SetText("Reset This Character")
+    resetBtn:SetText("Reset Settings")
     resetBtn:SetScript("OnClick", function()
         StaticPopupDialogs["SNAPSNACK_RESET_PROFILE"] = {
-            text = "Reset all ChairSnack settings for this character?",
+            text = "Reset all ChairSnack settings? Every character shares them.",
             button1 = "Reset",
             button2 = "Cancel",
             OnAccept = function()
@@ -2131,11 +2132,11 @@ local function BuildProfilesPanel(parent)
 
     panel.emptyText = panel:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     panel.emptyText:SetPoint("TOPLEFT", panel.dropdownHolder, "TOPLEFT", 2, -4)
-    panel.emptyText:SetText("No other characters stored yet.")
+    panel.emptyText:SetText("No old character profiles stored.")
     panel.emptyText:Hide()
 
     function panel:Refresh()
-        self.currentText:SetText(addon:CharLabel())
+        self.currentText:SetText("Account (every character)")
 
         local profiles = addon:ListOtherProfiles()
         local labels = {}

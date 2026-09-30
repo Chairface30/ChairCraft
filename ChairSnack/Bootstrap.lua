@@ -96,10 +96,10 @@ end
 
 local function ReportProfileLoad()
     if addon.adoptedProfileFrom then
-        addon:Print("picked up your existing settings, which were stored " ..
-                    "under |cffffd100" .. addon.adoptedProfileFrom ..
-                    "|r. They are filed against the character itself now, " ..
-                    "so a rename or a realm change cannot lose them again.")
+        addon:Print("the bars are shared by every character on the account now, " ..
+                    "starting from |cffffd100" .. addon.adoptedProfileFrom ..
+                    "|r's. The other characters' old profiles are kept: the " ..
+                    "Profiles tab can copy one across instead.")
         return
     end
 
@@ -109,10 +109,10 @@ local function ReportProfileLoad()
         addon:Print("no saved settings yet -- starting fresh. Expected the " ..
                     "first time only.")
     elseif (addon.otherProfileCount or 0) > 0 then
-        addon:Print("|cffffa500nothing stored for " .. addon:CharLabel() ..
-                    ", so these bars are the default layout.|r " ..
-                    (addon.otherProfileCount == 1 and "1 other profile is"
-                        or (addon.otherProfileCount .. " other profiles are")) ..
+        addon:Print("|cffffa500nothing stored for the account, so these bars are " ..
+                    "the default layout.|r " ..
+                    (addon.otherProfileCount == 1 and "1 old profile is"
+                        or (addon.otherProfileCount .. " old profiles are")) ..
                     " saved -- |cff00ffff/chair snack profiles|r lists them, and the " ..
                     "Profiles tab can copy one across.")
     end
