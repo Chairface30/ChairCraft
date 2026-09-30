@@ -3144,6 +3144,87 @@ check("and so does the quest log", rt.eval("QuestLogFrame.chairMoverHandle") is 
 rt.execute("MakeWindow('PVEFrame') FireEvent('ADDON_LOADED', 'Blizzard_PVE')")
 check("the retail engine's group finder too", rt.eval("PVEFrame.chairMoverHandle") is not None)
 
+# The map and quest log: one window, with a border frame that holds the title
+# strip, a maximize button, and a width that changes with the quest log.
+rt = lua51.LuaRuntime(unpack_returned_tuples=True)
+g = rt.globals()
+rt.execute(HARNESS)
+rt.execute(MOVERS_SETUP)
+rt.execute('''
+local plainHook = hooksecurefunc
+function hooksecurefunc(a, b, c)
+    if type(a) == "table" then
+        local original = a[b]
+        a[b] = function(...) local r = original(...) c(...) return r end
+        return
+    end
+    return plainHook(a, b)
+end
+function ToggleWorldMap() end
+''')
+rt.execute(LOAD)
+rt.execute('''
+BOOT()
+local map = MakeWindow("WorldMapFrame")
+MAXIMIZED = false
+rawset(map, "IsMaximized", function() return MAXIMIZED end)
+rawset(map, "GetLeft", function(self) return rawget(self, "_left") end)
+rawset(map, "GetTop", function(self) return rawget(self, "_top") end)
+local border = MakeMock()
+rawset(border, "GetFrameLevel", function() return 40 end)
+rawset(border, "SetFrameLevel", function(self, level) rawset(self, "_level", level) end)
+rawset(map, "BorderFrame", border)
+-- Blizzard's own restore, which never goes through UpdateUIPanelPositions.
+rawset(map, "SynchronizeDisplayState", function(self)
+    self:ClearAllPoints()
+    self:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
+end)
+rawset(UIParent, "GetLeft", function() return 0 end)
+rawset(UIParent, "GetTop", function() return 1080 end)
+local made = CreateFrame
+function CreateFrame(kind, name, parent, ...)
+    local f = made(kind, name, parent, ...)
+    rawset(f, "_madeOn", parent)
+    rawset(f, "SetFrameLevel", function(self, level) rawset(self, "_level", level) end)
+    return f
+end
+ToggleWorldMap()
+CreateFrame = made
+''')
+handle = rt.eval("WorldMapFrame.chairMoverHandle")
+check("the map and quest log gets a drag handle when it opens", handle is not None)
+check("on the border frame that draws its title strip, and above it",
+      rt.eval("rawget(WorldMapFrame.chairMoverHandle, '_madeOn') == WorldMapFrame.BorderFrame") is True
+      and rt.eval("rawget(WorldMapFrame.chairMoverHandle, '_level')") == 60,
+      str(rt.eval("rawget(WorldMapFrame.chairMoverHandle, '_level')")))
+wm = rt.eval("rawget(WorldMapFrame.chairMoverHandle, '_scripts')")
+wm.OnDragStart(handle)
+check("dragging its header moves it", rt.eval("rawget(WorldMapFrame, '_moving')") is True)
+rt.execute("rawset(WorldMapFrame, '_left', 300) rawset(WorldMapFrame, '_top', 900)")
+wm.OnDragStop(handle)
+spot = rt.eval("NS.Profile().movers.WorldMapFrame")
+check("dropping it saves where its top left corner is",
+      spot is not None and spot.x == 300 and spot.y == -180, str(spot and (spot.x, spot.y)))
+point = rt.eval("rawget(WorldMapFrame, '_point')")
+check("and pins it by that corner, so the quest log opens to the right",
+      point.point == "TOPLEFT" and point.rel == "TOPLEFT" and point.x == 300 and point.y == -180,
+      f"{point.point} {point.x} {point.y}")
+rt.execute("WorldMapFrame:SynchronizeDisplayState()")
+point = rt.eval("rawget(WorldMapFrame, '_point')")
+check("Blizzard restoring the panel is undone straight away",
+      point.x == 300 and point.y == -180, f"{point.x} {point.y}")
+rt.execute("MAXIMIZED = true rawset(WorldMapFrame, '_moving', false) "
+           "WorldMapFrame:SynchronizeDisplayState() UpdateUIPanelPositions(WorldMapFrame)")
+point = rt.eval("rawget(WorldMapFrame, '_point')")
+check("maximized, the map is left where Blizzard put it", point.x == 16 and point.y == -116,
+      f"{point.x} {point.y}")
+wm.OnDragStart(handle)
+check("and can't be dragged", rt.eval("rawget(WorldMapFrame, '_moving')") is False)
+rt.execute("MAXIMIZED = false WorldMapFrame:SynchronizeDisplayState()")
+point = rt.eval("rawget(WorldMapFrame, '_point')")
+check("back in its window, it returns to its saved spot",
+      point.x == 300 and point.y == -180, f"{point.x} {point.y}")
+
 print("\nCopying another character's settings")
 COPY = """
 PLAYER_GUID = "Player-1-A"

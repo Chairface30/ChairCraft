@@ -113,7 +113,7 @@ ChairCraft also publishes its own launcher, so other bar addons can show a chair
 - Max camera zoom.
 - Player filters (class, role, level) in the group finder.
 - Hide the game's XP bar and status bar 2.
-- Drag the character panel, bags, bank, auction house, professions, quest log, spellbook, talents, mail and other Blizzard windows by their headers. Their positions are remembered.
+- Drag the character panel, bags, bank, auction house, professions, map and quest log, spellbook, talents, mail and other Blizzard windows by their headers. Their positions are remembered.
 - On the **Home** page: the minimap icon, copying settings from another character, and **backing up every setting** as one line of text to keep or paste onto another character.
 
 ## ChairAuras: buff, debuff and cooldown tracking (*Beta*)

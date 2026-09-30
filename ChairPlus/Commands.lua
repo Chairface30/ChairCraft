@@ -2248,7 +2248,7 @@ local function Handler(input)
             ns.Print("Every dragged window goes back to Blizzard's "
                 .. "spots the next time they open.")
         else
-            ns.Print("Drag Blizzard's windows -- character, bags, bank, quest log, spellbook, talents, mail, merchant, group finder and more -- by their title bar. "
+            ns.Print("Drag Blizzard's windows -- character, bags, bank, map and quest log, spellbook, talents, mail, merchant, group finder and more -- by their title bar. "
                 .. "|cffffd100/chair plus movers reset|r puts them back.")
             -- Which windows this client has, so a window that won't drag can
             -- be told apart from one that goes by another name here.

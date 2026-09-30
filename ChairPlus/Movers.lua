@@ -1,7 +1,7 @@
 -- ChairPlus Movers.lua
 -- Blizzard's windows -- the character panel, bank, auction house, professions,
--- quest log, spellbook, talents, mail, merchant, trainer, friends, the group
--- finder and the rest in TARGETS below -- and the combined backpack, all
+-- map and quest log, spellbook, talents, mail, merchant, trainer, friends, the
+-- group finder and the rest in TARGETS below -- and the combined backpack, all
 -- draggable by their headers.
 --
 -- Always on: there is nothing to switch, only somewhere to put them. A thin
@@ -17,7 +17,8 @@
 -- window with no saved spot is left entirely to Blizzard.
 --
 -- Positions are saved per character, in this character's ChairPlusDB profile,
--- as an offset from the screen centre. "/chair plus movers reset" hands them all back to Blizzard.
+-- as an offset from the screen centre (the map's from the screen's top left
+-- corner). "/chair plus movers reset" hands them all back to Blizzard.
 
 local suiteName, Chaircraft = ...
 local ns = Chaircraft.ChairPlus
@@ -49,6 +50,22 @@ local TARGETS = {
     -- trainer, macros, inspect, the group finder) are caught by ADDON_LOADED
     -- the first time they open.
     { name = "QuestLogFrame", layout = "UpdateUIPanelPositions", insetLeft = 58 },
+    -- The map and quest log, one window on this engine ("Map & Quest Log").
+    -- It differs from the rest in four ways:
+    --   * its title strip belongs to BorderFrame, which sits above the map, so
+    --     the handle goes on that;
+    --   * a maximize button sits beside the close button, so the handle stops
+    --     short of both;
+    --   * maximized it fills the screen, and Blizzard sizes and places it: it
+    --     is neither dragged nor put anywhere while IsMaximized says so;
+    --   * the quest log opens and shuts on its right, changing the width, so
+    --     its spot is kept by the top left corner. Kept by the centre, the map
+    --     would jump sideways each time.
+    -- Coming back from maximized, Blizzard restores the panel without going
+    -- through UpdateUIPanelPositions, hence the hook on the method that does.
+    { name = "WorldMapFrame", layout = "UpdateUIPanelPositions", insetLeft = 58, insetRight = 60,
+      border = "BorderFrame", fixed = "IsMaximized", corner = true,
+      after = { "SynchronizeDisplayState" } },
     -- The spellbook. Older clients have SpellBookFrame, always loaded; newer
     -- ones fold the spellbook and talents into PlayerSpellsFrame (loaded on
     -- demand, Blizzard_PlayerSpells), and the one before that had talents in
@@ -88,7 +105,11 @@ local TARGETS = {
 
 -- Names, for the menu and the reset message.
 ns.MOVER_NAMES = {}
-for _, target in ipairs(TARGETS) do ns.MOVER_NAMES[#ns.MOVER_NAMES + 1] = target.name end
+local byName = {}
+for _, target in ipairs(TARGETS) do
+    ns.MOVER_NAMES[#ns.MOVER_NAMES + 1] = target.name
+    byName[target.name] = target
+end
 
 local prepared = {}
 local pending = {}
@@ -109,6 +130,15 @@ local function Blocked(frame)
     return okP and protected and true or false
 end
 
+-- True while the window is in a state Blizzard alone places (the maximized
+-- map). A window whose answer can't be read is treated as free to move.
+local function Fixed(target, frame)
+    local method = target and target.fixed and frame[target.fixed]
+    if type(method) ~= "function" then return false end
+    local ok, answer = pcall(method, frame)
+    return ok and ns.Bool(answer) == true
+end
+
 -- Put a window at its saved spot, if it has one.
 local function Apply(name)
     local frame = _G[name]
@@ -117,13 +147,16 @@ local function Apply(name)
     if not frame or type(spot) ~= "table" then return end
     local x, y = ns.Num(spot.x), ns.Num(spot.y)
     if not x or not y then return end
+    local target = byName[name]
+    if Fixed(target, frame) then return end
     if Blocked(frame) then
         pending[name] = true
         return
     end
     pending[name] = nil
+    local point = (target and target.corner) and "TOPLEFT" or "CENTER"
     frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+    frame:SetPoint(point, UIParent, point, x, y)
 end
 ns.ApplyMover = Apply
 
@@ -131,12 +164,20 @@ local function Save(name)
     local frame = _G[name]
     local store = Store()
     if not frame or not store then return end
-    local okF, fx, fy = pcall(frame.GetCenter, frame)
-    local okU, ux, uy = pcall(UIParent.GetCenter, UIParent)
+    -- The point the spot is measured from: the window's centre against the
+    -- screen's, or for a window that changes width, top left against top left.
+    local okF, fx, fy, okU, ux, uy
+    if byName[name] and byName[name].corner then
+        okF, fx, fy = pcall(function() return frame:GetLeft(), frame:GetTop() end)
+        okU, ux, uy = pcall(function() return UIParent:GetLeft(), UIParent:GetTop() end)
+    else
+        okF, fx, fy = pcall(frame.GetCenter, frame)
+        okU, ux, uy = pcall(UIParent.GetCenter, UIParent)
+    end
     fx, fy, ux, uy = ns.Num(fx), ns.Num(fy), ns.Num(ux), ns.Num(uy)
     if not (okF and okU and fx and fy and ux and uy) then return end
-    -- Centres come back in each frame's own scale; offsets are read in the
-    -- window's, so the screen centre is converted into it.
+    -- Both come back in each frame's own scale; offsets are read in the
+    -- window's, so the screen's point is converted into it.
     local okS, fs = pcall(frame.GetEffectiveScale, frame)
     local okT, us = pcall(UIParent.GetEffectiveScale, UIParent)
     fs, us = okS and ns.Num(fs) or 1, okT and ns.Num(us) or 1
@@ -155,15 +196,19 @@ local function Prepare(target)
     pcall(frame.SetMovable, frame, true)
     pcall(frame.SetClampedToScreen, frame, true)
 
-    local handle = CreateFrame("Frame", nil, frame)
+    -- The handle rides on whatever draws the title strip, so it is in that
+    -- frame's strata and above it; on most windows that is the window itself.
+    local host = target.border and frame[target.border]
+    if type(host) ~= "table" or type(host.GetFrameLevel) ~= "function" then host = frame end
+    local handle = CreateFrame("Frame", nil, host)
     handle:SetPoint("TOPLEFT", frame, "TOPLEFT", target.insetLeft, 0)
-    handle:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -28, 0)
+    handle:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(target.insetRight or 28), 0)
     handle:SetHeight(HEADER_H)
-    pcall(handle.SetFrameLevel, handle, (ns.Num(frame:GetFrameLevel()) or 1) + 20)
+    pcall(handle.SetFrameLevel, handle, (ns.Num(host:GetFrameLevel()) or 1) + 20)
     handle:EnableMouse(true)
     handle:RegisterForDrag("LeftButton")
     handle:SetScript("OnDragStart", function()
-        if Blocked(frame) then return end
+        if Blocked(frame) or Fixed(target, frame) then return end
         frame:StartMoving()
     end)
     handle:SetScript("OnDragStop", function()
@@ -174,6 +219,12 @@ local function Prepare(target)
 
     if frame.HookScript then
         pcall(frame.HookScript, frame, "OnShow", function() Apply(name) end)
+    end
+    -- The window's own methods that end by placing it. Hooked, never called.
+    for _, method in ipairs(target.after or {}) do
+        if type(frame[method]) == "function" then
+            pcall(hooksecurefunc, frame, method, function() Apply(name) end)
+        end
     end
     -- One hook per layout function, however many windows it lays out: it
     -- used to be one per window, thirty hooks on the same function.
@@ -217,7 +268,8 @@ end)
 -- among them) gets its handle the first time it opens.
 for _, opener in ipairs({ "ToggleCharacter", "ToggleAllBags", "OpenAllBags", "ToggleBackpack",
                           "ToggleGuildFrame", "ToggleCommunitiesFrame", "ToggleSpellBook",
-                          "ToggleTalentFrame", "TogglePlayerSpellsFrame" }) do
+                          "ToggleTalentFrame", "TogglePlayerSpellsFrame", "ToggleWorldMap",
+                          "ToggleQuestLog" }) do
     if type(_G[opener]) == "function" then
         hooksecurefunc(opener, PrepareAll)
     end

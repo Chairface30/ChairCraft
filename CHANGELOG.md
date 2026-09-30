@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+**New**
+- **The Map & Quest Log window can be dragged by its title bar**, like the other Blizzard windows, and stays where you drop it. It is kept by its top left corner, so opening the quest log beside the map still grows the window to the right. Maximized, the map fills the screen as before and can't be dragged; back in its window it returns to your spot. `/chair plus movers reset` hands it back to Blizzard.
+
 **Fixed**
 - **Threat % on nameplates for mobs you have not targeted.** In combat the game keeps your own "in combat" flag hidden from addons, and ChairCraft read a hidden flag as "not fighting". A plate whose mob the game also wouldn't confirm was in the fight was then skipped, which is every plate except your target's. A hidden flag now counts as in combat, so those plates show your own threat (as text, or as the thin colored bar when the game won't print the number). The nameplate colors and the threat meter read the flag the same way.
 - **Hidden values, everywhere.** A sweep of every part for values the game can hide in combat:
