@@ -43,6 +43,17 @@ local function Read(fn, ...)
     return value
 end
 
+-- Worn items, by whichever name this client has.
+local function Equipped()
+    local item = _G.C_Item
+    return (item and item.IsEquippedItem) or _G.IsEquippedItem
+end
+
+local function EquippedType()
+    local item = _G.C_Item
+    return (item and item.IsEquippedItemType) or _G.IsEquippedItemType
+end
+
 local function ReadBool(fn, ...)
     local value = Read(fn, ...)
     if value == UNKNOWN then return UNKNOWN end
@@ -510,40 +521,40 @@ local MORE = {
         end,
     },
 
-    -- Gear
+    -- Gear. (WoW Forever has these two only in C_Item.)
     {
         key = "equipped", kind = "text", label = "Item equipped", section = "Gear",
         tip = "Item names or IDs, split by commas. Loads while you wear any one of them.",
         test = function(value)
             local items = List(value, true)
             if #items == 0 then return true end
-            if type(_G.IsEquippedItem) ~= "function" then return true end
+            if type(Equipped()) ~= "function" then return true end
             for _, item in ipairs(items) do
-                if Read(_G.IsEquippedItem, tonumber(item) or item) == true then return true end
+                if Read(Equipped(), tonumber(item) or item) == true then return true end
             end
             return false
         end,
-        available = function() return type(_G.IsEquippedItem) == "function" end,
+        available = function() return type(Equipped()) == "function" end,
     },
     {
         key = "notEquipped", kind = "text", label = "Item not equipped",
         tip = "Item names or IDs, split by commas. Loads while you wear none of them.",
         test = function(value)
             local items = List(value, true)
-            if #items == 0 or type(_G.IsEquippedItem) ~= "function" then return true end
+            if #items == 0 or type(Equipped()) ~= "function" then return true end
             for _, item in ipairs(items) do
-                if Read(_G.IsEquippedItem, tonumber(item) or item) == true then return false end
+                if Read(Equipped(), tonumber(item) or item) == true then return false end
             end
             return true
         end,
-        available = function() return type(_G.IsEquippedItem) == "function" end,
+        available = function() return type(Equipped()) == "function" end,
     },
     {
         key = "itemType", kind = "text", label = "Item type equipped",
         tip = "Item types as the game names them, split by commas: Shields, Daggers, "
            .. "Two-Handed Swords...",
         test = function(value)
-            local fn = _G.IsEquippedItemType
+            local fn = EquippedType()
             if type(fn) ~= "function" then return true end
             local any = false
             for part in tostring(value):gmatch("[^,]+") do
@@ -555,7 +566,7 @@ local MORE = {
             end
             return not any
         end,
-        available = function() return type(_G.IsEquippedItemType) == "function" end,
+        available = function() return type(EquippedType()) == "function" end,
     },
 
     -- Spells

@@ -10,6 +10,7 @@
   - **ChairAuras:** the Weapon enchant trigger now sees the off hand's enchant, and an item trigger gets its icon on clients without the item cache call. Both were cut off by a helper that passed on only the first six values.
   - **Threat meter:** "is this me", "can I attack it" and your group role are read safely. A mob the game won't say you can attack is no longer ruled out.
   - Every part now tests for a hidden value before doing anything else with it.
+- **ChairAuras: the Item equipped, Item not equipped and Item type equipped load conditions** were unavailable on WoW Forever, which has those calls under a new name. They now work there.
 
 **For developers**
 - Two checkers in `.tests/tools`: `secret_audit.py` lists every place a value the game can hide is compared, tested, added up, joined or used as a table key, following it through locals, fields and function results. `globals_audit.py` lists the game functions an addon calls, and the calls to ones WoW Forever is known not to have. Both also run on Z-Perl and ItemRack.
