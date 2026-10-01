@@ -308,6 +308,37 @@ rt, ev = fresh('REFUSE = { Ghost = true }', on=False)
 rt.execute("NS.Set('enabled', true) NS.Add('Ghost Test') EVENT('IGNORELIST_UPDATE') EVENT('IGNORELIST_UPDATE')")
 check("a name the server refuses stays on ours", ev("NS.IsListed('Ghost Test')") is True)
 
+# Only the game list read whole can say someone was unignored. One still
+# loading reads as empty, and a name the client keeps secret reads as
+# missing: taking either for an unignore is how a whole list went missing.
+rt, ev = fresh('GAME = { "Oldfoe Test", "Second Test" }', on=False)
+rt.execute("NS.Set('enabled', true)")
+rt.execute("KEPT = GAME GAME = {} EVENT('IGNORELIST_UPDATE')")
+check("a game list that reads as empty takes no one off ours",
+      ev("NS.IsListed('Oldfoe Test')") is True and ev("NS.IsListed('Second Test')") is True)
+rt.execute("""GAME = { "Oldfoe Test", setmetatable({}, { __tostring = function() error("secret") end }) }
+EVENT('IGNORELIST_UPDATE')""")
+check("nor does one with a name the client keeps secret",
+      ev("NS.IsListed('Second Test')") is True)
+rt.execute("GAME = { 'Oldfoe Test' } EVENT('IGNORELIST_UPDATE')")
+check("one read whole still does", ev("NS.IsListed('Second Test')") is False)
+
+# Removing from ours is final: another character's game list that still
+# holds the name is behind, and is brought up to date, not believed.
+rt, ev = fresh('GAME = { "Oldfoe Test" }', on=False)
+rt.execute("NS.Set('enabled', true) NS.Remove('Oldfoe Test')")
+check("removing takes them off this character's game list", ev("#GAME") == 0)
+rt.execute("""ChairIgnoreDB.gameLists["guid:Other"] = { gameList = { ["oldfoe test-homerealm"] = "Oldfoe Test-HomeRealm" }, gameListRead = true }
+NS.charKey = "guid:Other" table.insert(GAME, "Oldfoe Test") EVENT('IGNORELIST_UPDATE')""")
+check("on another character, the name still on its game list is not put back on ours",
+      ev("NS.IsListed('Oldfoe Test')") is False)
+check("and comes off that game list too", ev("#GAME") == 0)
+rt.execute("EVENT('IGNORELIST_UPDATE')")  # the game reports the list without them
+rt.execute("table.insert(GAME, 'Oldfoe Test') EVENT('IGNORELIST_UPDATE')")
+check("ignoring them again the normal way is a fresh ignore", ev("NS.IsListed('Oldfoe Test')") is True)
+rt.execute("NS.Remove('Oldfoe Test') NS.Add('Oldfoe Test')")
+check("as is adding them again", ev("NS.IsListed('Oldfoe Test')") is True and ev("ChairIgnoreDB.removed['oldfoe test-homerealm']") is None)
+
 rt, ev = fresh(on=False)
 rt.execute("for i = 1, 60 do NS.Add('Foe Q' .. string.char(96 + (i % 26) + 1) .. string.rep('a', math.floor(i / 26))) NOW = NOW + 1 end")
 rt.execute("NS.Set('enabled', true)")

@@ -257,6 +257,7 @@ function ns.Add(name, note, days)
     if not entry then
         entry = { name = full, added = Now() }
         db.players[key] = entry
+        ns.Removed()[key] = nil
     end
     if note ~= nil then entry.note = (note ~= "" and note) or nil end
     days = tonumber(days)
@@ -267,6 +268,17 @@ function ns.Add(name, note, days)
     return entry
 end
 
+-- Who was taken off the list, and when. A character's game list that still
+-- holds them is behind, not a reason to put them back; it is brought up to
+-- date instead (see SyncGameList). Ignoring them again, by any route, clears
+-- the mark.
+function ns.Removed()
+    local db = DB()
+    if type(db) ~= "table" then return {} end
+    db.removed = type(db.removed) == "table" and db.removed or {}
+    return db.removed
+end
+
 function ns.Remove(name)
     local db = DB()
     local full = ns.FullName(name)
@@ -274,6 +286,7 @@ function ns.Remove(name)
     if not (type(db) == "table" and key and db.players[key]) then return false end
     local entry = db.players[key]
     db.players[key] = nil
+    ns.Removed()[key] = Now()
     if ns.On("syncGameList") then ns.RemoveFromGameList(entry.name) end
     Changed()
     return true
@@ -328,20 +341,27 @@ local function OwnCall(fn, ...)
     return ok
 end
 
--- What this character's game list holds now: key -> full name.
+-- What this character's game list holds now: key -> full name, how many
+-- entries the game says it has, and how many of those could not be read.
 local function GameList()
     local fl, out = FL(), {}
     if not (fl and fl.GetNumIgnores and fl.GetIgnoreName) then return nil end
     local okN, count = pcall(fl.GetNumIgnores)
-    count = okN and tonumber(count) or 0
+    count = okN and ns.Num(count) or 0
+    local unreadable = 0
     for i = 1, count do
         local ok, name = pcall(fl.GetIgnoreName, i)
         local full = ok and ns.FullName(name)
         -- The client names a player it has not heard from yet "Unknown":
-        -- not a name, and never to be taken as one.
-        if full and not full:match("^Unknown%-") then out[Key(full)] = full end
+        -- not a name, and never to be taken as one. A name it keeps secret
+        -- is not one either.
+        if full and not full:match("^Unknown%-") then
+            out[Key(full)] = full
+        else
+            unreadable = unreadable + 1
+        end
     end
-    return out, count
+    return out, count, unreadable
 end
 ns.GameList = GameList
 
@@ -364,31 +384,53 @@ end
 function ns.SyncGameList()
     local fl, char = FL(), ns.CharStore(true)
     if not (fl and fl.AddIgnore and type(char) == "table" and type(DB()) == "table") then return end
-    local current, count = GameList()
+    local current, count, unreadable = GameList()
     if not current then return end
     local seen = char.gameList or {}
-    local players = ns.Players()
+    local players, removed = ns.Players(), ns.Removed()
+    ns.asked = ns.asked or {}
 
-    -- Anyone ignored the normal way (the game's own right-click Ignore,
-    -- /ignore) comes onto ChairIgnore's list. After the very first read,
-    -- which only takes in what the game list already held, each one is
-    -- asked about: the reason prompt opens for them.
+    -- Anyone on the game list who is not on ChairIgnore's comes onto it --
+    -- unless ChairIgnore took them off, and this character's list just has
+    -- not heard: then they come off it instead. A name new on the list
+    -- since it was last read was ignored the normal way (the game's own
+    -- right-click Ignore, /ignore) and is a fresh ignore either way; after
+    -- the very first read, which only takes in what the list already held,
+    -- each of those is asked about: the reason prompt opens for them.
     local picked = {}
     for key, full in pairs(current) do
-        if not seen[key] and not players[key] then
-            players[key] = { name = full, added = Now() }
-            if char.gameListRead then
-                picked[#picked + 1] = full
-                local days = tonumber(ns.Get("expireDays")) or 0
-                if days > 0 then players[key].expires = Now() + math.floor(days * 86400) end
+        if not players[key] then
+            if removed[key] and seen[key] then
+                if fl.DelIgnore and not ns.asked["off:" .. key] then
+                    ns.asked["off:" .. key] = true
+                    ns.expectSystem = (ns.expectSystem or 0) + 1
+                    -- Off the list as remembered too, so their coming back
+                    -- onto it later reads as the fresh ignore it would be.
+                    if OwnCall(fl.DelIgnore, GameName(full)) then current[key] = nil end
+                end
+            else
+                removed[key] = nil
+                players[key] = { name = full, added = Now() }
+                if char.gameListRead and not seen[key] then
+                    picked[#picked + 1] = full
+                    local days = tonumber(ns.Get("expireDays")) or 0
+                    if days > 0 then players[key].expires = Now() + math.floor(days * 86400) end
+                end
             end
         end
     end
-    -- Only names this character's list really held last time: a name that
-    -- could not be added (the list was full) never counts as unignored.
-    if char.gameListRead then
+    -- Unignored the normal way while ChairIgnore was not watching: a name
+    -- this character's list really held last time and holds no more (one
+    -- that could not be added, the list being full, never counts). Only
+    -- from a list read whole: a list still loading reads as empty, and a
+    -- name the client keeps secret reads as missing, and neither is an
+    -- unignore. Reading either as one is how a whole list went missing.
+    if char.gameListRead and (count or 0) > 0 and (unreadable or 0) == 0 then
         for key in pairs(seen) do
-            if not current[key] and players[key] then players[key] = nil end
+            if not current[key] and players[key] then
+                players[key] = nil
+                removed[key] = Now()
+            end
         end
     end
 
@@ -397,7 +439,6 @@ function ns.SyncGameList()
     -- refuses (no such player) is never later taken for one you unignored.
     -- Each is asked for once a session, so a refusal is not repeated on
     -- every update.
-    ns.asked = ns.asked or {}
     local free = ns.Get("syncGameList") and (ns.GAME_LIST_MAX - (count or 0)) or 0
     for _, entry in ipairs(ns.SortedPlayers()) do
         if free <= 0 then break end
@@ -409,8 +450,15 @@ function ns.SyncGameList()
         end
     end
 
-    char.gameList = current
-    char.gameListRead = true
+    -- What was read is what is remembered -- when it was read whole. A
+    -- partial read written down would make the names it lacks forgotten,
+    -- and a name forgotten cannot later be seen to have been unignored.
+    -- The very first read is remembered whatever it held.
+    local whole = (count or 0) > 0 and (unreadable or 0) == 0
+    if whole or not char.gameListRead then
+        char.gameList = current
+        char.gameListRead = true
+    end
     Changed()
     if ns.OnIgnoredNormally then
         for _, full in ipairs(picked) do ns.OnIgnoredNormally(full) end
@@ -429,6 +477,7 @@ local function PickUp(name)
     local players, key = ns.Players(), Key(full)
     if players[key] then return end
     players[key] = { name = full, added = Now() }
+    ns.Removed()[key] = nil
     local days = tonumber(ns.Get("expireDays")) or 0
     if days > 0 then players[key].expires = Now() + math.floor(days * 86400) end
     Changed()
@@ -440,16 +489,23 @@ local function DropOff(name)
     local players = ns.Players()
     if key and players[key] then
         players[key] = nil
+        ns.Removed()[key] = Now()
         Changed()
     end
 end
 
--- The game's "is this player ignored", or nil when it will not say.
+-- The game's "is this player ignored", or nil when it will not say (a
+-- secret answer is one it will not say: it cannot even be compared).
 local function GameSaysIgnored(name)
     local fl = FL()
     if not (fl and fl.IsIgnored) then return nil end
-    local ok, answer = pcall(fl.IsIgnored, name)
-    if ok and (answer == true or answer == false) then return answer end
+    local ok, answer = pcall(function()
+        local said = fl.IsIgnored(name)
+        if said == true then return true end
+        if said == false then return false end
+        return nil
+    end)
+    if ok then return answer end
     return nil
 end
 
@@ -673,16 +729,18 @@ local function AdoptCharacterList(final)
 end
 
 -- Everyone on any character's game list joins the one list. Each record is
--- taken in once: a name you later take off the list is not brought back by
--- a record that still holds it. Returns how many were added.
+-- taken in once, and never anyone taken off the list on purpose, so a name
+-- you removed is not brought back by a record that still holds it. Returns
+-- how many were added.
 function ns.MergeGameLists()
     local db = DB()
     if type(db) ~= "table" or type(db.gameLists) ~= "table" then return 0 end
     local added = 0
+    local removed = ns.Removed()
     for _, store in pairs(db.gameLists) do
         if type(store) == "table" and type(store.gameList) == "table" and not store.merged then
             for key, full in pairs(store.gameList) do
-                if type(key) == "string" and type(full) == "string" and not db.players[key] then
+                if type(key) == "string" and type(full) == "string" and not db.players[key] and not removed[key] then
                     db.players[key] = { name = full, added = Now() }
                     added = added + 1
                 end
@@ -700,6 +758,7 @@ local function InitDB(final)
     db.players = type(db.players) == "table" and db.players or {}
     db.settings = type(db.settings) == "table" and db.settings or {}
     db.gameLists = type(db.gameLists) == "table" and db.gameLists or {}
+    db.removed = type(db.removed) == "table" and db.removed or {}
     if type(_G.ChairIgnoreCharDB) ~= "table" then _G.ChairIgnoreCharDB = {} end
     local char = _G.ChairIgnoreCharDB
     -- Up to 1.5.0 the switches were kept per character. The first character
