@@ -258,6 +258,7 @@ function ns.Add(name, note, days)
         entry = { name = full, added = Now() }
         db.players[key] = entry
         ns.Removed()[key] = nil
+        ns.Dropped()[key] = nil
     end
     if note ~= nil then entry.note = (note ~= "" and note) or nil end
     days = tonumber(days)
@@ -279,6 +280,61 @@ function ns.Removed()
     return db.removed
 end
 
+-- Who came off the list because the game's list seemed to say so (an
+-- unignore seen on the game's list or through its calls), kept whole for a
+-- while. The server can send a list that reads whole but is short a name
+-- for a moment; when the name comes back it is the same ignore, and gets its
+-- reason and expiry back instead of being asked about as a new one.
+-- Removing someone in ChairIgnore itself is final and keeps nothing.
+ns.DROPPED_DAYS = 30
+
+function ns.Dropped()
+    local db = DB()
+    if type(db) ~= "table" then return {} end
+    db.dropped = type(db.dropped) == "table" and db.dropped or {}
+    return db.dropped
+end
+
+-- Takes a player off the list as the game's list says, keeping the entry.
+local function Drop(key)
+    local players = ns.Players()
+    local entry = players[key]
+    if not entry then return end
+    players[key] = nil
+    ns.Removed()[key] = Now()
+    entry.dropped = Now()
+    ns.Dropped()[key] = entry
+end
+
+-- Back on the list: the entry kept when they were dropped, or a new one.
+-- The second result is true for a new one, the only kind asked about.
+local function Return(key, full)
+    local dropped = ns.Dropped()
+    local entry = dropped[key]
+    dropped[key] = nil
+    ns.Removed()[key] = nil
+    if type(entry) == "table" then
+        entry.dropped = nil
+        entry.name = full
+        ns.Players()[key] = entry
+        ns.probe.returned = ns.probe.returned + 1
+        return entry, false
+    end
+    entry = { name = full, added = Now() }
+    local days = tonumber(ns.Get("expireDays")) or 0
+    if days > 0 then entry.expires = Now() + math.floor(days * 86400) end
+    ns.Players()[key] = entry
+    return entry, true
+end
+
+function ns.PruneDropped()
+    local cutoff = Now() - ns.DROPPED_DAYS * 86400
+    local dropped = ns.Dropped()
+    for key, entry in pairs(dropped) do
+        if type(entry) ~= "table" or (entry.dropped or 0) < cutoff then dropped[key] = nil end
+    end
+end
+
 function ns.Remove(name)
     local db = DB()
     local full = ns.FullName(name)
@@ -287,6 +343,7 @@ function ns.Remove(name)
     local entry = db.players[key]
     db.players[key] = nil
     ns.Removed()[key] = Now()
+    ns.Dropped()[key] = nil
     if ns.On("syncGameList") then ns.RemoveFromGameList(entry.name) end
     Changed()
     return true
@@ -328,8 +385,9 @@ local FL = function() return _G.C_FriendList end
 
 -- What ChairIgnore has seen of the game's list this session, for
 -- /chair ignore status: which calls it is watching, how many ignores it saw
--- go through them, how many list updates arrived.
-ns.probe = { hooks = {}, calls = 0, updates = 0 }
+-- go through them, how many list updates arrived, how many dropped names
+-- came back with their reason.
+ns.probe = { hooks = {}, calls = 0, updates = 0, returned = 0 }
 
 -- ChairIgnore's own calls into the game's list, told apart from yours so
 -- they are never taken for an ignore to ask about.
@@ -408,14 +466,12 @@ function ns.SyncGameList()
                     -- onto it later reads as the fresh ignore it would be.
                     if OwnCall(fl.DelIgnore, GameName(full)) then current[key] = nil end
                 end
+            elseif char.gameListRead and not seen[key] then
+                local _, new = Return(key, full)
+                if new then picked[#picked + 1] = full end
             else
                 removed[key] = nil
                 players[key] = { name = full, added = Now() }
-                if char.gameListRead and not seen[key] then
-                    picked[#picked + 1] = full
-                    local days = tonumber(ns.Get("expireDays")) or 0
-                    if days > 0 then players[key].expires = Now() + math.floor(days * 86400) end
-                end
             end
         end
     end
@@ -427,10 +483,7 @@ function ns.SyncGameList()
     -- unignore. Reading either as one is how a whole list went missing.
     if char.gameListRead and (count or 0) > 0 and (unreadable or 0) == 0 then
         for key in pairs(seen) do
-            if not current[key] and players[key] then
-                players[key] = nil
-                removed[key] = Now()
-            end
+            if not current[key] and players[key] then Drop(key) end
         end
     end
 
@@ -474,22 +527,17 @@ end
 local function PickUp(name)
     local full = ns.FullName(name)
     if not full then return end
-    local players, key = ns.Players(), Key(full)
-    if players[key] then return end
-    players[key] = { name = full, added = Now() }
-    ns.Removed()[key] = nil
-    local days = tonumber(ns.Get("expireDays")) or 0
-    if days > 0 then players[key].expires = Now() + math.floor(days * 86400) end
+    local key = Key(full)
+    if ns.Players()[key] then return end
+    local _, new = Return(key, full)
     Changed()
-    if ns.OnIgnoredNormally then ns.OnIgnoredNormally(full) end
+    if new and ns.OnIgnoredNormally then ns.OnIgnoredNormally(full) end
 end
 
 local function DropOff(name)
     local key = Key(ns.FullName(name))
-    local players = ns.Players()
-    if key and players[key] then
-        players[key] = nil
-        ns.Removed()[key] = Now()
+    if key and ns.Players()[key] then
+        Drop(key)
         Changed()
     end
 end
@@ -670,6 +718,7 @@ local function Command(input)
             .. (probe.last and (" (last: " .. probe.last .. ", game said ignored: "
                 .. tostring(probe.lastAnswer) .. ")") or "")
             .. ", " .. probe.updates .. " list update(s)"
+            .. ", " .. probe.returned .. " back with their reason"
             .. ", game's own count: " .. tostring(okN and ns.Text(raw) or "unreadable"))
     else
         ns.Print("|cffffd100/chair ignore|r opens the window. Also: |cffffd100add|r <name>[: reason], "
@@ -790,6 +839,7 @@ driver:SetScript("OnEvent", function(_, event, arg)
         -- file at ADDON_LOADED for want of it moves over here.
         AdoptCharacterList(true)
         ns.MergeGameLists()
+        ns.PruneDropped()
         if ns.On() then ns.PruneExpired() end
         if ns.ApplyChat then ns.ApplyChat() end
         -- The game list can still be empty this early. IGNORELIST_UPDATE

@@ -323,6 +323,25 @@ check("nor does one with a name the client keeps secret",
 rt.execute("GAME = { 'Oldfoe Test' } EVENT('IGNORELIST_UPDATE')")
 check("one read whole still does", ev("NS.IsListed('Second Test')") is False)
 
+# A list that reads whole can still be short a name for a moment while the
+# server fills it in. When the name comes back it is the same ignore: the
+# reason kept, and no prompt asking for it again.
+rt, ev = fresh('GAME = { "Oldfoe Test", "Second Test" }', on=False)
+rt.execute("NS.Set('enabled', true) NS.SetNote('Second Test', 'spams trade') NS.SetExpiry('Second Test', 9)")
+expires = ev("NS.Find('Second Test').expires")
+rt.execute("GAME = { 'Oldfoe Test' } EVENT('IGNORELIST_UPDATE')")
+rt.execute("GAME = { 'Oldfoe Test', 'Second Test' } EVENT('IGNORELIST_UPDATE')")
+check("a name back on the game list keeps its reason and expiry",
+      ev("NS.Find('Second Test') and NS.Find('Second Test').note") == "spams trade"
+      and ev("NS.Find('Second Test').expires") == expires)
+check("and is not asked about again", ev("ChairIgnoreReason == nil or not ChairIgnoreReason:IsShown()") is True)
+rt.execute("C_FriendList.DelIgnore('Second Test') NOW = NOW + 5 C_FriendList.AddIgnore('Second Test')")
+check("unignored and ignored again by hand, the reason is kept too",
+      ev("NS.Find('Second Test').note") == "spams trade"
+      and ev("ChairIgnoreReason == nil or not ChairIgnoreReason:IsShown()") is True)
+rt.execute("NS.Remove('Second Test') EVENT('IGNORELIST_UPDATE') NS.Add('Second Test')")
+check("taken off in ChairIgnore itself, the reason goes with them", ev("NS.Find('Second Test').note") is None)
+
 # Removing from ours is final: another character's game list that still
 # holds the name is behind, and is brought up to date, not believed.
 rt, ev = fresh('GAME = { "Oldfoe Test" }', on=False)

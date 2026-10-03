@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Fixed**
+- **ChairIgnore asked again why you ignored someone already on the list, and lost the reason you gave.** The game can send your ignore list a name short for a moment while it fills in. ChairIgnore took the missing name for an unignore and dropped the entry, reason and all; when the name came back it looked like a new ignore and the "Why?" box opened. A name the game's list drops now keeps its reason and expiry for 30 days, and if it comes back (or you ignore them again) the reason comes back too, with no prompt. Removing someone in ChairIgnore itself still forgets them. `/chair ignore status` counts how many came back this session.
+
 ## ChairCraft v1.8.0: settings shared by the account
 
 **New**
