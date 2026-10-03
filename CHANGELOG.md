@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## ChairCraft v1.8.2: combo points stay on their mob
 
 **Fixed**
 - **Combo points on nameplates followed you from mob to mob.** Combo points belong to the mob you built them on, but the pips showed the same count on whatever you targeted next. They now stay with that mob: a new target shows empty pips until you build points on it, and switching back to the first mob shows its points again.

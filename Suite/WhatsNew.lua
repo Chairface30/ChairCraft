@@ -11,6 +11,12 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.8.2"] = {
+        title = "Combo points stay on their mob",
+        lines = {
+            "Combo point pips on nameplates no longer follow you to a new target. They stay with the mob you built them on, and show again when you target it.",
+        },
+    },
     ["1.8.1"] = {
         title = "ChairIgnore keeps your reasons",
         lines = {
