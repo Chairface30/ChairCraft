@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## ChairCraft v1.8.0: settings shared by the account
+
+**New**
+- **The Map & Quest Log window can be dragged by its title bar**, like the other Blizzard windows, and stays where you drop it. It is kept by its top left corner, so opening the quest log beside the map still grows the window to the right. Maximized, the map fills the screen as before and can't be dragged; back in its window it returns to your spot. `/chair plus movers reset` hands it back to Blizzard.
 
 **Changed**
 - **Settings are shared by every character on the account**, except ChairTracker's bars and factions, which stay per character. ChairPlus's options and window positions and ChairSnack's bars, keybinds and positions start from your fullest character's setup (your own on a tie). The old per-character profiles are kept: the Home page's "Copy settings from" and ChairSnack's Profiles tab can still copy one across. Auras and ChairIgnore were already account-wide.
@@ -8,11 +11,6 @@
 
 **Fixed**
 - **ChairIgnore could lose its whole list.** A character's game ignore list is read a few seconds after login, and if the game had not sent it yet it read as empty; the sync took that for "you unignored everyone" and took every name off ChairIgnore's list. A name the game keeps hidden read as missing and went the same way. Only a list read whole counts now, a name you remove in ChairIgnore stays removed (a character whose game list still holds them is brought up to date, not believed), and anyone still on a character's game list comes back onto the list the next time that character logs in.
-
-**New**
-- **The Map & Quest Log window can be dragged by its title bar**, like the other Blizzard windows, and stays where you drop it. It is kept by its top left corner, so opening the quest log beside the map still grows the window to the right. Maximized, the map fills the screen as before and can't be dragged; back in its window it returns to your spot. `/chair plus movers reset` hands it back to Blizzard.
-
-**Fixed**
 - **Threat % on nameplates for mobs you have not targeted.** In combat the game keeps your own "in combat" flag hidden from addons, and ChairCraft read a hidden flag as "not fighting". A plate whose mob the game also wouldn't confirm was in the fight was then skipped, which is every plate except your target's. A hidden flag now counts as in combat, so those plates show your own threat (as text, or as the thin colored bar when the game won't print the number). The nameplate colors and the threat meter read the flag the same way.
 - **Hidden values, everywhere.** A sweep of every part for values the game can hide in combat:
   - **ChairSnack:** an item or spell cooldown the game hides is still drawn on the button's swirl; only the number is left off. Your pet's family and level are read safely.

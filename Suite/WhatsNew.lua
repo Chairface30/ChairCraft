@@ -11,6 +11,16 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.8.0"] = {
+        title = "Settings shared by the account",
+        lines = {
+            "Settings are now the same on every character on the account, except ChairTracker's bars and factions. Each part starts from your fullest character's setup.",
+            "ChairIgnore keeps one list of people for the whole account, and no longer loses names when the game is slow to send its ignore list at login.",
+            "The Map & Quest Log window can be dragged by its title bar.",
+            "Threat % now shows on nameplates of mobs you have not targeted.",
+            "Fewer errors in combat, when the game hides values from addons. Among them, a ChairAuras error when a mob yelled as a fight began.",
+        },
+    },
     ["1.7.0"] = {
         title = "Threat on the nameplates",
         lines = {
