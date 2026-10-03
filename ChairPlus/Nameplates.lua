@@ -691,6 +691,32 @@ function ns.ComboPointCount()
     return nil
 end
 
+-- Combo points sit on one mob: three built on one are not on the next. The
+-- player's combo power does not know that and carries the count across a
+-- target change, so the mob it was built on is remembered here (the target
+-- when the count last moved) and any other target is shown none.
+local comboOwner
+
+local function TargetGUID()
+    local ok, guid = pcall(_G.UnitGUID, "target")
+    return ok and ns.Text(guid) or nil
+end
+
+local function ComboMoved()
+    comboOwner = TargetGUID()
+end
+
+-- The count for the current target: the combo power only counts when the
+-- target is the mob it was built on.
+local function TargetComboPoints()
+    local points, from = ns.ComboPointCount()
+    if from == "UnitPower" and comboOwner and TargetGUID() ~= comboOwner then
+        return 0, "UnitPower, on another mob"
+    end
+    return points, from
+end
+ns.TargetComboPoints = TargetComboPoints
+
 local function ComboMax()
     local ok, n = pcall(_G.UnitPowerMax, "player", ComboPower())
     n = ok and ns.Num(n) or nil
@@ -763,7 +789,7 @@ local function ShowCombo()
     local combo = Pips(plate, bar)
     local count = ComboMax()
     LayOut(combo, bar, count)
-    local points = ns.ComboPointCount() or 0
+    local points = TargetComboPoints() or 0
     local failed
     for i = 1, count do
         -- The count straight in: see above.
@@ -776,10 +802,16 @@ local function ShowCombo()
 end
 ns.ShowNameplateCombo = ShowCombo
 
-local function OnComboEvent(_, event, unit)
+local function OnComboEvent(_, event, unit, powerToken)
     if (event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER"
             or event == "UNIT_DISPLAYPOWER") and unit ~= "player" then
         return
+    end
+    -- Only the combo count moving marks the mob: energy ticks do not.
+    if event == "UNIT_COMBO_POINTS"
+            or ((event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT")
+                and ns.Text(powerToken) == "COMBO_POINTS") then
+        ComboMoved()
     end
     ShowCombo()
 end
@@ -805,7 +837,7 @@ function ns.ProbeCombo()
     ns.Print("  GetComboPoints(player, target): " .. Say(Call(_G.GetComboPoints, "player", "target")))
     ns.Print("  UnitPower(player, " .. ComboPower() .. "): " .. Say(Call(_G.UnitPower, "player", ComboPower())))
     ns.Print("  UnitPowerMax: " .. Say(Call(_G.UnitPowerMax, "player", ComboPower())))
-    local _, from = ns.ComboPointCount()
+    local _, from = TargetComboPoints()
     ns.Print("  using: " .. (from or "neither"))
     ns.Print("  pips: " .. comboWhy)
 end

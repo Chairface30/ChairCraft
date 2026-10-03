@@ -3002,6 +3002,26 @@ check("a plain 0 from the classic call gives way to the combo power",
       rt.eval("(function() local n, from = NS.ComboPointCount() return n, from end)()") == (4, "UnitPower"))
 rt.execute('function UnitPower() return 0 end')
 check("both 0: 0", rt.eval("(NS.ComboPointCount())") == 0)
+# Points are per mob: three built on one are not on the next target.
+rt.execute('''
+TARGET_GUID = "Creature-0-1-1-1-100-A"
+OLD_UNITGUID = UnitGUID
+function UnitGUID(u) if u == "target" then return TARGET_GUID end return "Player-1-00000001" end
+function UnitPower() return 3 end
+FireEvent("UNIT_POWER_UPDATE", "player", "COMBO_POINTS")
+''')
+check("points built on a mob show on it",
+      rt.eval("(function() local n, from = NS.TargetComboPoints() return n, from end)()") == (3, "UnitPower"))
+rt.execute('TARGET_GUID = "Creature-0-1-1-1-100-B" FireEvent("PLAYER_TARGET_CHANGED")')
+check("and not on the next target", rt.eval("(NS.TargetComboPoints())") == 0)
+rt.execute('FireEvent("UNIT_POWER_FREQUENT", "player", "ENERGY")')
+check("an energy tick does not move them", rt.eval("(NS.TargetComboPoints())") == 0)
+rt.execute('TARGET_GUID = "Creature-0-1-1-1-100-A" FireEvent("PLAYER_TARGET_CHANGED")')
+check("back on the first mob they are there again", rt.eval("(NS.TargetComboPoints())") == 3)
+rt.execute('TARGET_GUID = "Creature-0-1-1-1-100-B" function UnitPower() return 1 end '
+           'FireEvent("UNIT_POWER_UPDATE", "player", "COMBO_POINTS")')
+check("a point built on the second mob moves them there", rt.eval("(NS.TargetComboPoints())") == 1)
+rt.execute('function UnitPower() return 0 end UnitGUID = OLD_UNITGUID')
 rt.execute('UnitCanAttack = function() return nil end NS.ShowNameplateCombo()')
 check("a target the client will not say it can attack still gets them",
       rt.eval("NS.npComboPips[PLATE].frame:IsShown()") is True)
