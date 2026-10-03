@@ -11,6 +11,12 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.8.1"] = {
+        title = "ChairIgnore keeps your reasons",
+        lines = {
+            "ChairIgnore no longer asks why you ignored someone already on the list. The game could send its ignore list a name short, and that name lost its reason and was asked about again.",
+        },
+    },
     ["1.8.0"] = {
         title = "Settings shared by the account",
         lines = {
