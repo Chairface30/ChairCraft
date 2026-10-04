@@ -240,7 +240,33 @@ local function Prepare(target)
     Apply(name)
 end
 
+-- A window TARGETS doesn't name -- the Legacy (progress track) window among
+-- them, whose name on this client isn't known here -- gets the same handle,
+-- laid out as a panel-manager window. Only a named, global frame is taken:
+-- its spot is saved under that name.
+local function Adopt(frame)
+    if type(frame) ~= "table" or frame == UIParent or not frame.GetName then return nil end
+    local okN, name = pcall(frame.GetName, frame)
+    if not okN or type(name) ~= "string" or name == "" or _G[name] ~= frame then return nil end
+    local target = byName[name]
+    if not target then
+        target = { name = name, layout = "UpdateUIPanelPositions", insetLeft = 58 }
+        TARGETS[#TARGETS + 1] = target
+        byName[name] = target
+        ns.MOVER_NAMES[#ns.MOVER_NAMES + 1] = name
+    end
+    pcall(Prepare, target)
+    return prepared[name] and name or nil
+end
+
 local function PrepareAll()
+    -- Windows adopted on an earlier visit have a saved spot under their name.
+    local store = Store()
+    if store then
+        for name in pairs(store) do
+            if type(name) == "string" and not byName[name] and _G[name] then Adopt(_G[name]) end
+        end
+    end
     for _, target in ipairs(TARGETS) do pcall(Prepare, target) end
 end
 
@@ -283,6 +309,35 @@ if type(util) == "table" then
             hooksecurefunc(util, opener, PrepareAll)
         end
     end
+end
+
+-- Every window the panel manager opens, named here or not. Hooked, never called.
+if type(_G.ShowUIPanel) == "function" then
+    hooksecurefunc("ShowUIPanel", function(frame) pcall(Adopt, frame) end)
+end
+
+-- "/chair plus movers add": the window under the mouse, for one that opens
+-- without the panel manager. Climbs to the outermost frame below UIParent and
+-- saves its spot straight away, so it is remembered next session.
+function ns.AdoptMoverUnderMouse()
+    local focus
+    if type(_G.GetMouseFoci) == "function" then
+        local ok, foci = pcall(_G.GetMouseFoci)
+        focus = ok and type(foci) == "table" and foci[1] or nil
+    elseif type(_G.GetMouseFocus) == "function" then
+        local ok, f = pcall(_G.GetMouseFocus)
+        focus = ok and f or nil
+    end
+    local frame, steps = focus, 0
+    while type(frame) == "table" and frame.GetParent and steps < 50 do
+        local ok, parent = pcall(frame.GetParent, frame)
+        if not ok or parent == nil or parent == UIParent then break end
+        frame, steps = parent, steps + 1
+    end
+    if frame == _G.WorldFrame then return nil end
+    local name = Adopt(frame)
+    if name then Save(name) end
+    return name
 end
 
 -- For /chair plus movers: which of the windows this client has, and which

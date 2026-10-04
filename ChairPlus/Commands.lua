@@ -2118,6 +2118,7 @@ local function PrintHelp()
         .. "|cffffd100on||off||toggle||lock||unlock||reset||preview||nameplates|r")
     print("  |cffffd100/chair plus formbar|r - druids: whether the alternate resource bar was found, and your form")
     print("  |cffffd100/chair plus movers reset|r - forget where every dragged Blizzard window was put")
+    print("  |cffffd100/chair plus movers add|r - make the window under the mouse draggable by its title bar")
     print("  |cffffd100/chair plus bake|r - print current settings as code that survives a restart")
     print("  |cffffd100/chair plus keywords|r - the invite-on-keyword window")
     print("  |cffffd100/chair plus flights|r - the learned flight times, as code")
@@ -2259,6 +2260,14 @@ local function Handler(input)
             if ns.ResetMovers then ns.ResetMovers() end
             ns.Print("Every dragged window goes back to Blizzard's "
                 .. "spots the next time they open.")
+        elseif (rest or ""):lower() == "add" then
+            local name = ns.AdoptMoverUnderMouse and ns.AdoptMoverUnderMouse()
+            if name then
+                ns.Print(name .. " can now be dragged by its title bar.")
+            else
+                ns.Print("No window under the mouse that can be made movable. "
+                    .. "Point at the window, then type the command.")
+            end
         else
             ns.Print("Drag Blizzard's windows -- character, bags, bank, map and quest log, spellbook, talents, mail, merchant, group finder and more -- by their title bar. "
                 .. "|cffffd100/chair plus movers reset|r puts them back.")

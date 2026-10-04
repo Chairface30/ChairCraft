@@ -2745,6 +2745,44 @@ check("/chair plus movers lists the windows it can move",
       "SpellBookFrame" in rt.eval("MOVERS_OUT") and "PlayerSpellsFrame" in rt.eval("MOVERS_OUT"),
       rt.eval("MOVERS_OUT"))
 
+# A window not in the list (the Legacy progress window, name unknown here):
+# opened through the panel manager, or pointed at with /chair plus movers add.
+rt = lua51.LuaRuntime(unpack_returned_tuples=True)
+g = rt.globals()
+rt.execute(HARNESS)
+rt.execute(MOVERS_SETUP)
+rt.execute('function ShowUIPanel(frame) end')
+rt.execute(LOAD)
+rt.execute('''BOOT()
+MakeWindow("SomeLegacyFrame") rawset(SomeLegacyFrame, "_name", "SomeLegacyFrame")
+ShowUIPanel(SomeLegacyFrame)''')
+check("a window the panel manager opens gets a handle though it isn't listed",
+      rt.eval("SomeLegacyFrame.chairMoverHandle") is not None)
+lf = rt.eval("rawget(SomeLegacyFrame.chairMoverHandle, '_scripts')")
+lf.OnDragStart(rt.eval("SomeLegacyFrame.chairMoverHandle"))
+rt.execute("rawset(SomeLegacyFrame, '_cx', 1000) rawset(SomeLegacyFrame, '_cy', 500)")
+lf.OnDragStop(rt.eval("SomeLegacyFrame.chairMoverHandle"))
+spot = rt.eval("NS.Profile().movers.SomeLegacyFrame")
+check("and dropping it saves its spot", spot is not None and spot.x == 40 and spot.y == -40,
+      str(spot and (spot.x, spot.y)))
+rt.execute('''MakeWindow("UnnamedThing") ShowUIPanel(UnnamedThing)''')
+check("a window with no name is left alone", rt.eval("UnnamedThing.chairMoverHandle") is None)
+rt.execute('''MakeWindow("PointedFrame") rawset(PointedFrame, "_name", "PointedFrame")
+rawset(PointedFrame, "_parent", UIParent) rawset(PointedFrame, "_cx", 960) rawset(PointedFrame, "_cy", 600)
+local child = MakeMock() rawset(child, "_parent", PointedFrame)
+function GetMouseFoci() return { child } end
+PRINTED = {} NS.Print = function(m) PRINTED[#PRINTED + 1] = m end
+SlashCmdList["CHAIRPLUS"]("movers add")''')
+check("/chair plus movers add takes the window under the mouse",
+      rt.eval("PointedFrame.chairMoverHandle") is not None and "PointedFrame" in rt.eval("PRINTED[1]"),
+      str(rt.eval("PRINTED[1]")))
+spot = rt.eval("NS.Profile().movers.PointedFrame")
+check("and remembers it at once", spot is not None and spot.x == 0 and spot.y == 60,
+      str(spot and (spot.x, spot.y)))
+rt.execute('function GetMouseFoci() return { WorldFrame } end PRINTED = {} '
+           'SlashCmdList["CHAIRPLUS"]("movers add")')
+check("pointing at nothing says so", "No window" in rt.eval("PRINTED[1]"), str(rt.eval("PRINTED[1]")))
+
 
 print("\nSecrets are tested for before anything else")
 rt, g = fresh()
