@@ -1205,6 +1205,41 @@ check("a route learned while boosted stores its unboosted base",
           - 100) < 0.001,
       str(rt.eval('ChairPlusDB.flights["Stormwind, Elwynn > Menethil, Wetlands"].base')))
 
+# Frequent Flyer, a Legacy perk: 20% faster flights for a character that has
+# it unlocked. Per character, so it never moves the account's speed factor.
+PERK = """PERK = false
+C_UnitAuras = { GetAuraDataByIndex = function(unit, index)
+    if PERK and index == 1 then return { name = "Frequent Flyer" } end
+    return nil
+end }
+"""
+rt = flight(PERK)
+rt.execute("FLY(2, 150)")
+rt.execute("PERK = true HOOKS.TakeTaxiNode(2) ON_TAXI = true DRIVER_TICK()")
+text = rt.eval("TIMER_TEXT()")
+check("with Frequent Flyer the countdown is 20% shorter", text is not None and text.startswith("02:00"), text)
+rt.execute("NOW = NOW + 120 DRIVER_TICK() ON_TAXI = false DRIVER_TICK()")
+check("and the faster flight is not read as a speed change",
+      rt.eval("ChairPlusDB.flightSpeed == nil or ChairPlusDB.flightSpeed == 1") is True,
+      str(rt.eval("ChairPlusDB.flightSpeed")))
+check("nor as a new base", rt.eval(entry + ".base") == 150, str(rt.eval(entry + ".base")))
+rt.execute("PERK = false")
+check("a character without it still gets the full time",
+      abs(rt.eval('(NS.FlightTime("Stormwind, Elwynn", "Ironforge, Dun Morogh"))') - 150) < 0.001)
+rt.execute("PERK = true")
+check("and one with it the shorter one",
+      abs(rt.eval('(NS.FlightTime("Stormwind, Elwynn", "Ironforge, Dun Morogh"))') - 120) < 0.001)
+
+rt = flight(PERK + "PERK = true")
+rt.execute("FLY(2, 120)")
+check("a route first flown with the perk stores its time without it",
+      abs(rt.eval(entry + ".base") - 150) < 0.001, str(rt.eval(entry + ".base")))
+rt.execute("FLY(2, 125)")
+check("a perk that turns out to be a fifth more speed is measured as its own multiplier",
+      abs(rt.eval("ChairPlusDB.flightPerkTime") - 125 / 150) < 0.001
+      and rt.eval("ChairPlusDB.flightSpeed == nil or ChairPlusDB.flightSpeed == 1") is True,
+      str(rt.eval("ChairPlusDB.flightPerkTime")))
+
 # A flight that went wrong is not a speed change.
 rt = flight()
 rt.execute("FLY(2, 150)")

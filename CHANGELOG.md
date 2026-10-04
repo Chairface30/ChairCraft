@@ -6,6 +6,7 @@
 - **Druids: the alternate resource bar only in Bear and Cat Form.** A new option on the Looting & comfort page, under Druid. Leave the alternate resource checkbox on for the Personal Resource Display in Edit Mode, and with this ticked the bar (your mana while shifted) is see-through and only shows in Bear or Cat Form. `/chair plus formbar` says whether ChairCraft found the bar and what it reads your form as.
 - **Self Highlight only in combat.** A new option on the Looting & comfort page, under Everyday. With it ticked, the game's Self Highlight (circle, outline or both, from the Accessibility options) is off out of combat and comes back as you set it when combat starts. Pick your style in the game's options as usual, even while it is held off; switching the option off puts your style back for good.
 - **The Legacy (progress track) window can be dragged.** Like the other Blizzard windows, drag it by its title bar and it stays where you drop it. Any other window the game opens as a panel now gets the same treatment. If a window still won't move, point at it and type `/chair plus movers add`.
+- **The flight timer knows about Frequent Flyer.** A character with the Legacy perk unlocked gets countdowns and flight-map times 20% shorter, and their faster flights no longer throw off the times for your other characters. `/chair status` shows whether ChairCraft sees the perk.
 
 ## ChairCraft v1.8.2: combo points stay on their mob
 

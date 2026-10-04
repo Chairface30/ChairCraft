@@ -115,7 +115,7 @@ local function SaveInFlight(r)
     local now = WallClock()
     if type(db) ~= "table" or not now or not (r and r.source and r.dest) then return end
     db.flightInFlight = { who = Owner(), at = now, source = r.source, dest = r.dest,
-                          path = r.path, hardcoded = r.hardcoded }
+                          path = r.path, hardcoded = r.hardcoded, perk = r.perk }
 end
 
 local function ClearInFlight()
@@ -233,6 +233,60 @@ local function SetSpeedFactor(value)
 end
 ns.FlightSpeed = SpeedFactor
 
+-- Frequent Flyer, a Legacy perk: while a character has it unlocked, their
+-- flights are 20% faster. It comes and goes per character, so it cannot live
+-- in the measured factor above -- that is shared by the account and would
+-- swing every time a character with the perk and one without took turns.
+-- Instead it is read at takeoff and applied on top, and its own multiplier is
+-- measured from flights taken with it (in case "20% faster" turns out to mean
+-- a fifth more speed rather than a fifth less time).
+local FREQUENT_FLYER = "Frequent Flyer"
+local FREQUENT_FLYER_TIME = 0.8
+
+local function PerkFactor()
+    local db = _G.ChairPlusDB
+    local value = db and ns.Num(db.flightPerkTime)
+    if not value or value <= 0 then return FREQUENT_FLYER_TIME end
+    return value
+end
+
+-- true, false, or nil when nothing on this client could say. Looked for as a
+-- buff on the player first, then as a spell the player knows by that name.
+-- Auras are unreadable in combat, but nobody takes a taxi in combat.
+local function HasFrequentFlyer()
+    local answered = false
+    local get = _G.C_UnitAuras and _G.C_UnitAuras.GetAuraDataByIndex
+    if type(get) == "function" then
+        for index = 1, 255 do
+            local ok, data = pcall(get, "player", index, "HELPFUL")
+            if not ok then break end
+            if type(data) ~= "table" then answered = true break end
+            local okN, name = pcall(function() return data.name end)
+            if okN and ns.Text(name) == FREQUENT_FLYER then return true end
+        end
+    end
+    local info = _G.C_Spell and _G.C_Spell.GetSpellInfo
+    local known = _G.IsPlayerSpell
+    if type(info) == "function" and type(known) == "function" then
+        local ok, spell = pcall(info, FREQUENT_FLYER)
+        local id = ok and type(spell) == "table" and ns.Num(spell.spellID) or nil
+        if id then
+            local okK, has = pcall(known, id)
+            if okK and ns.Bool(has) then return true end
+        end
+    end
+    if answered then return false end
+    return nil
+end
+ns.HasFrequentFlyer = HasFrequentFlyer
+
+-- What a flight's time is multiplied by right now: the measured speed, and
+-- the perk on top when this character has it.
+local function TimeFactor(perk)
+    if perk == nil then perk = HasFrequentFlyer() end
+    return SpeedFactor() * (perk and PerkFactor() or 1)
+end
+
 -- The stored base, at normal flight speed, with no factor applied.
 local function BaseTime(entry)
     if type(entry) ~= "table" then return nil end
@@ -249,7 +303,8 @@ end
 -- `hardcoded` is the route's time from FlightData.lua, when the flight map
 -- could place it. Order of trust: a time flown on this client, then the
 -- hardcoded one, then the two-ended fallback.
-function ns.FlightTime(source, dest, path, hardcoded)
+-- `perk` is whether Frequent Flyer applies; nil looks it up.
+function ns.FlightTime(source, dest, path, hardcoded, perk)
     local db = FlightDB()
     local key, fallback = RouteKeys(source, dest, path)
     if not db or not key then return nil end
@@ -267,7 +322,7 @@ function ns.FlightTime(source, dest, path, hardcoded)
         approximate = true
     end
     if not base then return nil end
-    return base * SpeedFactor(), entry, approximate
+    return base * TimeFactor(perk), entry, approximate
 end
 
 -- Put the hardcoded times into the database, for routes not already known.
@@ -388,12 +443,13 @@ local SPEED_MIN, SPEED_MAX = 0.2, 3
 local HARDCODED_TOLERANCE = 3
 
 -- Third return: the hardcoded time this flight replaced, when it disagreed.
-local function Record(source, dest, seconds, path, hardcoded)
+-- `perk`: whether Frequent Flyer was on for this flight.
+local function Record(source, dest, seconds, path, hardcoded, perk)
     local db = FlightDB()
     local key = RouteKeys(source, dest, path)
     if not db or not key or not seconds or seconds <= 0 then return nil end
 
-    local factor = SpeedFactor()
+    local factor = TimeFactor(perk and true or false)
     local entry = db[key]
     local base = BaseTime(entry)
 
@@ -417,6 +473,18 @@ local function Record(source, dest, seconds, path, hardcoded)
     entry.base = base            -- normalise an old-shape entry in place
     entry.avg = nil
     entry.min, entry.max, entry.last = nil, nil, nil
+
+    -- With the perk on, a difference is the perk's own multiplier being off,
+    -- not the account's speed: that is measured separately, so a character
+    -- without the perk never inherits it.
+    if perk then
+        local impliedPerk = seconds / (base * SpeedFactor())
+        if impliedPerk >= 0.5 and impliedPerk <= 1
+            and math.abs(impliedPerk - PerkFactor()) > SPEED_TOLERANCE then
+            _G.ChairPlusDB.flightPerkTime = impliedPerk
+        end
+        return entry, nil
+    end
 
     -- The base never moves. A difference means our speed changed, not that the
     -- route did.
@@ -918,6 +986,8 @@ local function Begin()
 
     route = pending or {}
     pending = nil
+    -- Read once, at takeoff: whether this flight is the faster one.
+    route.perk = HasFrequentFlyer() and true or false
 
     if route.source and route.dest then
         SaveInFlight(route)
@@ -928,13 +998,14 @@ local function Begin()
         local saved, ago = SavedInFlight()
         if saved then
             route = { source = saved.source, dest = saved.dest, path = saved.path,
-                      hardcoded = saved.hardcoded, noRecord = true }
+                      hardcoded = saved.hardcoded, perk = saved.perk, noRecord = true }
             startedAt = startedAt - ago
         end
     end
 
     if route.source and route.dest then
-        route.expected = ns.FlightTime(route.source, route.dest, route.path, route.hardcoded)
+        route.expected = ns.FlightTime(route.source, route.dest, route.path, route.hardcoded,
+            route.perk)
     end
 end
 
@@ -965,7 +1036,7 @@ local function Finish()
     end
 
     local entry, newFactor, replaced = Record(route.source, route.dest, seconds,
-        route.path, route.hardcoded)
+        route.path, route.hardcoded, route.perk)
     if entry and not entry.faction then entry.faction = Faction() end
 
     -- A changed speed is worth saying even when the per-flight summary is off:
@@ -979,7 +1050,7 @@ local function Finish()
     elseif replaced then
         ns.Print(string.format("%s took %s, not the %s on file -- using yours from now on.",
             (RouteKeys(route.source, route.dest, route.path)), Clock(seconds),
-            Clock(replaced * SpeedFactor())))
+            Clock(replaced * TimeFactor(route.perk))))
     elseif entry and ns.Get("flightSummary") then
         ns.Print(string.format("%s took %s",
             (RouteKeys(route.source, route.dest, route.path)), Clock(seconds)))
@@ -1139,6 +1210,8 @@ function ns.FlightStatus()
         routes = routes,
         hardcoded = ns.FlightHardcodedCount(),
         speed = SpeedFactor(),
+        frequentFlyer = HasFrequentFlyer(),
+        perkTime = PerkFactor(),
     }
 end
 

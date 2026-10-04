@@ -209,10 +209,12 @@ local function Witness(part)
             local okF, f = pcall(ns.FlightStatus)
             if okF and f then
                 line = line .. string.char(10) .. string.format(
-                    "      flight: taxi=%s nodes=%s tooltip=%s routes=%s hardcoded=%s speed=%.2fx",
+                    "      flight: taxi=%s nodes=%s tooltip=%s routes=%s hardcoded=%s speed=%.2fx"
+                        .. " frequentFlyer=%s (%.2fx time)",
                     tostring(f.taxiProbe or "NONE"), tostring(f.nodes),
                     tostring(f.tooltip), tostring(f.routes), tostring(f.hardcoded),
-                    f.speed or 1)
+                    f.speed or 1, f.frequentFlyer == nil and "unknown" or tostring(f.frequentFlyer),
+                    f.perkTime or 0.8)
             end
         end
         return line
