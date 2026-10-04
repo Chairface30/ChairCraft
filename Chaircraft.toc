@@ -37,6 +37,7 @@ ChairPlus\Loot.lua
 ChairPlus\FlightData.lua
 ChairPlus\Flight.lua
 ChairPlus\Camera.lua
+ChairPlus\SelfHighlight.lua
 ChairPlus\Arrow.lua
 ChairPlus\Threat.lua
 ChairPlus\Nameplates.lua

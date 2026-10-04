@@ -4,6 +4,7 @@
 
 **New**
 - **Druids: the alternate resource bar only in Bear and Cat Form.** A new option on the Looting & comfort page, under Druid. Leave the alternate resource checkbox on for the Personal Resource Display in Edit Mode, and with this ticked the bar (your mana while shifted) is see-through and only shows in Bear or Cat Form. `/chair plus formbar` says whether ChairCraft found the bar and what it reads your form as.
+- **Self Highlight only in combat.** A new option on the Looting & comfort page, under Everyday. With it ticked, the game's Self Highlight (circle, outline or both, from the Accessibility options) is off out of combat and comes back as you set it when combat starts. Pick your style in the game's options as usual, even while it is held off; switching the option off puts your style back for good.
 
 ## ChairCraft v1.8.2: combo points stay on their mob
 

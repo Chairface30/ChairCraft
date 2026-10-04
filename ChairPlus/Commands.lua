@@ -129,6 +129,9 @@ local ROWS = {
     { key = "skipCinematics",   label = "Skip cinematics", tab = "comfort" },
     { key = "maxCameraZoom",    label = "Max camera zoom", tab = "comfort",
       tip = "Lets the camera zoom out further than the game's own slider allows. Left off, the game's setting is not touched." },
+    { key = "selfHighlightCombat", label = "Self Highlight only in combat", tab = "comfort",
+      tip = "Turns the game's Self Highlight (Accessibility options) off out of combat, and back to the style you picked when combat starts. "
+         .. "Pick a style there as usual; switching this off puts it back for good." },
     { header = "Druid", tab = "comfort", classes = { DRUID = true } },
     { key = "formAltBar", label = "Alternate resource bar only in Bear and Cat Form", tab = "comfort",
       classes = { DRUID = true },

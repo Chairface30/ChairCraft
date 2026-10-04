@@ -388,7 +388,7 @@ SUITE_TABLE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit)
 SUITE_TABLE.IsSecret = function(v) return not pcall(function() return "" .. tostring(v) end) end
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "Quests.lua", "Gossip.lua",
-    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "Arrow.lua",
+    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Arrow.lua",
     "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
 for _, file in ipairs(files) do
@@ -814,6 +814,43 @@ rt, g = fresh(stock=True)
 rt.execute('BOOT() CVARS["cameraDistanceMaxZoomFactor"] = 2.2 NS.Set("osdFontSize", 14)')
 check("left off, the player's own zoom is never touched",
       rt.eval('CVARS["cameraDistanceMaxZoomFactor"]') == 2.2)
+
+print("\nSelf Highlight only in combat")
+SELF_HL = '''
+CVARS["findYourselfModeCircle"] = "1" CVARS["findYourselfModeOutline"] = "0"
+function GetCVar(name) return CVARS[name] end
+LOCKDOWN = false
+function InCombatLockdown() return LOCKDOWN end
+'''
+rt, g = fresh()
+rt.execute(SELF_HL + 'BOOT() NS.Set("selfHighlightCombat", true)')
+check("out of combat every style is off",
+      rt.eval('CVARS.findYourselfModeCircle') == "0" and rt.eval('CVARS.findYourselfModeOutline') == "0")
+check("a style the client lacks is never written", rt.eval('CVARS.findYourselfModeIcon') is None)
+rt.execute('FireEvent("PLAYER_REGEN_DISABLED")')
+check("in combat the player's style comes back",
+      rt.eval('CVARS.findYourselfModeCircle') == "1" and rt.eval('CVARS.findYourselfModeOutline') == "0")
+rt.execute('LOCKDOWN = true FireEvent("PLAYER_REGEN_ENABLED") LOCKDOWN = false')
+check("and goes again after combat", rt.eval('CVARS.findYourselfModeCircle') == "0")
+check("the player's style is in the saved profile",
+      rt.eval('NS.Profile().selfHighlightHeld.findYourselfModeCircle') == "1")
+rt.execute('NS.Set("selfHighlightCombat", false)')
+check("switched off, the style is put back for good",
+      rt.eval('CVARS.findYourselfModeCircle') == "1" and rt.eval('NS.Profile().selfHighlightHeld') is None)
+rt.execute('NS.Set("selfHighlightCombat", true) '
+           'CVARS.findYourselfModeOutline = "1" FireEvent("CVAR_UPDATE", "findYourselfModeOutline", "1")')
+check("a style picked out of combat is held off at once", rt.eval('CVARS.findYourselfModeOutline') == "0")
+rt.execute('FireEvent("PLAYER_REGEN_DISABLED")')
+check("and is what combat brings back",
+      rt.eval('CVARS.findYourselfModeOutline') == "1" and rt.eval('CVARS.findYourselfModeCircle') == "0")
+rt, g = fresh()
+rt.execute(SELF_HL + 'CVARS.findYourselfModeCircle = "0" BOOT() NS.Set("selfHighlightCombat", true) '
+           'FireEvent("PLAYER_REGEN_DISABLED")')
+check("with Self Highlight already off, combat leaves it off",
+      rt.eval('CVARS.findYourselfModeCircle') == "0" and rt.eval('NS.Profile().selfHighlightHeld') is None)
+rt, g = fresh(stock=True)
+rt.execute(SELF_HL + 'BOOT() NS.Set("osdFontSize", 14)')
+check("left off, Self Highlight is never touched", rt.eval('CVARS.findYourselfModeCircle') == "1")
 
 print("\nToggling off unhooks")
 rt, g = fresh()
