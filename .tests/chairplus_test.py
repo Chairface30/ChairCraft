@@ -387,7 +387,7 @@ SUITE_TABLE = { ChairPlus = NS }
 SUITE_TABLE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit) if not ok or a == nil then return nil end a = tostring(a) if b ~= nil and tostring(b) ~= "" then return a .. " " .. tostring(b) end return a end
 SUITE_TABLE.IsSecret = function(v) return not pcall(function() return "" .. tostring(v) end) end
 local files = {
-    "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "Quests.lua", "Gossip.lua",
+    "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "Quests.lua", "Gossip.lua",
     "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "Arrow.lua",
     "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
@@ -4716,6 +4716,71 @@ check("the toggle is on the OSD page, not under the display's own switch",
       rt.eval("""(function() for _, r in ipairs(NS.ROWS or {}) do
           if r.key == "hideStatusBars" then return r.tab == "osd" and r.sub == nil end end
           return "no ROWS" end)()""") in (True, "no ROWS"))
+
+print("\nAlternate resource bar in forms")
+rt, g = fresh()
+rt.execute("""
+function InCombatLockdown() return false end
+function hooksecurefunc(obj, name, fn)
+    if type(obj) == "string" then obj, name, fn = _G, obj, name end
+    local original = obj[name]
+    rawset(obj, name, function(...)
+        local a, b, c = original(...)
+        fn(...)
+        return a, b, c
+    end)
+end
+MY_CLASS, MY_POWER = "DRUID", 0
+function UnitClass() return "Druid", MY_CLASS end
+function UnitPowerType() return MY_POWER end
+PersonalResourceDisplayFrame = CreateFrame("Frame", "PersonalResourceDisplayFrame", UIParent)
+ALT = CreateFrame("StatusBar", nil, PersonalResourceDisplayFrame)
+PersonalResourceDisplayFrame.AlternatePowerBar = ALT
+HIDE_CALLS = 0
+rawset(ALT, "Hide", function() HIDE_CALLS = HIDE_CALLS + 1 end)
+ChairPlusDB = { settings = {} }
+BOOT()
+""")
+check("off by default", rt.eval("NS.IsEnabled('formAltBar')") is False and rt.eval("ALT:GetAlpha()") == 1)
+rt.execute('NS.Set("formAltBar", true)')
+check("on, in caster form (mana): the bar is see-through", rt.eval("ALT:GetAlpha()") == 0)
+rt.execute('MY_POWER = 1 FireEvent("UPDATE_SHAPESHIFT_FORM")')
+check("Bear Form (rage) shows it", rt.eval("ALT:GetAlpha()") == 1)
+rt.execute('MY_POWER = 3 FireEvent("UPDATE_SHAPESHIFT_FORM")')
+check("Cat Form (energy) shows it", rt.eval("ALT:GetAlpha()") == 1)
+rt.execute('MY_POWER = 0 FireEvent("UPDATE_SHAPESHIFT_FORM") ALT:SetAlpha(1)')
+check("out of form, Blizzard putting the alpha back is undone", rt.eval("ALT:GetAlpha()") == 0)
+rt.execute('MY_POWER = nil FireEvent("UPDATE_SHAPESHIFT_FORM")')
+check("a form the client won't say leaves the bar as it was", rt.eval("ALT:GetAlpha()") == 0)
+check("Blizzard's Hide is never called", rt.eval("HIDE_CALLS") == 0)
+check("no error from the module", rt.eval("NS.modules.formAltBar.broken") is None)
+rt.execute('MY_POWER = 0 NS.Set("formAltBar", false)')
+check("switched off, the bar comes back", rt.eval("ALT:GetAlpha()") == 1)
+rt.execute('ALT:SetAlpha(0.5)')
+check("and the client's own alpha stands", rt.eval("ALT:GetAlpha()") == 0.5)
+rt.execute('ALT:SetAlpha(1) MY_CLASS = "WARRIOR" NS.Set("formAltBar", true)')
+check("not a druid: nothing is hidden", rt.eval("ALT:GetAlpha()") == 1)
+check("the option shows only for druids",
+      rt.eval("""(function() for _, r in ipairs(NS.ROWS or {}) do
+          if r.key == "formAltBar" then return r.classes and r.classes.DRUID == true and r.tab == "comfort" end end
+          return "no ROWS" end)()""") in (True, "no ROWS"))
+# A bar under another name is found by the search
+rt, g = fresh()
+rt.execute("""
+function UnitClass() return "Druid", "DRUID" end
+function UnitPowerType() return 0 end
+PersonalResourceDisplayFrame = CreateFrame("Frame", "PersonalResourceDisplayFrame", UIParent)
+BOX = CreateFrame("Frame", nil, PersonalResourceDisplayFrame)
+PersonalResourceDisplayFrame.Bars = BOX
+BOX.AltManaStatusBar = CreateFrame("StatusBar", nil, BOX)
+ChairPlusDB = { settings = { formAltBar = true } }
+BOOT()
+""")
+check("a bar named otherwise, one level down, is found and hidden",
+      rt.eval("BOX.AltManaStatusBar:GetAlpha()") == 0)
+rt.execute("PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, ' ')) end NS.ProbeFormBar() NS.Print = old")
+check("the probe names where it found it",
+      "PersonalResourceDisplayFrame.Bars.AltManaStatusBar" in (rt.eval("PRINTED[1]") or ""), rt.eval("PRINTED[1]"))
 
 print("\nRestock")
 RESTOCK_SETUP = """

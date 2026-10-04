@@ -53,6 +53,7 @@ ns.defaults = {
     osdCooldowns        = false,     -- profession cooldowns ready, every character
     osdBrokers          = "",        -- other addons' feeds that are on, by key
     hideStatusBars      = false,     -- hide the game's XP bar and status bar 2
+    formAltBar          = false,     -- druids: alternate resource bar only in Bear/Cat Form (FormBar.lua)
     osdHideMinimap      = false,     -- hide minimap buttons of addons on the display
     -- Display order, left to right. Items missing from it (a new one, or a
     -- hand-edited list) are added at the end in their default place.

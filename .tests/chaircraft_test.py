@@ -64,7 +64,7 @@ def order(prefix):
     return [os.path.basename(p) for p in paths if p.startswith(prefix + "/")]
 
 EXPECTED_ORDER = {
-    "ChairPlus": ["Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "Quests.lua", "Gossip.lua",
+    "ChairPlus": ["Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "Quests.lua", "Gossip.lua",
                   "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua",
                   "Arrow.lua", "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Chat.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua"],
     "ChairAuras": ["Core.lua", "Presets.lua", "Database.lua", "Load.lua",
@@ -96,7 +96,7 @@ check("the TOC is for WoW Forever 1.60.1 (16001) only",
 # --------------------------------------------------------------------------
 print("")
 print("Namespace isolation")
-REBOUND = {"ChairPlus": 25, "ChairAuras": 22, "ChairSnack": 9, "ChairIgnore": 4}
+REBOUND = {"ChairPlus": 26, "ChairAuras": 22, "ChairSnack": 9, "ChairIgnore": 4}
 for part, expected in REBOUND.items():
     bound, raw = 0, []
     for f in sorted(os.listdir(part)):

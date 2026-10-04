@@ -129,6 +129,12 @@ local ROWS = {
     { key = "skipCinematics",   label = "Skip cinematics", tab = "comfort" },
     { key = "maxCameraZoom",    label = "Max camera zoom", tab = "comfort",
       tip = "Lets the camera zoom out further than the game's own slider allows. Left off, the game's setting is not touched." },
+    { header = "Druid", tab = "comfort", classes = { DRUID = true } },
+    { key = "formAltBar", label = "Alternate resource bar only in Bear and Cat Form", tab = "comfort",
+      classes = { DRUID = true },
+      tip = "Leave the alternate resource checkbox on for the Personal Resource Display in Edit Mode, and the bar "
+         .. "(your mana while shifted) is see-through except in Bear and Cat Form. "
+         .. "/chair plus formbar says whether the bar was found and what your form reads as." },
     { header = "Tooltips", tab = "comfort" },
     { key = "tooltipExtras",    label = "Tooltip extras", tab = "comfort" },
     { key = "tooltipSellPrice", label = "Sell price", tab = "comfort",          sub = "tooltipExtras",
@@ -2107,6 +2113,7 @@ local function PrintHelp()
         .. "|cffffd100on||off||toggle||lock||unlock||reset||probe|r, |cffffd100scale <0.5-3>|r")
     print("  |cffffd100/chair threat|r - the threat meter's options; "
         .. "|cffffd100on||off||toggle||lock||unlock||reset||preview||nameplates|r")
+    print("  |cffffd100/chair plus formbar|r - druids: whether the alternate resource bar was found, and your form")
     print("  |cffffd100/chair plus movers reset|r - forget where every dragged Blizzard window was put")
     print("  |cffffd100/chair plus bake|r - print current settings as code that survives a restart")
     print("  |cffffd100/chair plus keywords|r - the invite-on-keyword window")
@@ -2240,6 +2247,9 @@ local function Handler(input)
                 .. (cmd == "arrow" and ", |cffffd100probe|r or |cffffd100scale <n>|r."
                     or " or |cffffd100preview|r."))
         end
+
+    elseif cmd == "formbar" then
+        if ns.ProbeFormBar then ns.ProbeFormBar() end
 
     elseif cmd == "movers" then
         if (rest or ""):lower() == "reset" then
