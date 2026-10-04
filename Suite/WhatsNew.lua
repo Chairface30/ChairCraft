@@ -11,6 +11,15 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.9.0"] = {
+        title = "Bear and Cat Form bar, Frequent Flyer",
+        lines = {
+            "Druids: the alternate resource bar can show only in Bear and Cat Form (Looting & comfort page).",
+            "Self Highlight can be kept to combat only (Looting & comfort page).",
+            "The Legacy window can be dragged by its title bar. If a window still won't move, point at it and type /chair plus movers add.",
+            "The flight timer allows for the Frequent Flyer Legacy perk: 20% shorter times for a character who has it.",
+        },
+    },
     ["1.8.2"] = {
         title = "Combo points stay on their mob",
         lines = {

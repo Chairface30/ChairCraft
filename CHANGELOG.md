@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## ChairCraft v1.9.0: Bear and Cat Form bar, Frequent Flyer
 
 **New**
 - **Druids: the alternate resource bar only in Bear and Cat Form.** A new option on the Looting & comfort page, under Druid. Leave the alternate resource checkbox on for the Personal Resource Display in Edit Mode, and with this ticked the bar (your mana while shifted) is see-through and only shows in Bear or Cat Form. `/chair plus formbar` says whether ChairCraft found the bar and what it reads your form as.
