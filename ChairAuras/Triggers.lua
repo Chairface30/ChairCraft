@@ -137,6 +137,18 @@ local UNITS = {
 }
 
 local SPELL = { kind = "spell", key = "spellID", label = "Spell" }
+
+-- Whether `unit` is in range of a spell: true, false, or nil with the trigger
+-- marked unknown when the answer is secret. No target, or one the spell cannot
+-- be cast at, answers nil from the client, and that is not in range.
+local function InRange(ts, id, unit)
+    local spell = _G.C_Spell
+    local answer = Try(spell and spell.IsSpellInRange, id, unit)
+    if ns.IsSecret(answer) then ts.unknown = true return nil end
+    if answer == nil then answer = Try(_G.IsSpellInRange, ns.Engine:SpellName(id), unit) end
+    if ns.IsSecret(answer) then ts.unknown = true return nil end
+    return answer == true or answer == 1
+end
 local ITEM = { kind = "item", key = "itemID", label = "Item",
                tip = "An item name or numeric ID. Drag one onto the box too." }
 
@@ -170,8 +182,9 @@ Register("usable", {
             end
         end
         if met and trigger.inRange then
-            local inRange = Try(spell and spell.IsSpellInRange, id, "target")
-            if not ns.IsSecret(inRange) and inRange == false then met = false end
+            local inRange = InRange(ts, id, "target")
+            if inRange == nil then return end
+            if not inRange then met = false end
         end
         ts.met = met
     end,
@@ -201,12 +214,51 @@ Register("range", {
         WearSpell(ts, id)
         local unit = Field(trigger, "unit", "target")
         if unit == "player" then unit = "target" end
-        local spell = _G.C_Spell
-        local answer = Try(spell and spell.IsSpellInRange, id, unit)
-        if ns.IsSecret(answer) then ts.unknown = true return end
-        if answer == nil then answer = Try(_G.IsSpellInRange, ns.Engine:SpellName(id), unit) end
-        if ns.IsSecret(answer) then ts.unknown = true return end
-        ts.met = (answer == true or answer == 1)
+        local inRange = InRange(ts, id, unit)
+        if inRange == nil then return end
+        ts.met = inRange
+    end,
+})
+
+Register("target", {
+    text = "Target",
+    tip = "You have a target, and it is everything ticked here. Give a spell to"
+       .. " also need the target in its range: Charge, say, for a reminder that"
+       .. " shows only when you can charge.",
+    fields = {
+        { kind = "check", key = "attackable", label = "I can attack it" },
+        { kind = "check", key = "alive", label = "it is alive" },
+        { kind = "check", key = "player", label = "it is a player" },
+        { kind = "spell", key = "spellID", label = "In range of",
+          tip = "Optional. Leave empty to skip the range check." },
+    },
+    -- Each test answers yes, no, or nil when the client keeps it secret; a
+    -- secret answer leaves the last state standing, as everywhere else.
+    Evaluate = function(trigger, ts)
+        local function Decide()
+            local exists = Yes(ts, Try(_G.UnitExists, "target"))
+            if exists ~= true then return exists end
+            if trigger.attackable then
+                local yes = Yes(ts, Try(_G.UnitCanAttack, "player", "target"))
+                if yes ~= true then return yes end
+            end
+            if trigger.alive then
+                local dead = Yes(ts, Try(_G.UnitIsDeadOrGhost, "target"))
+                if dead ~= false then return dead == nil and nil or false end
+            end
+            if trigger.player then
+                local yes = Yes(ts, Try(_G.UnitIsPlayer, "target"))
+                if yes ~= true then return yes end
+            end
+            local id = trigger.spellID
+            if id then
+                WearSpell(ts, id)
+                return InRange(ts, id, "target")
+            end
+            return true
+        end
+        local met = Decide()
+        if met ~= nil then ts.met = met end
     end,
 })
 

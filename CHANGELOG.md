@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**New**
+- **A Target trigger for ChairAuras.** It is met when you have a target that is everything you tick: one you can attack, alive, a player. Give it a spell and the target must also be in that spell's range. For a Charge reminder: Target, with "I can attack it", "it is alive" and Charge as the spell, plus the Load tab's "In combat" condition set to unticked.
+
+**Fixed**
+- **Usable's "and the target is in range" counted no target as in range,** so an aura using it showed with nothing targeted. No target, or one the spell can't be cast at, now counts as out of range.
+
 **Changed**
 - **Auras say when the game won't let them be read.** In combat the game hides every buff and debuff from addons, so an aura can only show what was true when the fight started. It now says so: an aura that is showing turns half see-through and gray, and its stack count shows "?" (the `%s` text code too) instead of a number that may be out of date. The moment combat ends it shows the real state again. Earlier tries at following stacks through a fight (reading the game's buff bar, then its aura events) are gone: in game, both turned out to be hidden from addons too. `/chair auras debug` says "shown as unknown" for an aura in this state.
 - **The waypoint arrow points at your corpse while you are dead.** It takes over from the selected quest and the map pin, says "Your corpse", and goes back to them once you are alive. A corpse in the next zone over is found too. `/chair arrow probe` lists the corpse API. Not yet confirmed in game.

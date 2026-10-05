@@ -3372,6 +3372,8 @@ ChairAurasDB = { version = 3, profiles = { account = { auras = {
     { id = "use", triggers = { { trigger = { type = "usable", spellID = 1 } } } },
     { id = "kno", triggers = { { trigger = { type = "known", spellID = 2 } } } },
     { id = "rng", triggers = { { trigger = { type = "range", spellID = 1 } } } },
+    { id = "ur", triggers = { { trigger = { type = "usable", spellID = 1, inRange = true } } } },
+    { id = "tgt", triggers = { { trigger = { type = "target", attackable = true, alive = true, spellID = 1 } } } },
     { id = "chg", triggers = { { trigger = { type = "charges", spellID = 1, charges = 2 } } } },
     { id = "cst", triggers = { { trigger = { type = "cast", spellID = 5, duration = 4 } } } },
     { id = "icd", triggers = { { trigger = { type = "itemcooldown", itemID = 6948 } } } },
@@ -3392,7 +3394,11 @@ ChairAurasDB = { version = 3, profiles = { account = { auras = {
 } } } }
 USABLE, INRANGE, KNOWN, CHARGES = true, true, false, 1
 C_Spell.IsSpellUsable = function(id) return USABLE, false end
-C_Spell.IsSpellInRange = function(id, unit) return INRANGE end
+C_Spell.IsSpellInRange = function(id, unit) if not HAS_TARGET then return nil end return INRANGE end
+HAS_TARGET, ENEMY, TARGET_DEAD = true, true, false
+function UnitExists(unit) if unit == "target" then return HAS_TARGET end return true end
+function UnitCanAttack() return HAS_TARGET and ENEMY end
+function UnitIsDeadOrGhost(unit) if unit == "target" then return TARGET_DEAD end return false end
 C_Spell.GetSpellCharges = function(id) return { currentCharges = CHARGES, maxCharges = 2, cooldownStartTime = NOW, cooldownDuration = 10 } end
 function IsPlayerSpell(id) return KNOWN end
 ITEMCD = { 0, 0 }
@@ -3422,6 +3428,18 @@ ev = L.eval
 L.execute("ns.Engine:UpdateAll()")
 def shown(i): return ev("ns.Engine.states.%s.shown" % i)
 check("usable: usable and off cooldown", shown("use") is True)
+check("usable and in range, with a target in range", shown("ur") is True)
+check("target: attackable, alive and in range", shown("tgt") is True)
+L.execute("TARGET_DEAD = true ns.Engine:UpdateAll()")
+check("not once it is dead", shown("tgt") is False)
+L.execute("TARGET_DEAD = false ENEMY = false ns.Engine:UpdateAll()")
+check("nor a target you cannot attack", shown("tgt") is False)
+L.execute("ENEMY = true INRANGE = false ns.Engine:UpdateAll()")
+check("nor one out of range", shown("tgt") is False)
+L.execute("INRANGE = true HAS_TARGET = false ns.Engine:UpdateAll()")
+check("no target is not in range, for usable's range box too",
+      shown("tgt") is False and shown("ur") is False)
+L.execute("HAS_TARGET = true ns.Engine:UpdateAll()")
 L.execute("USABLE = false ns.Engine:UpdateAll()")
 check("and not when it is not", shown("use") is False)
 check("spell known: not known", shown("kno") is False)
