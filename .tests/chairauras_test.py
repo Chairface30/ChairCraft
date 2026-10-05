@@ -3186,6 +3186,16 @@ check("gone from the bar is gone", ev("ns.Engine.states.plains.count") == 0)
 L.execute("BUFF_P.shown = true BUFF_P.Count.v = '5' BUFF_A.Icon.v = SECRET_VALUE() BUFF_P.Icon.v = SECRET_VALUE() ns.Engine:UpdateAll()")
 check("icons it cannot read leave it to what was known",
       ev("ns.Engine.states.plains.count") == 0 and ev("ns.Engine.states.plains.assumed") is True)
+L.execute("""
+BAR_LOG_TEXT = table.concat(ChairAurasDB.probe.buffBar, "\\n")
+""")
+log = ev("BAR_LOG_TEXT") or ""
+check("each change is logged to the saved file for the next fight to answer",
+      "calm: Plainsrunning icon 136000 stacks 2" in log
+      and "combat: found icon 136000, count 4 -> shows 4" in log
+      and "0 icon(s) readable" in log and "SECRET:5" in log)
+check("and a read that did not change is not logged again",
+      ev("#ChairAurasDB.probe.buffBar") <= 8)
 
 
 # --- the trigger strip in the window -----------------------------------------

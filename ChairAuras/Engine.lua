@@ -414,6 +414,55 @@ function Engine.BuffButtonCount(button, stacks)
     return stacks and 1 or 0
 end
 
+-- A log of what the buff bar read saw, kept in ChairAurasDB.probe.buffBar so
+-- one fight answers what the harness cannot: whether the bar's icons can be
+-- read in combat, and what a buff with all its stacks gone looks like. Only a
+-- change is written, and only the last sixty lines are kept.
+local BAR_LOG_MAX = 60
+
+local function Plain(value)
+    if value == nil then return "-" end
+    if ns.IsSecret(value) then return "SECRET" end
+    local ok, text = pcall(tostring, value)
+    return ok and text or "?"
+end
+
+local function BarLog(ts, line)
+    if ts.barLogLast == line then return end
+    ts.barLogLast = line
+    if type(ChairAurasDB) ~= "table" then return end
+    local probe = ChairAurasDB.probe
+    if type(probe) ~= "table" then
+        probe = { runs = {} }
+        ChairAurasDB.probe = probe
+    end
+    local log = probe.buffBar
+    if type(log) ~= "table" then
+        log = {}
+        probe.buffBar = log
+    end
+    local okD, stamp = pcall(date, "%H:%M:%S")
+    log[#log + 1] = (okD and stamp or "?") .. " " .. line
+    while #log > BAR_LOG_MAX do table.remove(log, 1) end
+end
+
+-- Every shown button as icon:count, as read right now.
+local function BarSnapshot(buttons)
+    local parts = {}
+    for _, button in ipairs(buttons) do
+        if ReadPlain(button, "IsShown") then
+            local icon = ButtonPart(button, "Icon", "Icon")
+            local count = ButtonPart(button, "Count", "Count")
+            local okI, texture = true, nil
+            if icon and icon.GetTexture then okI, texture = pcall(icon.GetTexture, icon) end
+            local okC, text = true, nil
+            if count and count.GetText then okC, text = pcall(count.GetText, count) end
+            parts[#parts + 1] = (okI and Plain(texture) or "error") .. ":" .. (okC and Plain(text) or "error")
+        end
+    end
+    return #parts > 0 and table.concat(parts, " ") or "(none shown)"
+end
+
 -- Out of combat: the icon to look for on the bar, and whether the buff
 -- stacks -- the bar's blank count means one for a buff that does, none else.
 LearnBarIcon = function(ts, data)
@@ -421,18 +470,17 @@ LearnBarIcon = function(ts, data)
     if icon ~= nil then ts.barIcon = icon end
     local count = ns.StackCount(data)
     if count and count > 0 then ts.stacks = true end
+    BarLog(ts, "calm: " .. Plain(ns.AuraField(data, "name")) .. " icon " .. Plain(icon)
+        .. " stacks " .. Plain(count))
 end
 
 -- In combat, with the read refused: what the buff bar says about this one.
-local function ReadBuffBar(trigger, ts)
-    if ns.TriggerFieldValue(trigger, "unit") ~= "player" then return end
-    if ns.TriggerFieldValue(trigger, "harmful") then return end
+local function ReadBuffBarInner(trigger, ts, buttons)
     local icon = ns.SafeNumber(ts.barIcon) or ns.SafeText(ts.barIcon)
     -- Why it worked or did not, for /chair auras debug: this is the one part
     -- of the engine the harness cannot speak for.
     if icon == nil then ts.barNote = "no icon learned out of combat" return end
 
-    local buttons = BuffButtons()
     local shown, readable = 0, 0
     local sawIcons = false
     for _, button in ipairs(buttons) do
@@ -465,6 +513,15 @@ local function ReadBuffBar(trigger, ts)
         ts.unknown, ts.assumed, ts.fromBuffBar = false, false, true
         ClearState(ts)
     end
+end
+
+local function ReadBuffBar(trigger, ts)
+    if ns.TriggerFieldValue(trigger, "unit") ~= "player" then return end
+    if ns.TriggerFieldValue(trigger, "harmful") then return end
+    local buttons = BuffButtons()
+    ReadBuffBarInner(trigger, ts, buttons)
+    BarLog(ts, "combat: " .. tostring(ts.barNote) .. " -> shows " .. Plain(ts.count)
+        .. (ts.met and "" or " (hidden)") .. " | bar " .. BarSnapshot(buttons))
 end
 
 local FillFromAura
@@ -556,7 +613,11 @@ local function EvaluateAura(trigger, ts, now)
     if not data then
         ClearState(ts)
         ts.icon, ts.name = nil, nil
-        if near then LearnBarIcon(ts, near) end
+        if near then
+            LearnBarIcon(ts, near)
+        elseif ts.barIcon ~= nil then
+            BarLog(ts, "calm: not on you")
+        end
         return
     end
 
