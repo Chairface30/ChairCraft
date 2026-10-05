@@ -6,6 +6,7 @@
 - **Buff stacks stayed up in combat after the buff dropped (Plainsrunning and the like).** The game hides your auras from addons in combat, so an icon kept the stacks it had when the fight started. ChairAuras now watches the game's aura events for a buff it saw out of combat. If the buff drops off mid-fight, the icon hides. If its stacks change, the number clears rather than showing a stale count, since the new count can't be read. `/chair auras debug` says "updated from aura events" when it is doing this. Not yet confirmed in game: if the game hides these events too, the icon behaves as before.
 
 **Changed**
+- **The waypoint arrow points at your corpse while you are dead.** It takes over from the selected quest and the map pin, says "Your corpse", and goes back to them once you are alive. A corpse in the next zone over is found too. `/chair arrow probe` lists the corpse API. Not yet confirmed in game.
 - **ChairAuras keeps a short log of aura events in combat,** in the saved file, to confirm the fix above. At most sixty lines.
 - **`/chair auras probe` checks two ways to show stacks in combat.** Run it out of combat with stacks of a buff up (Plainsrunning, say), then probe again mid-fight without reloading. It tries the stack count API on that buff and reads the count on the game's own buff bar.
 

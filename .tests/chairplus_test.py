@@ -2198,6 +2198,49 @@ rt.execute("DRIVER_TICK()")
 check("with no quest and no pin there is nothing to point at",
       g.NS.arrowState.target is None)
 
+# Dead, the corpse beats a selected quest and a pin. The client only places a
+# corpse in the next zone on the map above, so map 1 sits under map 2 here.
+CORPSE_SETUP = """
+PIN = { map = 1, x = 0.5, y = 0.4 }
+SUPER = 77
+QUEST_WP[77] = { map = 1, x = 0.5, y = 0.6 }
+DEAD = true
+CORPSE = { map = 1, x = 0.6, y = 0.5 }
+function UnitIsDeadOrGhost() return DEAD end
+C_Map.GetMapInfo = function(id)
+    if id == 1 then return { mapID = 1, name = "Here", mapType = 3, parentMapID = 2 } end
+    if id == 2 then return { mapID = 2, name = "Above", mapType = 2, parentMapID = 0 } end
+end
+C_DeathInfo = { GetCorpseMapPosition = function(map)
+    if CORPSE and CORPSE.map == map then
+        return { GetXY = function() return CORPSE.x, CORPSE.y end }
+    end
+end }
+"""
+rt, g = arrow_rt(CORPSE_SETUP)
+rt.execute("DRIVER_TICK()")
+st = g.NS.arrowState
+check("dead, the arrow points at your corpse over the quest and the pin",
+      st.target.kind == "corpse" and g.NS.ArrowCell(st.bearing) == 48
+      and abs(st.yards - 100) < 0.01, f"{st.target.kind} {st.yards}")
+check("and says so", any_text(rt, "Your corpse"))
+
+rt, g = arrow_rt(CORPSE_SETUP + "CORPSE = { map = 2, x = 0.5, y = 0.6 }")
+rt.execute("DRIVER_TICK()")
+st = g.NS.arrowState
+check("a corpse only the map above can place is found there",
+      st.target.kind == "corpse" and st.target.map == 2, str(st.target.kind))
+
+rt, g = arrow_rt(CORPSE_SETUP + "function UnitIsDeadOrGhost() return setmetatable({}, { __tostring = function() error(\"secret value\") end }) end")
+rt.execute("DRIVER_TICK()")
+check("a secret answer to 'am I dead' still finds the corpse",
+      g.NS.arrowState.target.kind == "corpse")
+
+rt, g = arrow_rt(CORPSE_SETUP + "DEAD = false")
+rt.execute("DRIVER_TICK()")
+check("alive, it goes back to the selected quest",
+      g.NS.arrowState.target.kind == "quest")
+
 rt, g = arrow_rt('PIN = { map = 1, x = 0.5, y = 0.4 } '
                  'C_Map.GetPlayerMapPosition = function() return nil end')
 rt.execute("DRIVER_TICK()")

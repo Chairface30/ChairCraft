@@ -3,6 +3,7 @@
 -- waypoint.
 --
 -- What counts as "the current waypoint", in order:
+--   0. your corpse, while you are dead -- it beats everything below;
 --   1. the quest you have selected (super-tracked, by clicking it in the
 --      tracker or on the map), wherever the client can say where it is --
 --      including another zone, which is searched for (see FindQuest);
@@ -288,8 +289,32 @@ local function PinTarget()
     return { map = mapID, x = x, y = y, name = "Map pin", kind = "pin" }
 end
 
+-- Your corpse, while you are dead. The client places it on a map you ask
+-- about, so the player's own map is asked first and then each map above it: a
+-- corpse in the next zone over only shows on the continent. Whether you are
+-- dead is asked too, but a secret answer does not stop it -- a corpse the
+-- client will place is answer enough.
+local function CorpseTarget(playerMap)
+    local okDead, dead = Call(_G, "UnitIsDeadOrGhost", "player")
+    if okDead and ns.Bool(dead) == false then return nil end
+    local mapID = playerMap
+    for _ = 1, 10 do
+        if not mapID or mapID <= 0 then return nil end
+        local ok, vec = Call(_G.C_DeathInfo, "GetCorpseMapPosition", mapID)
+        if ok then
+            local x, y = XY(vec)
+            if x and y and (x > 0 or y > 0) then
+                return { map = mapID, x = x, y = y, name = "Your corpse", kind = "corpse" }
+            end
+        end
+        local info = MapInfo(mapID)
+        mapID = info and ns.Num(info.parentMapID)
+    end
+    return nil
+end
+
 function ns.ArrowTarget(playerMap)
-    return QuestTarget(playerMap) or PinTarget()
+    return CorpseTarget(playerMap) or QuestTarget(playerMap) or PinTarget()
 end
 
 -- Bearing and distance from the player to a target, or nil when either end
@@ -597,7 +622,7 @@ end
 
 ns.RegisterModule("arrow", {
     title = "Waypoint arrow",
-    desc = "A large arrow at the top of the screen pointing at the tracked quest or map pin.",
+    desc = "A large arrow at the top of the screen pointing at the tracked quest or map pin, or your corpse while you are dead.",
     Apply = function(enabled)
         if not enabled then
             if frame then frame:Hide() end
@@ -624,6 +649,7 @@ ns.RegisterModule("arrow", {
 -- exists, and what the current target resolves to.
 function ns.ArrowProbe()
     local names = {
+        { "C_DeathInfo", "GetCorpseMapPosition" },
         { "C_SuperTrack", "GetSuperTrackedQuestID" },
         { "C_QuestLog", "GetNextWaypoint" },
         { "C_QuestLog", "GetQuestsOnMap" },
