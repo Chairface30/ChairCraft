@@ -3684,6 +3684,7 @@ do
             local GROUPS = {
                 { "Auras & cooldowns", { "aura", "cooldown" } },
                 { "Spells", { "usable", "known", "range", "charges", "cast" } },
+                { "Target", { "target", "dodged", "parried", "blocked" } },
                 { "Items", { "itemcooldown", "slotcooldown", "itemcount", "equipped", "enchant" } },
                 { "You", { "form", "threat", "xp", "reputation", "money", "status", "zone" } },
                 { "Events", { "chat", "readycheck" } },

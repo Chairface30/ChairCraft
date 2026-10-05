@@ -3382,7 +3382,9 @@ ChairAurasDB = { version = 3, profiles = { account = { auras = {
     { id = "ur", triggers = { { trigger = { type = "usable", spellID = 1, inRange = true } } } },
     { id = "tgt", triggers = { { trigger = { type = "target", attackable = true, alive = true, spellID = 1 } } } },
     { id = "dst", triggers = { { trigger = { type = "target", minYards = 8, maxYards = 25 } } } },
-    { id = "ovp", triggers = { { trigger = { type = "avoided", avoid = "DODGE", duration = 5, spellID = 7384 } } } },
+    { id = "ovp", triggers = { { trigger = { type = "dodged", duration = 5, spellID = 7384 } } } },
+    { id = "par", triggers = { { trigger = { type = "parried" } } } },
+    { id = "old", triggers = { { trigger = { type = "avoided", avoid = "BLOCK" } } } },
     { id = "chg", triggers = { { trigger = { type = "charges", spellID = 1, charges = 2 } } } },
     { id = "cst", triggers = { { trigger = { type = "cast", spellID = 5, duration = 4 } } } },
     { id = "icd", triggers = { { trigger = { type = "itemcooldown", itemID = 6948 } } } },
@@ -3489,6 +3491,13 @@ L.execute("COMBAT = false NOW = NOW + 1 ns.Engine:UpdateAll()")
 check("overpower: nothing dodged yet", shown("ovp") is False)
 L.execute("FireEvent('UNIT_COMBAT', 'target', 'WOUND', '', 50, 1) ns.Engine:UpdateAll()")
 check("a hit is not a dodge", shown("ovp") is False)
+check("an aura saved with the old combined trigger becomes the matching new one",
+      ev("ns.GetAuras()[" + str(0) + "+1]") is not None
+      and ev("(function() for _, a in ipairs(ns.GetAuras()) do if a.id == 'old' then"
+             " return a.triggers[1].trigger.type end end end)()") == "blocked")
+L.execute("FireEvent('UNIT_COMBAT', 'target', 'PARRY', '', 0, 1) ns.Engine:UpdateAll()")
+check("a parry brings up the parry trigger, not the dodge one",
+      shown("par") is True and shown("ovp") is False)
 L.execute("FireEvent('UNIT_COMBAT', 'target', 'DODGE', '', 0, 1) ns.Engine:UpdateAll()")
 check("the target dodging you brings it up, wearing Overpower, on a 5 second timer",
       shown("ovp") is True and ev("ns.Engine.states.ovp.duration") == 5
@@ -3596,8 +3605,12 @@ check("grouped under headings",
 L.execute("local d = FIND_WIDGET('type', 'choice', 'trigger').dropdown d.rows[1]._scripts.OnClick(d.rows[1])")
 check("a heading cannot be picked", ev("ns.TriggerField((ns.FindAura('icd')), 'type')") == "itemcooldown")
 L.execute("""local d = FIND_WIDGET('type', 'choice', 'trigger').dropdown
-d.menu._scripts.OnMouseWheel(d.menu, -1)
-for _, row in ipairs(d.rows) do if row.value == 'threat' then row._scripts.OnClick(row) break end end""")
+for _ = 1, 10 do
+    local hit
+    for _, row in ipairs(d.rows) do if row.value == 'threat' then hit = row break end end
+    if hit then hit._scripts.OnClick(hit) break end
+    d.menu._scripts.OnMouseWheel(d.menu, -1)
+end""")
 check("picking a type from the list sets it, and closes the list",
       ev("ns.TriggerField((ns.FindAura('icd')), 'type')") == "threat"
       and ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.menu:IsShown()") is False)

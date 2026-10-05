@@ -434,7 +434,7 @@ Register("cast", {
 })
 
 -------------------------------------------------------------------------------
--- Your attack avoided
+-- Your target dodged, parried or blocked
 -------------------------------------------------------------------------------
 -- Overpower and the like: a window that opens when the target dodges you. The
 -- auras cannot be read in combat and this client has no combat log, so the
@@ -446,10 +446,7 @@ Register("cast", {
 -- Which of them this client sends, and whether readably, is not known yet, so
 -- each one heard is logged to ChairAurasDB.probe.avoided (/chair auras dodges).
 
-local AVOIDS = {
-    { text = "Dodged", value = "DODGE" }, { text = "Parried", value = "PARRY" },
-    { text = "Blocked", value = "BLOCK" }, { text = "Missed", value = "MISS" },
-}
+local AVOIDS = { DODGE = true, PARRY = true, BLOCK = true }
 local avoidedAt = {}          -- "DODGE" -> GetTime() it last happened
 ns.avoidedAt = avoidedAt
 local AVOID_LOG_MAX = 40
@@ -480,7 +477,6 @@ local function FromChat(text)
     if text:find("dodge") then return "DODGE" end
     if text:find("parr") then return "PARRY" end
     if text:find("block") and not text:find("%(%d+ blocked%)") then return "BLOCK" end
-    if text:find("miss") then return "MISS" end
     return nil
 end
 ns.AvoidFromChat = FromChat
@@ -498,9 +494,7 @@ do
                 return
             end
             local action = ns.SafeText(a2)
-            for _, kind in ipairs(AVOIDS) do
-                if action == kind.value then return Avoided(action, "UNIT_COMBAT") end
-            end
+            if action and AVOIDS[action] then Avoided(action, "UNIT_COMBAT") end
             return
         end
         if ns.IsSecret(a1) then
@@ -525,28 +519,43 @@ local function CastSince(spellID, since)
     return false
 end
 
-Register("avoided", {
-    text = "Target avoided your attack",
-    tip = "Your target dodged, parried, blocked or was missed by you. Shows for"
-       .. " as long as you set, or until you cast the spell given: Overpower,"
-       .. " 5 seconds, dodged.",
-    fields = {
-        { kind = "choice", key = "avoid", label = "When it", values = AVOIDS, default = "DODGE" },
-        { kind = "slider", key = "duration", label = "Show for (seconds)", min = 1, max = 30, default = 5 },
-        { kind = "spell", key = "spellID", label = "Until I cast",
-          tip = "Optional: casting it ends the window early. Any rank counts." },
-    },
-    Evaluate = function(trigger, ts, now)
-        local at = avoidedAt[Field(trigger, "avoid", "DODGE")]
-        local lasts = Num(Field(trigger, "duration", 5)) or 5
-        local id = trigger.spellID
-        if id then WearSpell(ts, id) end
-        local met = at ~= nil and now < at + lasts
-        if met and id and CastSince(id, at) then met = false end
-        ts.met = met
-        if met then ts.start, ts.duration = at, lasts else ts.start, ts.duration = nil, nil end
-    end,
-})
+-- One trigger each, so the picker says plainly what it watches.
+local function AvoidTrigger(key, kind, text, verb, example)
+    Register(key, {
+        text = text,
+        tip = "Your target " .. verb .. " your attack. Shows for as long as you set,"
+           .. " or until you cast the spell given" .. example .. ".",
+        fields = {
+            { kind = "slider", key = "duration", label = "Show for (seconds)", min = 1, max = 30, default = 5 },
+            { kind = "spell", key = "spellID", label = "Until I cast",
+              tip = "Optional: casting it ends the window early. Any rank counts." },
+        },
+        Evaluate = function(trigger, ts, now)
+            local at = avoidedAt[kind]
+            local lasts = Num(Field(trigger, "duration", 5)) or 5
+            local id = trigger.spellID
+            if id then WearSpell(ts, id) end
+            local met = at ~= nil and now < at + lasts
+            if met and id and CastSince(id, at) then met = false end
+            ts.met = met
+            if met then ts.start, ts.duration = at, lasts else ts.start, ts.duration = nil, nil end
+        end,
+    })
+end
+AvoidTrigger("dodged", "DODGE", "Target dodged", "dodged", ": Overpower, 5 seconds")
+AvoidTrigger("parried", "PARRY", "Target parried", "parried", "")
+AvoidTrigger("blocked", "BLOCK", "Target blocked", "blocked", "")
+
+-- The one trigger these replaced (1.9.x alphas), with the kind as a setting:
+-- an aura saved with it becomes the matching new one the first time it runs.
+do
+    local BY_KIND = { DODGE = "dodged", PARRY = "parried", BLOCK = "blocked" }
+    ns.Engine.EVALUATORS.avoided = function(trigger, ts, now, aura, index)
+        trigger.type = BY_KIND[trigger.avoid or "DODGE"] or "dodged"
+        trigger.avoid = nil
+        return ns.Engine.EVALUATORS[trigger.type](trigger, ts, now, aura, index)
+    end
+end
 
 -------------------------------------------------------------------------------
 -- Items
