@@ -322,6 +322,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 
     if event == "SPELLS_CHANGED" then
         ns.Engine:ClearSpellCache()
+        if ns.ResetRangeSpells then ns.ResetRangeSpells() end
     end
 
     ns.RequestUpdate()

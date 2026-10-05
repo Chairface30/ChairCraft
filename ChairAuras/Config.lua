@@ -5282,6 +5282,10 @@ function Config:Refresh()
     end
 end
 
+function Config:IsShown()
+    return window ~= nil and window:IsShown() and true or false
+end
+
 function Config:RefreshIfShown()
     if window and window:IsShown() then self:Refresh() end
 end

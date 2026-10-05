@@ -1018,6 +1018,15 @@ function Display:Unlocked()
     return not (ns.profile and ns.profile.locked)
 end
 
+-- Whether an aura set to hide when inactive is left faintly there to grab:
+-- only while unlocked AND the ChairAuras window is open. Unlocked is the
+-- default, so going by that alone left every hidden aura at a quarter alpha
+-- in play, which read as "dims it more" rather than hidden.
+function Display:ShowsGhosts()
+    return self:Unlocked() and ns.Config ~= nil and ns.Config.IsShown ~= nil
+        and ns.Config:IsShown() and true or false
+end
+
 -------------------------------------------------------------------------------
 -- Actions
 -------------------------------------------------------------------------------
@@ -1050,7 +1059,7 @@ local function AlphaFor(aura, state)
     if not state.loaded then return 0 end
     if state.shown then return ns.DisplayField(aura, "alpha") / 100 end
     if ns.DisplayField(aura, "hide") then
-        return Display:Unlocked() and 0.25 or 0
+        return Display:ShowsGhosts() and 0.25 or 0
     end
     return ns.DisplayField(aura, "dimAlpha") / 100
 end
@@ -1198,8 +1207,8 @@ local function RefreshIcon(aura, frame, state)
         if state.shown then
             wantAlpha, wantDesaturated = alpha, false
         elseif ns.DisplayField(aura, "hide") then
-            -- Hidden, unless the bars are unlocked and it needs to be grabbable.
-            wantAlpha = Display:Unlocked() and 0.25 or 0
+            -- Hidden, unless it is being arranged and needs to be grabbable.
+            wantAlpha = Display:ShowsGhosts() and 0.25 or 0
             wantDesaturated = ns.DisplayField(aura, "desaturate")
         else
             wantAlpha = dimAlpha

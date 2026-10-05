@@ -3,9 +3,10 @@
 ## Unreleased
 
 **New**
-- **A Target trigger for ChairAuras.** It is met when you have a target that is everything you tick: one you can attack, alive, a player. Give it a spell and the target must also be in that spell's range. For a Charge reminder: Target, with "I can attack it", "it is alive" and Charge as the spell, plus the Load tab's "In combat" condition set to unticked.
+- **A Target trigger for ChairAuras.** It is met when you have a target that is everything you tick: one you can attack, alive, a player. Give it a spell and the target must also be in that spell's range. **At least** and **At most** set a distance in yards, for a spell like Charge that has a minimum range as well as a maximum. The game gives no exact distance, so ChairAuras works it out from the ranges of the spells in your spellbook, plus, out of combat, the game's interact distances. `/chair auras range` shows how far it reads your target to be, and from what.
 
 **Fixed**
+- **"Hide when inactive" only dimmed an aura further instead of hiding it.** Hidden auras stayed faintly visible whenever auras were unlocked so they could be dragged, and unlocked is the default. That faint outline now shows only while the ChairAuras window is open.
 - **Usable's "and the target is in range" counted no target as in range,** so an aura using it showed with nothing targeted. No target, or one the spell can't be cast at, now counts as out of range.
 
 **Changed**

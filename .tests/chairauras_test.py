@@ -934,13 +934,20 @@ check("a centred group records its centre",
       ev("ns.FindAura('g1').pos.pivot") == "CENTER",
       ev("ns.FindAura('g1').pos.pivot"))
 
-# "Hide when inactive" would otherwise leave nothing to grab.
+# "Hide when inactive" would otherwise leave nothing to grab -- but only
+# while arranging. Unlocked is the default, so unlocked alone left every
+# hidden aura faintly up in play.
 L.execute("ns.profile.locked = false; ns.Engine:UpdateAll()")
-check("an inactive hidden icon is faintly there while unlocked",
+check("an inactive hidden icon is gone in play, even unlocked",
+      ev("ns.Display.__regions.a1:GetAlpha()") == 0,
+      ev("ns.Display.__regions.a1:GetAlpha()"))
+L.execute("ns.Config:Open(); ns.Engine:UpdateAll()")
+check("and faintly there to grab while the window is open",
       0 < ev("ns.Display.__regions.a1:GetAlpha()") < 0.5,
       ev("ns.Display.__regions.a1:GetAlpha()"))
 L.execute("ns.profile.locked = true; ns.Engine:UpdateAll()")
 check("and gone once locked", ev("ns.Display.__regions.a1:GetAlpha()") == 0)
+L.execute("ns.Config:Toggle(); ns.profile.locked = false; ns.Engine:UpdateAll()")
 
 # --- 6d. adding something with no spell behind it -------------------------
 # The window could only ever create from a spell, so "Well Fed" was refused at
@@ -3374,6 +3381,7 @@ ChairAurasDB = { version = 3, profiles = { account = { auras = {
     { id = "rng", triggers = { { trigger = { type = "range", spellID = 1 } } } },
     { id = "ur", triggers = { { trigger = { type = "usable", spellID = 1, inRange = true } } } },
     { id = "tgt", triggers = { { trigger = { type = "target", attackable = true, alive = true, spellID = 1 } } } },
+    { id = "dst", triggers = { { trigger = { type = "target", minYards = 8, maxYards = 25 } } } },
     { id = "chg", triggers = { { trigger = { type = "charges", spellID = 1, charges = 2 } } } },
     { id = "cst", triggers = { { trigger = { type = "cast", spellID = 5, duration = 4 } } } },
     { id = "icd", triggers = { { trigger = { type = "itemcooldown", itemID = 6948 } } } },
@@ -3394,7 +3402,32 @@ ChairAurasDB = { version = 3, profiles = { account = { auras = {
 } } } }
 USABLE, INRANGE, KNOWN, CHARGES = true, true, false, 1
 C_Spell.IsSpellUsable = function(id) return USABLE, false end
-C_Spell.IsSpellInRange = function(id, unit) if not HAS_TARGET then return nil end return INRANGE end
+-- A warrior's spellbook, for the distance band: Charge 8-25, Shoot 8-30,
+-- a melee strike 0-5. DIST is how far the target really is.
+DIST = 15
+RANGES = { [100] = { 8, 25 }, [101] = { 8, 30 }, [102] = { 0, 5 } }
+SPELLS[100] = { name = "Charge", icon = 200 }
+SPELLS[101] = { name = "Shoot", icon = 201 }
+SPELLS[102] = { name = "Heroic Strike", icon = 202 }
+function GetNumSpellTabs() return 1 end
+function GetSpellTabInfo() return "General", nil, 0, 3 end
+function GetSpellBookItemInfo(i) return "SPELL", 99 + i end
+local byName = C_Spell.GetSpellInfo
+C_Spell.GetSpellInfo = function(id)
+    local r = RANGES[id]
+    if r then return { spellID = id, name = SPELLS[id].name, minRange = r[1], maxRange = r[2] } end
+    return byName(id)
+end
+C_Spell.IsSpellInRange = function(id, unit)
+    if not HAS_TARGET then return nil end
+    local r = RANGES[id]
+    if r then return DIST >= r[1] and DIST <= r[2] end
+    return INRANGE
+end
+INTERACT_YARDS = { [3] = 9.9, [2] = 11.11, [4] = 28 }
+function CheckInteractDistance(unit, i) return HAS_TARGET and DIST <= INTERACT_YARDS[i] end
+COMBAT = false
+function InCombatLockdown() return COMBAT end
 HAS_TARGET, ENEMY, TARGET_DEAD = true, true, false
 function UnitExists(unit) if unit == "target" then return HAS_TARGET end return true end
 function UnitCanAttack() return HAS_TARGET and ENEMY end
@@ -3440,6 +3473,15 @@ L.execute("INRANGE = true HAS_TARGET = false ns.Engine:UpdateAll()")
 check("no target is not in range, for usable's range box too",
       shown("tgt") is False and shown("ur") is False)
 L.execute("HAS_TARGET = true ns.Engine:UpdateAll()")
+check("distance: 15 yards is between 8 and 25", shown("dst") is True)
+L.execute("DIST = 5 NOW = NOW + 1 ns.Engine:UpdateAll()")
+check("5 yards is too close", shown("dst") is False)
+L.execute("DIST = 27 NOW = NOW + 1 ns.Engine:UpdateAll()")
+check("27 yards is too far", shown("dst") is False)
+L.execute("DIST = 15 COMBAT = true NOW = NOW + 1 ns.Engine:UpdateAll()")
+check("in combat it goes by the spells alone, without the interact distances",
+      shown("dst") is True)
+L.execute("COMBAT = false NOW = NOW + 1 ns.Engine:UpdateAll()")
 L.execute("USABLE = false ns.Engine:UpdateAll()")
 check("and not when it is not", shown("use") is False)
 check("spell known: not known", shown("kno") is False)

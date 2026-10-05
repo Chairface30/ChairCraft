@@ -149,6 +149,101 @@ local function InRange(ts, id, unit)
     if ns.IsSecret(answer) then ts.unknown = true return nil end
     return answer == true or answer == 1
 end
+
+-------------------------------------------------------------------------------
+-- How far away the target is
+-------------------------------------------------------------------------------
+-- The client gives no distance to a target, only yes/no answers: is it in
+-- range of this spell, is it close enough to trade. Each answer narrows a
+-- band, and the band is what the Target trigger's distance is checked
+-- against: "at least 8 yards" holds only once something has said so.
+--
+-- The sources: every spell in your spellbook with a range (Charge says 8 to
+-- 25, a shot 8 to 35), and out of combat the interact distances as well. Those
+-- are only asked out of combat because the client may forbid them in combat,
+-- and a forbidden call is a popup no pcall can catch.
+
+local INTERACT = { { index = 3, yards = 9.9 }, { index = 2, yards = 11.11 }, { index = 4, yards = 28 } }
+
+local rangedSpells   -- { { id, name, min, max } } from the spellbook, built on demand
+function ns.ResetRangeSpells() rangedSpells = nil end
+
+local function SpellRange(id)
+    local spell = _G.C_Spell
+    local info = Try(spell and spell.GetSpellInfo, id)
+    local lo, hi
+    if type(info) == "table" then
+        lo, hi = Num(info.minRange), Num(info.maxRange)
+    else
+        local _, _, _, _, a, b = Try(_G.GetSpellInfo, id)
+        lo, hi = Num(a), Num(b)
+    end
+    return lo or 0, hi
+end
+
+local function RangedSpells()
+    if rangedSpells then return rangedSpells end
+    rangedSpells = {}
+    local list = ns.Templates and ns.Templates:Spells() or {}
+    for _, entry in ipairs(list) do
+        local lo, hi = SpellRange(entry.value)
+        if hi and hi > 0 then
+            rangedSpells[#rangedSpells + 1] = { id = entry.value, name = entry.text, min = lo, max = hi }
+        end
+    end
+    return rangedSpells
+end
+
+-- The target's distance as a band, low to high yards (high is math.huge when
+-- nothing caps it), and what each source said, for /chair auras range.
+-- Worked out once per moment however many triggers ask.
+local bandAt, bandLo, bandHi, bandNotes
+function ns.TargetBand(now)
+    if now and bandAt == now then return bandLo, bandHi, bandNotes end
+    local lo, hi, notes = 0, math.huge, {}
+    local okE, exists = pcall(UnitExists, "target")
+    if not okE or exists ~= true then
+        bandAt, bandLo, bandHi, bandNotes = now, nil, nil, notes
+        return nil, nil, notes
+    end
+    -- Inside a spell's range: within its band. Outside one with no minimum:
+    -- past its end. Outside one with a minimum could be either side, so those
+    -- wait until the rest have narrowed things down.
+    local either = {}
+    local spell = _G.C_Spell
+    for _, r in ipairs(RangedSpells()) do
+        local answer = Try(spell and spell.IsSpellInRange, r.id, "target")
+        if answer == nil then answer = Try(_G.IsSpellInRange, r.name, "target") end
+        if not ns.IsSecret(answer) and answer ~= nil then
+            local inside = answer == true or answer == 1
+            notes[#notes + 1] = string.format("%s (%g-%g): %s", r.name, r.min, r.max, inside and "in" or "out")
+            if inside then
+                lo, hi = math.max(lo, r.min), math.min(hi, r.max)
+            elseif r.min <= 0 then
+                lo = math.max(lo, r.max)
+            else
+                either[#either + 1] = r
+            end
+        end
+    end
+    local okC, combat = pcall(InCombatLockdown)
+    if okC and combat == false then
+        for _, d in ipairs(INTERACT) do
+            local answer = Try(_G.CheckInteractDistance, "target", d.index)
+            if not ns.IsSecret(answer) and answer ~= nil then
+                local inside = answer == true or answer == 1
+                notes[#notes + 1] = string.format("interact %g: %s", d.yards, inside and "in" or "out")
+                if inside then hi = math.min(hi, d.yards) else lo = math.max(lo, d.yards) end
+            end
+        end
+    end
+    for _, r in ipairs(either) do
+        if hi <= r.max then hi = math.min(hi, r.min)
+        elseif lo >= r.min then lo = math.max(lo, r.max) end
+    end
+    bandAt, bandLo, bandHi, bandNotes = now, lo, hi, notes
+    return lo, hi, notes
+end
 local ITEM = { kind = "item", key = "itemID", label = "Item",
                tip = "An item name or numeric ID. Drag one onto the box too." }
 
@@ -231,10 +326,15 @@ Register("target", {
         { kind = "check", key = "player", label = "it is a player" },
         { kind = "spell", key = "spellID", label = "In range of",
           tip = "Optional. Leave empty to skip the range check." },
+        { kind = "slider", key = "minYards", label = "At least (yards)", min = 0, max = 40, default = 0,
+          tip = "0 for no minimum. Read from your spells' ranges, so it is as exact"
+             .. " as your spellbook allows. /chair auras range shows how it is read." },
+        { kind = "slider", key = "maxYards", label = "At most (yards)", min = 0, max = 100, default = 0,
+          tip = "0 for no maximum." },
     },
     -- Each test answers yes, no, or nil when the client keeps it secret; a
     -- secret answer leaves the last state standing, as everywhere else.
-    Evaluate = function(trigger, ts)
+    Evaluate = function(trigger, ts, now)
         local function Decide()
             local exists = Yes(ts, Try(_G.UnitExists, "target"))
             if exists ~= true then return exists end
@@ -253,7 +353,17 @@ Register("target", {
             local id = trigger.spellID
             if id then
                 WearSpell(ts, id)
-                return InRange(ts, id, "target")
+                local inRange = InRange(ts, id, "target")
+                if inRange ~= true then return inRange end
+            end
+            local least = Num(trigger.minYards) or 0
+            local most = Num(trigger.maxYards) or 0
+            if least > 0 or most > 0 then
+                local lo, hi = ns.TargetBand(now)
+                if not lo then return false end
+                -- Half a yard of slack: the client's ranges are not exact.
+                if least > 0 and lo < least - 0.5 then return false end
+                if most > 0 and hi > most + 0.5 then return false end
             end
             return true
         end
