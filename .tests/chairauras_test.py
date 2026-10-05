@@ -29,6 +29,8 @@ local function Method(k)
                 CHAT_INSERTED = (...)
             elseif k == "SetText" then rawset(self, "_text", (...))
             elseif k == "GetText" then return rawget(self, "_text")
+            elseif k == "SetDesaturated" then rawset(self, "_desaturated", (...) and true or false)
+            elseif k == "IsDesaturated" then return rawget(self, "_desaturated") == true
             elseif k == "Show" then
                 local was = rawget(self, "_shown")
                 rawset(self, "_shown", true)
@@ -3154,57 +3156,41 @@ check("casting it puts it on its learned cooldown",
 L.execute("NOW = NOW + 61 ns.Engine:UpdateAll()")
 check("and it is ready again once that has run out", ev("ns.Engine.states.cd.met") is True)
 
-print("-- in combat, what UNIT_AURA says about a buff")
+print("-- in combat, an aura that cannot be read says so")
 L = boot("""
-ChairAurasDB = { version = 3, profiles = { account = { auras = {
-    { id = "plains", triggers = { { trigger = { spellID = 1299038, stacks = 1 } } } },
+ChairAurasDB = { version = 3, probe = { runs = {}, auraEvents = { "old" } },
+    profiles = { account = { auras = {
+    { id = "plains", display = { stacks = true },
+      triggers = { { trigger = { spellID = 1299038, stacks = 3 } } } },
 } } } }
 """)
 ev = L.eval
+check("the old in-combat event log is cleared from the saved file",
+      ev("ChairAurasDB.probe.auraEvents") is None)
 L.execute("""
-IN_COMBAT = false
-function InCombatLockdown() return IN_COMBAT end
-AURAS.player = { { name = 'Plainsrunning', spellId = 1299038, icon = 236717, applications = 6,
+AURAS.player = { { name = 'Plainsrunning', spellId = 1299038, icon = 236717, applications = 4,
                    auraInstanceID = 47, duration = 0, expirationTime = 0 } }
 ns.Engine:UpdateAll()""")
-check("out of combat six stacks show", ev("ns.Engine.states.plains.count") == 6)
-L.execute("""AURAS_REFUSED = true IN_COMBAT = true NOW = NOW + 1
-FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, updatedAuraInstanceIDs = { 12 } })
-ns.Engine:UpdateAll()""")
-check("another buff changing leaves it alone",
-      ev("ns.Engine.states.plains.count") == 6 and ev("ns.Engine.states.plains.shown") is True)
-L.execute("""NOW = NOW + 1
-FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, updatedAuraInstanceIDs = { 47 } })
-ns.Engine:UpdateAll()""")
-check("its stacks changing in combat makes the count unknown, not stale",
-      ev("ns.Engine.states.plains.count") is None and ev("ns.Engine.states.plains.shown") is True)
-L.execute("""NOW = NOW + 1
-FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, removedAuraInstanceIDs = { 47 } })
-ns.Engine:UpdateAll()""")
-check("and it dropping off in combat hides it", ev("ns.Engine.states.plains.shown") is False)
-
-L.execute("""AURAS_REFUSED = false IN_COMBAT = false NOW = NOW + 1
-AURAS.player[1].auraInstanceID = 48 ns.Engine:UpdateAll()
-AURAS_REFUSED = true IN_COMBAT = true NOW = NOW + 1
-FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, addedAuras = SECRET_VALUE(),
-                                   removedAuraInstanceIDs = { 48 } })
-ns.Engine:UpdateAll()""")
-check("taken off and something added in the same event: kept, count unknown",
-      ev("ns.Engine.states.plains.shown") is True and ev("ns.Engine.states.plains.count") is None)
-
-L.execute("""AURAS_REFUSED = false IN_COMBAT = false NOW = NOW + 1
-AURAS.player[1].auraInstanceID = 49 ns.Engine:UpdateAll()
-AURAS_REFUSED = true IN_COMBAT = true NOW = NOW + 1
-FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, removedAuraInstanceIDs = SECRET_VALUE() })
-ns.Engine:UpdateAll()""")
-check("secret IDs leave it to what was known",
-      ev("ns.Engine.states.plains.shown") is True and ev("ns.Engine.states.plains.count") == 6)
-L.execute('LOG_TEXT = table.concat(ChairAurasDB.probe.auraEvents, " | ")')
-log = ev("LOG_TEXT") or ""
-check("each combat event and each learned buff is logged for the next fight to answer",
-      "calm: Plainsrunning instance 47 stacks 6" in log
-      and "combat: full=false added=- updated={47} removed=-" in log
-      and "removed=SECRET" in log and "added=SECRET" in log)
+st = "ns.Engine.states.plains"
+check("out of combat four stacks meet three and are counted",
+      ev(st + ".shown") is True and ev(st + ".count") == 4 and ev(st + ".stale") is False)
+check("drawn at full strength, with the count",
+      ev("ns.Display.__regions.plains:GetAlpha()") == 1
+      and ev("ns.Display.__regions.plains.count:GetText()") == "4")
+L.execute("AURAS_REFUSED = true NOW = NOW + 1 ns.Engine:UpdateAll()")
+check("in combat it stays shown, as the last thing known",
+      ev(st + ".shown") is True and ev(st + ".stale") is True)
+check("but its count is unknown, not stale", ev(st + ".count") is None)
+check("and it is drawn as unknown: half as opaque, gray, '?' for stacks",
+      ev("ns.Display.__regions.plains:GetAlpha()") == 0.5
+      and ev("ns.Display.__regions.plains.texture:IsDesaturated()") is True
+      and ev("ns.Display.__regions.plains.count:GetText()") == "?")
+check("the %s text code says '?' too",
+      ev('ns.Engine:FormatText("%s", ns.GetAuras()[1], ns.Engine.states.plains)') == "?")
+L.execute("AURAS_REFUSED = false AURAS.player[1].applications = 2 NOW = NOW + 1 ns.Engine:UpdateAll()")
+check("after combat the real state comes straight back",
+      ev(st + ".shown") is False and ev(st + ".stale") is False
+      and ev("ns.Display.__regions.plains.count:GetText()") != "?")
 
 
 # --- the trigger strip in the window -----------------------------------------

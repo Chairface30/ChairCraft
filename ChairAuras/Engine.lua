@@ -245,8 +245,6 @@ local function FindAura(unit, trigger)
     if ns.TriggerFieldValue(trigger, "mine") then filter = filter .. "|PLAYER" end
 
     local unreadable = false
-    -- The right aura at the wrong stack count, kept for what it teaches.
-    local near
 
     for index = 1, MAX_AURAS do
         local ok, data = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
@@ -254,7 +252,7 @@ local function FindAura(unit, trigger)
         -- A refusal is not the end of the list: this client will not hand an
         -- aura to addon code in combat, and all there is to do is know that.
         if not ok then return nil, true end
-        if not data then return nil, unreadable, near end
+        if not data then return nil, unreadable end
 
         local matched, blind = Matches(data, trigger)
         if blind then unreadable = true end
@@ -265,11 +263,10 @@ local function FindAura(unit, trigger)
                 return data
             end
             -- Same aura, wrong size: keep walking.
-            near = near or data
         end
     end
 
-    return nil, unreadable, near
+    return nil, unreadable
 end
 
 -- Every match on one unit, into `out`. Answers whether anything was refused.
@@ -355,144 +352,14 @@ local function AssumeAura(trigger, ts, now)
     end
 end
 
--------------------------------------------------------------------------------
--- What UNIT_AURA still says in combat
--------------------------------------------------------------------------------
--- Reading the game's buff bar failed in game (2026-10-04): in combat every
--- button's icon is secret, and so is its count once the game redraws it, so
--- nothing ties a button to a buff. What is left is the UNIT_AURA payload,
--- which lists the instance IDs of the auras updated and removed. A buff's
--- instance ID is learned while it can be read. If the IDs arrive readable in
--- combat, a buff that drops off is known to be gone, and one whose stacks
--- change is known to have changed -- to what, nothing says, so its count
--- becomes unknown rather than staying wrong.
---
--- Whether they do arrive readable is the open question, so each player
--- UNIT_AURA in combat is logged to ChairAurasDB.probe.auraEvents, with the
--- buffs ChairAuras learned out of combat beside them. Only the last sixty
--- lines are kept.
-
-local LOG_MAX = 60
-local removedAt, updatedAt = {}, {}   -- instanceID -> GetTime() of the event
-local addedAt = 0                     -- the last event that added anything
-Engine.removedAt, Engine.updatedAt = removedAt, updatedAt
-
-local function Plain(value)
-    if value == nil then return "-" end
-    if ns.IsSecret(value) then return "SECRET" end
-    local ok, text = pcall(tostring, value)
-    return ok and text or "?"
-end
-
-local function Log(line)
-    if type(ChairAurasDB) ~= "table" then return end
-    local probe = ChairAurasDB.probe
-    if type(probe) ~= "table" then
-        probe = { runs = {} }
-        ChairAurasDB.probe = probe
-    end
-    probe.buffBar = nil  -- the buff bar attempt's log, done with
-    local log = probe.auraEvents
-    if type(log) ~= "table" then
-        log = {}
-        probe.auraEvents = log
-    end
-    local okD, stamp = pcall(date, "%H:%M:%S")
-    log[#log + 1] = (okD and stamp or "?") .. " " .. line
-    while #log > LOG_MAX do table.remove(log, 1) end
-end
-
--- Out of combat: a trigger's buff and its instance ID, logged when they change.
-local function LearnInstance(ts, data, now)
-    ts.instance = ns.AuraField(data, "instance")
-    ts.instanceSeen = now
-    local line = "calm: " .. Plain(ns.AuraField(data, "name")) .. " instance "
-        .. Plain(ts.instance) .. " stacks " .. Plain(ns.StackCount(data))
-    if ts.logLast ~= line then
-        ts.logLast = line
-        Log(line)
-    end
-end
-
--- One list of instance IDs: the readable ones noted against `now`, and the
--- whole of it described for the log.
-local function TakeIDs(list, into, now)
-    if list == nil then return "-" end
-    if ns.IsSecret(list) then return "SECRET" end
-    if type(list) ~= "table" then return Plain(list) end
-    local parts = {}
-    local ok = pcall(function()
-        for _, id in ipairs(list) do
-            local n = ns.SafeNumber(id)
-            if n then into[n] = now end
-            parts[#parts + 1] = Plain(id)
-        end
-    end)
-    if not ok then parts[#parts + 1] = "error" end
-    return "{" .. table.concat(parts, ",") .. "}"
-end
-
-local function Field(info, key)
-    local ok, value = pcall(function() return info[key] end)
-    if ok then return value end
-    return nil
-end
-
-do
-    local frame = CreateFrame("Frame")
-    pcall(frame.RegisterUnitEvent or frame.RegisterEvent, frame, "UNIT_AURA", "player")
-    frame:SetScript("OnEvent", function(_, _, unit, info)
-        if unit ~= "player" then return end
-        local now = GetTime()
-        local line
-        if info == nil then
-            line = "no payload"
-        elseif ns.IsSecret(info) then
-            line = "payload SECRET"
-        elseif type(info) == "table" then
-            local added = Field(info, "addedAuras")
-            local addedText = "-"
-            if added ~= nil then
-                addedAt = now
-                local okN, n = pcall(function() return #added end)
-                addedText = ns.IsSecret(added) and "SECRET"
-                    or ("table of " .. (okN and Plain(n) or "?"))
-            end
-            line = "full=" .. Plain(Field(info, "isFullUpdate"))
-                .. " added=" .. addedText
-                .. " updated=" .. TakeIDs(Field(info, "updatedAuraInstanceIDs"), updatedAt, now)
-                .. " removed=" .. TakeIDs(Field(info, "removedAuraInstanceIDs"), removedAt, now)
-        else
-            line = "payload " .. Plain(info)
-        end
-        local okC, combat = pcall(InCombatLockdown)
-        if okC and combat == true then Log("combat: " .. line) end
-    end)
-end
-
--- In combat, with the read refused: what the events said about this buff.
-local function ReadAuraEvents(ts)
-    local id = ns.SafeNumber(ts.instance)
-    if not id then return end
-    local seen = ts.instanceSeen or 0
-    local gone = removedAt[id]
-    if gone and gone >= seen then
-        ts.fromEvents = true
-        if addedAt == gone then
-            -- Taken off and something put on in the same event: likely the
-            -- buff renewing as a new instance. Still up, count unknown.
-            ts.count, ts.countKnown = nil, false
-        else
-            ts.unknown, ts.assumed = false, false
-            ClearState(ts)
-        end
-        return
-    end
-    local changed = updatedAt[id]
-    if changed and changed >= seen then
-        ts.fromEvents = true
-        ts.count, ts.countKnown = nil, false
-    end
+-- In combat, with the read refused, nothing the aura shows can be vouched
+-- for. Whether it is shown stays the last answer (see AssumeAura), but the
+-- stack count is dropped rather than kept: a stale number reads as a true one.
+-- The display draws a stale aura as unknown (see Display's MarkStale), and
+-- the first read after combat puts everything back.
+local function GoStale(ts)
+    ts.stale = true
+    ts.count, ts.countKnown = nil, false
 end
 
 local FillFromAura
@@ -519,9 +386,10 @@ local function EvaluateMatches(trigger, ts, now, unit)
     if #matches == 0 and refused then
         ts.unknown = true
         AssumeAura(trigger, ts, now)
+        GoStale(ts)
         return
     end
-    ts.unknown, ts.assumed = false, false
+    ts.unknown, ts.assumed, ts.stale = false, false, false
     ts.castSeen = now
     ts.matchCount = #matches
     ts.met = CountSatisfied(trigger, #matches)
@@ -565,7 +433,7 @@ local function EvaluateAura(trigger, ts, now)
         return EvaluateMatches(trigger, ts, now, unit)
     end
     ts.matchCount, ts.cloneStates = nil, nil
-    local data, unknown, near = FindAura(unit, trigger)
+    local data, unknown = FindAura(unit, trigger)
 
     if not data and unknown then
         -- "I could not look" is not "it is not there". An aura set to show when
@@ -574,23 +442,16 @@ local function EvaluateAura(trigger, ts, now)
         -- forward by what is known (see AssumeAura), never guessed at.
         ts.unknown = true
         AssumeAura(trigger, ts, now)
-        ReadAuraEvents(ts)
+        GoStale(ts)
         return
     end
 
-    ts.unknown, ts.assumed, ts.fromEvents = false, false, false
+    ts.unknown, ts.assumed, ts.stale = false, false, false
     ts.castSeen = now
 
     if not data then
         ClearState(ts)
         ts.icon, ts.name = nil, nil
-        if near then
-            LearnInstance(ts, near, now)
-        elseif ts.instance ~= nil then
-            ts.instance = nil
-            ts.logLast = "calm: not on you"
-            Log(ts.logLast)
-        end
         return
     end
 
@@ -604,7 +465,6 @@ FillFromAura = function(ts, data, now)
     -- fill in others. nil means the count could not be read, never zero.
     ts.count = ns.StackCount(data)
     ts.countKnown = ts.count ~= nil
-    LearnInstance(ts, data, now)
 
     -- A duration of zero is a permanent aura, not a zero-second one.
     local duration = ns.AuraField(data, "duration")
@@ -811,6 +671,9 @@ local function Combine(aura, state, count)
     local unknown = false
     for i = 1, count do if state.triggers[i].unknown then unknown = true end end
     state.unknown = unknown
+    local stale = false
+    for i = 1, count do if state.triggers[i].stale then stale = true end end
+    state.stale = stale
 
     -- The icon the thing itself wears beats the one the spell implies, unless
     -- the user picked one. Remembered, so a Well Fed that has dropped still
@@ -832,7 +695,7 @@ local function CloneState(base, key, st)
     local clone = {
         id = base.id, cloneKey = key, loaded = base.loaded, met = base.met,
         shown = base.shown, props = base.props, triggers = base.triggers,
-        assumed = base.assumed,
+        assumed = base.assumed, stale = base.stale,
     }
     clone.name = ns.SafeText(st.name) or base.name
     clone.icon = st.icon or base.icon

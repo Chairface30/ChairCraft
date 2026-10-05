@@ -105,6 +105,8 @@ local function Letter(letter, aura, state, now, weakauras)
     local fraction, left = Left(state, now)
     if letter == "n" then return state and state.name or "" end
     if letter == "s" then
+        -- Unread in combat: the count is not known, and says so.
+        if state and state.stale then return "?" end
         local count = state and state.count or 0
         return (count and count > 0) and tostring(count) or ""
     end

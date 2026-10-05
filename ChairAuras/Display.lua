@@ -1456,6 +1456,21 @@ local function ApplyProps(aura, frame, state, kind)
 end
 Display.ApplyProps = ApplyProps
 
+-- In combat the game will not let addons read auras, so a shown aura is the
+-- last thing known, not what is true now. It says so: half as opaque, gray,
+-- and "?" where its stack count would be. The next draw after combat puts
+-- all of it back, since every refresh sets these afresh.
+local STALE_ALPHA = 0.5
+local function MarkStale(aura, frame, kind)
+    local alpha = tonumber(frame:GetAlpha()) or 0
+    if alpha <= 0 then return end
+    frame:SetAlpha(alpha * STALE_ALPHA)
+    if kind == "icon" and frame.texture then frame.texture:SetDesaturated(true) end
+    if frame.icon and frame.icon.SetDesaturated then frame.icon:SetDesaturated(true) end
+    if frame.count and ns.DisplayField(aura, "stacks") then frame.count:SetText("?") end
+end
+Display.MarkStale = MarkStale
+
 -- Draws one region from one state: its shape, what hangs off it, what a
 -- condition changes, its glow and its animation. An aura's own region and
 -- each of its clones go through here.
@@ -1474,6 +1489,7 @@ local function DrawRegion(aura, frame, state, kind)
     local live = (state.shown and state.loaded) and true or false
     if ns.SubRegions then ns.SubRegions:Apply(aura, frame, state, kind, live) end
     local propGlow = ApplyProps(aura, frame, state, kind)
+    if state.stale and state.loaded then MarkStale(aura, frame, kind) end
     local visible = (tonumber(frame:GetAlpha()) or 0) > 0
     local glowOn = visible and (propGlow or (live and ns.DisplayField(aura, "glow")))
     Glow(frame, glowOn and true or false, nil, Display.GlowStyle(aura))

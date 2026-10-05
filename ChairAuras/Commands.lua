@@ -524,7 +524,7 @@ local function CmdWhy()
                 ns.Print(string.format("   trigger %d: met=%s%s%s%s", i, tostring(ts.met),
                     ts.unknown and " |cffffd100(unreadable now)|r" or "",
                     ts.assumed and " |cffffd100assumed from what was known|r" or "",
-                    ts.fromEvents and " |cff55ff55updated from aura events|r" or ""))
+                    ts.stale and " |cffffd100shown as unknown|r" or ""))
             end
 
             local wanted = ns.DisplayField(aura, "stacks")
