@@ -3,11 +3,11 @@
 ## Unreleased
 
 **Fixed**
-- **Buff stacks froze in combat (Plainsrunning and the like).** The game hides your auras from addons in combat, so a stack count stayed at whatever it was when the fight started. ChairAuras now reads the stacks off the game's own buff bar, which still shows them, so an icon keyed to stacks keeps up mid-fight. It also notices the buff dropping off. It works for buffs on you that ChairAuras has seen once out of combat, and needs the game's buff bar to be on. `/chair auras debug` says "read off the game's buff bar" when it is doing this. Below each trigger it also shows how its last read of the buff bar in combat went.
+- **Buff stacks stayed up in combat after the buff dropped (Plainsrunning and the like).** The game hides your auras from addons in combat, so an icon kept the stacks it had when the fight started. ChairAuras now watches the game's aura events for a buff it saw out of combat. If the buff drops off mid-fight, the icon hides. If its stacks change, the number clears rather than showing a stale count, since the new count can't be read. `/chair auras debug` says "updated from aura events" when it is doing this. Not yet confirmed in game: if the game hides these events too, the icon behaves as before.
 
 **Changed**
-- **ChairAuras keeps a short log of what it reads off the buff bar,** in the saved file, to track down stacks that stay up in combat after they have dropped. Only changes are written, at most sixty lines.
-- **`/chair auras probe` checks two ways to show stacks in combat.** Run it out of combat with stacks of a buff up (Plainsrunning, say), then probe again mid-fight without reloading. It now tries the stack count API on that buff, and reads the count on the game's own buff bar, to see if either can still show the number while the game hides auras in combat.
+- **ChairAuras keeps a short log of aura events in combat,** in the saved file, to confirm the fix above. At most sixty lines.
+- **`/chair auras probe` checks two ways to show stacks in combat.** Run it out of combat with stacks of a buff up (Plainsrunning, say), then probe again mid-fight without reloading. It tries the stack count API on that buff and reads the count on the game's own buff bar.
 
 ## ChairCraft v1.9.0: Bear and Cat Form bar, Frequent Flyer
 

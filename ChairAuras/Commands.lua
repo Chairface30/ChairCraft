@@ -524,8 +524,7 @@ local function CmdWhy()
                 ns.Print(string.format("   trigger %d: met=%s%s%s%s", i, tostring(ts.met),
                     ts.unknown and " |cffffd100(unreadable now)|r" or "",
                     ts.assumed and " |cffffd100assumed from what was known|r" or "",
-                    ts.fromBuffBar and " |cff55ff55read off the game's buff bar|r" or ""))
-                if ts.barNote then ns.Print("     buff bar, last read in combat: " .. ts.barNote) end
+                    ts.fromEvents and " |cff55ff55updated from aura events|r" or ""))
             end
 
             local wanted = ns.DisplayField(aura, "stacks")

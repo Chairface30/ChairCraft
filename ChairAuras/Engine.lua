@@ -356,69 +356,26 @@ local function AssumeAura(trigger, ts, now)
 end
 
 -------------------------------------------------------------------------------
--- The game's own buff bar, read in combat
+-- What UNIT_AURA still says in combat
 -------------------------------------------------------------------------------
--- The probe (2026-10-04) found one thing combat leaves readable: the stack
--- count on Blizzard's buff buttons. The aura behind a button is refused and
--- its auraInstanceID turns secret, but the count text reads as a plain number
--- (Plainsrunning went 2 -> 4 mid-fight). So a buff of yours is found there by
--- the icon it wore while it could still be read, and its stacks taken off the
--- button. Read only: nothing here sets, shows or updates that frame.
+-- Reading the game's buff bar failed in game (2026-10-04): in combat every
+-- button's icon is secret, and so is its count once the game redraws it, so
+-- nothing ties a button to a buff. What is left is the UNIT_AURA payload,
+-- which lists the instance IDs of the auras updated and removed. A buff's
+-- instance ID is learned while it can be read. If the IDs arrive readable in
+-- combat, a buff that drops off is known to be gone, and one whose stacks
+-- change is known to have changed -- to what, nothing says, so its count
+-- becomes unknown rather than staying wrong.
+--
+-- Whether they do arrive readable is the open question, so each player
+-- UNIT_AURA in combat is logged to ChairAurasDB.probe.auraEvents, with the
+-- buffs ChairAuras learned out of combat beside them. Only the last sixty
+-- lines are kept.
 
-local LearnBarIcon
-
-local function BuffButtons()
-    local list = {}
-    local frame = _G.BuffFrame
-    if type(frame) == "table" and type(frame.auraFrames) == "table" then
-        for _, button in ipairs(frame.auraFrames) do list[#list + 1] = button end
-    end
-    if #list == 0 then
-        for i = 1, 40 do
-            local button = _G["BuffButton" .. i]
-            if not button then break end
-            list[#list + 1] = button
-        end
-    end
-    return list
-end
-Engine.BlizzardBuffButtons = BuffButtons
-
--- A method's answer, or nil when it errored or came back secret.
-local function ReadPlain(object, method)
-    if not object or type(object[method]) ~= "function" then return nil end
-    local ok, value = pcall(object[method], object)
-    if not ok or ns.IsSecret(value) then return nil end
-    return value
-end
-
-local function ButtonPart(button, key, suffix)
-    if button[key] then return button[key] end
-    local okN, name = pcall(button.GetName, button)
-    return okN and type(name) == "string" and _G[name .. suffix] or nil
-end
-
-function Engine.BuffButtonIcon(button)
-    return ReadPlain(ButtonPart(button, "Icon", "Icon"), "GetTexture")
-end
-
--- The count as drawn. Blizzard leaves it blank below two, so blank is one for
--- a buff known to stack and none for one that does not.
-function Engine.BuffButtonCount(button, stacks)
-    local part = ButtonPart(button, "Count", "Count")
-    if not part then return nil end
-    local okT, text = pcall(part.GetText, part)
-    if not okT or ns.IsSecret(text) then return nil end
-    local n = tonumber(text)
-    if n then return n end
-    return stacks and 1 or 0
-end
-
--- A log of what the buff bar read saw, kept in ChairAurasDB.probe.buffBar so
--- one fight answers what the harness cannot: whether the bar's icons can be
--- read in combat, and what a buff with all its stacks gone looks like. Only a
--- change is written, and only the last sixty lines are kept.
-local BAR_LOG_MAX = 60
+local LOG_MAX = 60
+local removedAt, updatedAt = {}, {}   -- instanceID -> GetTime() of the event
+local addedAt = 0                     -- the last event that added anything
+Engine.removedAt, Engine.updatedAt = removedAt, updatedAt
 
 local function Plain(value)
     if value == nil then return "-" end
@@ -427,101 +384,115 @@ local function Plain(value)
     return ok and text or "?"
 end
 
-local function BarLog(ts, line)
-    if ts.barLogLast == line then return end
-    ts.barLogLast = line
+local function Log(line)
     if type(ChairAurasDB) ~= "table" then return end
     local probe = ChairAurasDB.probe
     if type(probe) ~= "table" then
         probe = { runs = {} }
         ChairAurasDB.probe = probe
     end
-    local log = probe.buffBar
+    probe.buffBar = nil  -- the buff bar attempt's log, done with
+    local log = probe.auraEvents
     if type(log) ~= "table" then
         log = {}
-        probe.buffBar = log
+        probe.auraEvents = log
     end
     local okD, stamp = pcall(date, "%H:%M:%S")
     log[#log + 1] = (okD and stamp or "?") .. " " .. line
-    while #log > BAR_LOG_MAX do table.remove(log, 1) end
+    while #log > LOG_MAX do table.remove(log, 1) end
 end
 
--- Every shown button as icon:count, as read right now.
-local function BarSnapshot(buttons)
+-- Out of combat: a trigger's buff and its instance ID, logged when they change.
+local function LearnInstance(ts, data, now)
+    ts.instance = ns.AuraField(data, "instance")
+    ts.instanceSeen = now
+    local line = "calm: " .. Plain(ns.AuraField(data, "name")) .. " instance "
+        .. Plain(ts.instance) .. " stacks " .. Plain(ns.StackCount(data))
+    if ts.logLast ~= line then
+        ts.logLast = line
+        Log(line)
+    end
+end
+
+-- One list of instance IDs: the readable ones noted against `now`, and the
+-- whole of it described for the log.
+local function TakeIDs(list, into, now)
+    if list == nil then return "-" end
+    if ns.IsSecret(list) then return "SECRET" end
+    if type(list) ~= "table" then return Plain(list) end
     local parts = {}
-    for _, button in ipairs(buttons) do
-        if ReadPlain(button, "IsShown") then
-            local icon = ButtonPart(button, "Icon", "Icon")
-            local count = ButtonPart(button, "Count", "Count")
-            local okI, texture = true, nil
-            if icon and icon.GetTexture then okI, texture = pcall(icon.GetTexture, icon) end
-            local okC, text = true, nil
-            if count and count.GetText then okC, text = pcall(count.GetText, count) end
-            parts[#parts + 1] = (okI and Plain(texture) or "error") .. ":" .. (okC and Plain(text) or "error")
+    local ok = pcall(function()
+        for _, id in ipairs(list) do
+            local n = ns.SafeNumber(id)
+            if n then into[n] = now end
+            parts[#parts + 1] = Plain(id)
         end
-    end
-    return #parts > 0 and table.concat(parts, " ") or "(none shown)"
+    end)
+    if not ok then parts[#parts + 1] = "error" end
+    return "{" .. table.concat(parts, ",") .. "}"
 end
 
--- Out of combat: the icon to look for on the bar, and whether the buff
--- stacks -- the bar's blank count means one for a buff that does, none else.
-LearnBarIcon = function(ts, data)
-    local icon = ns.AuraField(data, "icon")
-    if icon ~= nil then ts.barIcon = icon end
-    local count = ns.StackCount(data)
-    if count and count > 0 then ts.stacks = true end
-    BarLog(ts, "calm: " .. Plain(ns.AuraField(data, "name")) .. " icon " .. Plain(icon)
-        .. " stacks " .. Plain(count))
+local function Field(info, key)
+    local ok, value = pcall(function() return info[key] end)
+    if ok then return value end
+    return nil
 end
 
--- In combat, with the read refused: what the buff bar says about this one.
-local function ReadBuffBarInner(trigger, ts, buttons)
-    local icon = ns.SafeNumber(ts.barIcon) or ns.SafeText(ts.barIcon)
-    -- Why it worked or did not, for /chair auras debug: this is the one part
-    -- of the engine the harness cannot speak for.
-    if icon == nil then ts.barNote = "no icon learned out of combat" return end
-
-    local shown, readable = 0, 0
-    local sawIcons = false
-    for _, button in ipairs(buttons) do
-        if ReadPlain(button, "IsShown") then
-            shown = shown + 1
-            local texture = Engine.BuffButtonIcon(button)
-            if texture ~= nil then
-                sawIcons = true
-                readable = readable + 1
-                if texture == icon or tostring(texture) == tostring(icon) then
-                    local count = Engine.BuffButtonCount(button, ts.stacks)
-                    if count == nil then ts.barNote = "found icon " .. tostring(icon) .. ", count unreadable" return end
-                    ts.barNote = "found icon " .. tostring(icon) .. ", count " .. count
-                    ts.unknown, ts.assumed, ts.fromBuffBar = false, false, true
-                    ts.count, ts.countKnown = count, true
-                    ts.met = StacksSatisfied(trigger, count)
-                    -- Still up past the expiry it had: the timer is no longer known.
-                    if ts.start and ts.duration and GetTime() >= ts.start + ts.duration then
-                        ts.start, ts.duration = nil, nil
-                    end
-                    return
-                end
+do
+    local frame = CreateFrame("Frame")
+    pcall(frame.RegisterUnitEvent or frame.RegisterEvent, frame, "UNIT_AURA", "player")
+    frame:SetScript("OnEvent", function(_, _, unit, info)
+        if unit ~= "player" then return end
+        local now = GetTime()
+        local line
+        if info == nil then
+            line = "no payload"
+        elseif ns.IsSecret(info) then
+            line = "payload SECRET"
+        elseif type(info) == "table" then
+            local added = Field(info, "addedAuras")
+            local addedText = "-"
+            if added ~= nil then
+                addedAt = now
+                local okN, n = pcall(function() return #added end)
+                addedText = ns.IsSecret(added) and "SECRET"
+                    or ("table of " .. (okN and Plain(n) or "?"))
             end
+            line = "full=" .. Plain(Field(info, "isFullUpdate"))
+                .. " added=" .. addedText
+                .. " updated=" .. TakeIDs(Field(info, "updatedAuraInstanceIDs"), updatedAt, now)
+                .. " removed=" .. TakeIDs(Field(info, "removedAuraInstanceIDs"), removedAt, now)
+        else
+            line = "payload " .. Plain(info)
         end
-    end
-    ts.barNote = string.format("icon %s not found: %d button(s), %d shown, %d icon(s) readable",
-        tostring(icon), #buttons, shown, readable)
-    -- Every shown button could be read and none wears it: it is gone.
-    if sawIcons then
-        ts.unknown, ts.assumed, ts.fromBuffBar = false, false, true
-        ClearState(ts)
-    end
+        local okC, combat = pcall(InCombatLockdown)
+        if okC and combat == true then Log("combat: " .. line) end
+    end)
 end
 
-local function ReadBuffBar(trigger, ts)
-    if ns.TriggerFieldValue(trigger, "unit") ~= "player" then return end
-    if ns.TriggerFieldValue(trigger, "harmful") then return end
-    local buttons = BuffButtons()
-    ReadBuffBarInner(trigger, ts, buttons)
-    BarLog(ts, "combat: " .. tostring(ts.barNote) .. " -> shows " .. Plain(ts.count)
-        .. (ts.met and "" or " (hidden)") .. " | bar " .. BarSnapshot(buttons))
+-- In combat, with the read refused: what the events said about this buff.
+local function ReadAuraEvents(ts)
+    local id = ns.SafeNumber(ts.instance)
+    if not id then return end
+    local seen = ts.instanceSeen or 0
+    local gone = removedAt[id]
+    if gone and gone >= seen then
+        ts.fromEvents = true
+        if addedAt == gone then
+            -- Taken off and something put on in the same event: likely the
+            -- buff renewing as a new instance. Still up, count unknown.
+            ts.count, ts.countKnown = nil, false
+        else
+            ts.unknown, ts.assumed = false, false
+            ClearState(ts)
+        end
+        return
+    end
+    local changed = updatedAt[id]
+    if changed and changed >= seen then
+        ts.fromEvents = true
+        ts.count, ts.countKnown = nil, false
+    end
 end
 
 local FillFromAura
@@ -603,20 +574,22 @@ local function EvaluateAura(trigger, ts, now)
         -- forward by what is known (see AssumeAura), never guessed at.
         ts.unknown = true
         AssumeAura(trigger, ts, now)
-        ReadBuffBar(trigger, ts)
+        ReadAuraEvents(ts)
         return
     end
 
-    ts.unknown, ts.assumed, ts.fromBuffBar = false, false, false
+    ts.unknown, ts.assumed, ts.fromEvents = false, false, false
     ts.castSeen = now
 
     if not data then
         ClearState(ts)
         ts.icon, ts.name = nil, nil
         if near then
-            LearnBarIcon(ts, near)
-        elseif ts.barIcon ~= nil then
-            BarLog(ts, "calm: not on you")
+            LearnInstance(ts, near, now)
+        elseif ts.instance ~= nil then
+            ts.instance = nil
+            ts.logLast = "calm: not on you"
+            Log(ts.logLast)
         end
         return
     end
@@ -631,7 +604,7 @@ FillFromAura = function(ts, data, now)
     -- fill in others. nil means the count could not be read, never zero.
     ts.count = ns.StackCount(data)
     ts.countKnown = ts.count ~= nil
-    LearnBarIcon(ts, data)
+    LearnInstance(ts, data, now)
 
     -- A duration of zero is a permanent aura, not a zero-second one.
     local duration = ns.AuraField(data, "duration")

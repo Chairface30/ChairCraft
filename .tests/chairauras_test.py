@@ -93,7 +93,7 @@ local function Method(k)
                 local s = rawget(self, "_scripts") or {}
                 s[name] = fn
                 rawset(self, "_scripts", s)
-            elseif k == "RegisterEvent" then
+            elseif k == "RegisterEvent" or k == "RegisterUnitEvent" then
                 local e = rawget(self, "_events")
                 if not e then
                     e = {}
@@ -130,10 +130,10 @@ function DRIVER_TICK(elapsed)
     end
 end
 
-function FireEvent(ev, arg1)
+function FireEvent(ev, ...)
     for _, f in ipairs(EVENT_FRAMES) do
         if f._events[ev] and f._scripts and f._scripts.OnEvent then
-            f._scripts.OnEvent(f, ev, arg1)
+            f._scripts.OnEvent(f, ev, ...)
         end
     end
 end
@@ -3154,48 +3154,57 @@ check("casting it puts it on its learned cooldown",
 L.execute("NOW = NOW + 61 ns.Engine:UpdateAll()")
 check("and it is ready again once that has run out", ev("ns.Engine.states.cd.met") is True)
 
-print("-- in combat, stacks read off the game's buff bar")
+print("-- in combat, what UNIT_AURA says about a buff")
 L = boot("""
 ChairAurasDB = { version = 3, profiles = { account = { auras = {
-    { id = "plains", triggers = { { trigger = { spellID = 1299038, stacks = 3 } } } },
+    { id = "plains", triggers = { { trigger = { spellID = 1299038, stacks = 1 } } } },
 } } } }
 """)
 ev = L.eval
 L.execute("""
-local function Part(get, value) local p = { v = value } p[get] = function(self) return self.v end return p end
-function BUFF_BUTTON(icon, count)
-    return { shown = true, IsShown = function(self) return self.shown end,
-             Icon = Part("GetTexture", icon), Count = Part("GetText", count) }
-end
-BUFF_A = BUFF_BUTTON(135000, nil)
-BUFF_P = BUFF_BUTTON(136000, "2")
-BuffFrame = { auraFrames = { BUFF_A, BUFF_P } }
-AURAS.player = { { name = 'Plainsrunning', spellId = 1299038, icon = 136000, applications = 2,
-                   duration = 0, expirationTime = 0 } }
+IN_COMBAT = false
+function InCombatLockdown() return IN_COMBAT end
+AURAS.player = { { name = 'Plainsrunning', spellId = 1299038, icon = 236717, applications = 6,
+                   auraInstanceID = 47, duration = 0, expirationTime = 0 } }
 ns.Engine:UpdateAll()""")
-check("out of combat, two stacks do not meet three", ev("ns.Engine.states.plains.shown") is False)
-L.execute("AURAS_REFUSED = true BUFF_P.Count.v = '4' ns.Engine:UpdateAll()")
-check("in combat the count on its buff button is read, by its icon",
-      ev("ns.Engine.states.plains.shown") is True and ev("ns.Engine.states.plains.count") == 4)
-check("and that is a reading, not an assumption", ev("ns.Engine.states.plains.assumed") is False)
-L.execute("BUFF_P.Count.v = nil ns.Engine:UpdateAll()")
-check("a blank count on a stacking buff is one stack",
-      ev("ns.Engine.states.plains.count") == 1 and ev("ns.Engine.states.plains.shown") is False)
-L.execute("BUFF_P.shown = false ns.Engine:UpdateAll()")
-check("gone from the bar is gone", ev("ns.Engine.states.plains.count") == 0)
-L.execute("BUFF_P.shown = true BUFF_P.Count.v = '5' BUFF_A.Icon.v = SECRET_VALUE() BUFF_P.Icon.v = SECRET_VALUE() ns.Engine:UpdateAll()")
-check("icons it cannot read leave it to what was known",
-      ev("ns.Engine.states.plains.count") == 0 and ev("ns.Engine.states.plains.assumed") is True)
-L.execute("""
-BAR_LOG_TEXT = table.concat(ChairAurasDB.probe.buffBar, "\\n")
-""")
-log = ev("BAR_LOG_TEXT") or ""
-check("each change is logged to the saved file for the next fight to answer",
-      "calm: Plainsrunning icon 136000 stacks 2" in log
-      and "combat: found icon 136000, count 4 -> shows 4" in log
-      and "0 icon(s) readable" in log and "SECRET:5" in log)
-check("and a read that did not change is not logged again",
-      ev("#ChairAurasDB.probe.buffBar") <= 8)
+check("out of combat six stacks show", ev("ns.Engine.states.plains.count") == 6)
+L.execute("""AURAS_REFUSED = true IN_COMBAT = true NOW = NOW + 1
+FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, updatedAuraInstanceIDs = { 12 } })
+ns.Engine:UpdateAll()""")
+check("another buff changing leaves it alone",
+      ev("ns.Engine.states.plains.count") == 6 and ev("ns.Engine.states.plains.shown") is True)
+L.execute("""NOW = NOW + 1
+FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, updatedAuraInstanceIDs = { 47 } })
+ns.Engine:UpdateAll()""")
+check("its stacks changing in combat makes the count unknown, not stale",
+      ev("ns.Engine.states.plains.count") is None and ev("ns.Engine.states.plains.shown") is True)
+L.execute("""NOW = NOW + 1
+FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, removedAuraInstanceIDs = { 47 } })
+ns.Engine:UpdateAll()""")
+check("and it dropping off in combat hides it", ev("ns.Engine.states.plains.shown") is False)
+
+L.execute("""AURAS_REFUSED = false IN_COMBAT = false NOW = NOW + 1
+AURAS.player[1].auraInstanceID = 48 ns.Engine:UpdateAll()
+AURAS_REFUSED = true IN_COMBAT = true NOW = NOW + 1
+FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, addedAuras = SECRET_VALUE(),
+                                   removedAuraInstanceIDs = { 48 } })
+ns.Engine:UpdateAll()""")
+check("taken off and something added in the same event: kept, count unknown",
+      ev("ns.Engine.states.plains.shown") is True and ev("ns.Engine.states.plains.count") is None)
+
+L.execute("""AURAS_REFUSED = false IN_COMBAT = false NOW = NOW + 1
+AURAS.player[1].auraInstanceID = 49 ns.Engine:UpdateAll()
+AURAS_REFUSED = true IN_COMBAT = true NOW = NOW + 1
+FireEvent('UNIT_AURA', 'player', { isFullUpdate = false, removedAuraInstanceIDs = SECRET_VALUE() })
+ns.Engine:UpdateAll()""")
+check("secret IDs leave it to what was known",
+      ev("ns.Engine.states.plains.shown") is True and ev("ns.Engine.states.plains.count") == 6)
+L.execute('LOG_TEXT = table.concat(ChairAurasDB.probe.auraEvents, " | ")')
+log = ev("LOG_TEXT") or ""
+check("each combat event and each learned buff is logged for the next fight to answer",
+      "calm: Plainsrunning instance 47 stacks 6" in log
+      and "combat: full=false added=- updated={47} removed=-" in log
+      and "removed=SECRET" in log and "added=SECRET" in log)
 
 
 # --- the trigger strip in the window -----------------------------------------
