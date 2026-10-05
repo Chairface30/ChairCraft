@@ -525,6 +525,7 @@ local function CmdWhy()
                     ts.unknown and " |cffffd100(unreadable now)|r" or "",
                     ts.assumed and " |cffffd100assumed from what was known|r" or "",
                     ts.fromBuffBar and " |cff55ff55read off the game's buff bar|r" or ""))
+                if ts.barNote then ns.Print("     buff bar, last read in combat: " .. ts.barNote) end
             end
 
             local wanted = ns.DisplayField(aura, "stacks")

@@ -428,17 +428,24 @@ local function ReadBuffBar(trigger, ts)
     if ns.TriggerFieldValue(trigger, "unit") ~= "player" then return end
     if ns.TriggerFieldValue(trigger, "harmful") then return end
     local icon = ns.SafeNumber(ts.barIcon) or ns.SafeText(ts.barIcon)
-    if icon == nil then return end
+    -- Why it worked or did not, for /chair auras debug: this is the one part
+    -- of the engine the harness cannot speak for.
+    if icon == nil then ts.barNote = "no icon learned out of combat" return end
 
+    local buttons = BuffButtons()
+    local shown, readable = 0, 0
     local sawIcons = false
-    for _, button in ipairs(BuffButtons()) do
+    for _, button in ipairs(buttons) do
         if ReadPlain(button, "IsShown") then
+            shown = shown + 1
             local texture = Engine.BuffButtonIcon(button)
             if texture ~= nil then
                 sawIcons = true
+                readable = readable + 1
                 if texture == icon or tostring(texture) == tostring(icon) then
                     local count = Engine.BuffButtonCount(button, ts.stacks)
-                    if count == nil then return end
+                    if count == nil then ts.barNote = "found icon " .. tostring(icon) .. ", count unreadable" return end
+                    ts.barNote = "found icon " .. tostring(icon) .. ", count " .. count
                     ts.unknown, ts.assumed, ts.fromBuffBar = false, false, true
                     ts.count, ts.countKnown = count, true
                     ts.met = StacksSatisfied(trigger, count)
@@ -451,6 +458,8 @@ local function ReadBuffBar(trigger, ts)
             end
         end
     end
+    ts.barNote = string.format("icon %s not found: %d button(s), %d shown, %d icon(s) readable",
+        tostring(icon), #buttons, shown, readable)
     -- Every shown button could be read and none wears it: it is gone.
     if sawIcons then
         ts.unknown, ts.assumed, ts.fromBuffBar = false, false, true
