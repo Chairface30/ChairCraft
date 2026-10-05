@@ -3382,6 +3382,7 @@ ChairAurasDB = { version = 3, profiles = { account = { auras = {
     { id = "ur", triggers = { { trigger = { type = "usable", spellID = 1, inRange = true } } } },
     { id = "tgt", triggers = { { trigger = { type = "target", attackable = true, alive = true, spellID = 1 } } } },
     { id = "dst", triggers = { { trigger = { type = "target", minYards = 8, maxYards = 25 } } } },
+    { id = "ovp", triggers = { { trigger = { type = "avoided", avoid = "DODGE", duration = 5, spellID = 7384 } } } },
     { id = "chg", triggers = { { trigger = { type = "charges", spellID = 1, charges = 2 } } } },
     { id = "cst", triggers = { { trigger = { type = "cast", spellID = 5, duration = 4 } } } },
     { id = "icd", triggers = { { trigger = { type = "itemcooldown", itemID = 6948 } } } },
@@ -3409,6 +3410,8 @@ RANGES = { [100] = { 8, 25 }, [101] = { 8, 30 }, [102] = { 0, 5 } }
 SPELLS[100] = { name = "Charge", icon = 200 }
 SPELLS[101] = { name = "Shoot", icon = 201 }
 SPELLS[102] = { name = "Heroic Strike", icon = 202 }
+SPELLS[7384] = { name = "Overpower", icon = 203 }
+SPELLS[7887] = { name = "Overpower", icon = 203 }   -- rank 2
 function GetNumSpellTabs() return 1 end
 function GetSpellTabInfo() return "General", nil, 0, 3 end
 function GetSpellBookItemInfo(i) return "SPELL", 99 + i end
@@ -3482,6 +3485,32 @@ L.execute("DIST = 15 COMBAT = true NOW = NOW + 1 ns.Engine:UpdateAll()")
 check("in combat it goes by the spells alone, without the interact distances",
       shown("dst") is True)
 L.execute("COMBAT = false NOW = NOW + 1 ns.Engine:UpdateAll()")
+
+check("overpower: nothing dodged yet", shown("ovp") is False)
+L.execute("FireEvent('UNIT_COMBAT', 'target', 'WOUND', '', 50, 1) ns.Engine:UpdateAll()")
+check("a hit is not a dodge", shown("ovp") is False)
+L.execute("FireEvent('UNIT_COMBAT', 'target', 'DODGE', '', 0, 1) ns.Engine:UpdateAll()")
+check("the target dodging you brings it up, wearing Overpower, on a 5 second timer",
+      shown("ovp") is True and ev("ns.Engine.states.ovp.duration") == 5
+      and ev("ns.Engine.states.ovp.name") == "Overpower")
+L.execute("NOW = NOW + 6 ns.Engine:UpdateAll()")
+check("and it goes when the window runs out", shown("ovp") is False)
+L.execute("FireEvent('CHAT_MSG_COMBAT_SELF_MISSES', 'You attack. Kobold Miner dodges.') ns.Engine:UpdateAll()")
+check("the old chat line for a dodge brings it up too", shown("ovp") is True)
+L.execute("NOW = NOW + 1 ns.Engine.lastCast[7887] = NOW ns.Engine:UpdateAll()")
+check("casting Overpower, any rank, drops it", shown("ovp") is False)
+L.execute("NOW = NOW + 1 FireEvent('CHAT_MSG_SPELL_SELF_DAMAGE', 'Your Heroic Strike was dodged by Kobold Miner.')"
+          " ns.Engine:UpdateAll()")
+check("a dodged special counts, and an older cast does not end the new window",
+      shown("ovp") is True)
+check("a partly blocked hit is not a block",
+      ev("ns.AvoidFromChat('you hit kobold for 30. (12 blocked)')") is None
+      and ev("ns.AvoidFromChat('kobold blocks your attack.')") == "BLOCK")
+L.execute("FireEvent('UNIT_COMBAT', 'target', SECRET_VALUE(), '', 0, 1)")
+log = " | ".join(str(v) for v in ev("ChairAurasDB.probe.avoided").values())
+check("each one heard is logged, a secret one as secret",
+      "DODGE heard from UNIT_COMBAT" in log and "DODGE heard from CHAT_MSG_COMBAT_SELF_MISSES" in log
+      and "action SECRET" in log, log)
 L.execute("USABLE = false ns.Engine:UpdateAll()")
 check("and not when it is not", shown("use") is False)
 check("spell known: not known", shown("kno") is False)

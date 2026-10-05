@@ -434,6 +434,121 @@ Register("cast", {
 })
 
 -------------------------------------------------------------------------------
+-- Your attack avoided
+-------------------------------------------------------------------------------
+-- Overpower and the like: a window that opens when the target dodges you. The
+-- auras cannot be read in combat and this client has no combat log, so the
+-- dodge is heard from what is left, both listened to:
+--   UNIT_COMBAT on the target   the feedback the target frame shows ("Dodge")
+--   CHAT_MSG_COMBAT_SELF_MISSES and CHAT_MSG_SPELL_SELF_DAMAGE, where the
+--                               client still sends them: "You attack. Kobold
+--                               dodges." / "Your Heroic Strike was dodged ..."
+-- Which of them this client sends, and whether readably, is not known yet, so
+-- each one heard is logged to ChairAurasDB.probe.avoided (/chair auras dodges).
+
+local AVOIDS = {
+    { text = "Dodged", value = "DODGE" }, { text = "Parried", value = "PARRY" },
+    { text = "Blocked", value = "BLOCK" }, { text = "Missed", value = "MISS" },
+}
+local avoidedAt = {}          -- "DODGE" -> GetTime() it last happened
+ns.avoidedAt = avoidedAt
+local AVOID_LOG_MAX = 40
+
+local function AvoidLog(line)
+    if type(ChairAurasDB) ~= "table" then return end
+    if type(ChairAurasDB.probe) ~= "table" then ChairAurasDB.probe = { runs = {} } end
+    local log = ChairAurasDB.probe.avoided
+    if type(log) ~= "table" then
+        log = {}
+        ChairAurasDB.probe.avoided = log
+    end
+    local okD, stamp = pcall(date, "%H:%M:%S")
+    log[#log + 1] = (okD and stamp or "?") .. " " .. line
+    while #log > AVOID_LOG_MAX do table.remove(log, 1) end
+end
+ns.AvoidLog = AvoidLog
+
+local function Avoided(kind, from)
+    avoidedAt[kind] = GetTime()
+    AvoidLog(kind .. " heard from " .. from)
+    ns.RequestUpdate()
+end
+
+-- Words in the chat line, lower case. "blocked" alone is not a block: a hit
+-- that lands with some of it blocked says "(12 blocked)".
+local function FromChat(text)
+    if text:find("dodge") then return "DODGE" end
+    if text:find("parr") then return "PARRY" end
+    if text:find("block") and not text:find("%(%d+ blocked%)") then return "BLOCK" end
+    if text:find("miss") then return "MISS" end
+    return nil
+end
+ns.AvoidFromChat = FromChat
+
+do
+    local frame = CreateFrame("Frame")
+    pcall(frame.RegisterUnitEvent or frame.RegisterEvent, frame, "UNIT_COMBAT", "target")
+    pcall(frame.RegisterEvent, frame, "CHAT_MSG_COMBAT_SELF_MISSES")
+    pcall(frame.RegisterEvent, frame, "CHAT_MSG_SPELL_SELF_DAMAGE")
+    frame:SetScript("OnEvent", function(_, event, a1, a2)
+        if event == "UNIT_COMBAT" then
+            if a1 ~= "target" then return end
+            if ns.IsSecret(a2) then
+                AvoidLog("UNIT_COMBAT target: action SECRET")
+                return
+            end
+            local action = ns.SafeText(a2)
+            for _, kind in ipairs(AVOIDS) do
+                if action == kind.value then return Avoided(action, "UNIT_COMBAT") end
+            end
+            return
+        end
+        if ns.IsSecret(a1) then
+            AvoidLog(event .. ": text SECRET")
+            return
+        end
+        local text = ns.SafeText(a1)
+        local kind = text and FromChat(text:lower())
+        if kind then Avoided(kind, event) end
+    end)
+end
+
+-- Whether `spellID`, or another rank of it, was cast at or after `since`.
+local function CastSince(spellID, since)
+    local at = ns.Engine.lastCast[spellID]
+    if at and at >= since then return true end
+    local name = ns.Engine:SpellName(spellID)
+    if not name then return false end
+    for id, when in pairs(ns.Engine.lastCast) do
+        if when >= since and ns.Engine:SpellName(id) == name then return true end
+    end
+    return false
+end
+
+Register("avoided", {
+    text = "Target avoided your attack",
+    tip = "Your target dodged, parried, blocked or was missed by you. Shows for"
+       .. " as long as you set, or until you cast the spell given: Overpower,"
+       .. " 5 seconds, dodged.",
+    fields = {
+        { kind = "choice", key = "avoid", label = "When it", values = AVOIDS, default = "DODGE" },
+        { kind = "slider", key = "duration", label = "Show for (seconds)", min = 1, max = 30, default = 5 },
+        { kind = "spell", key = "spellID", label = "Until I cast",
+          tip = "Optional: casting it ends the window early. Any rank counts." },
+    },
+    Evaluate = function(trigger, ts, now)
+        local at = avoidedAt[Field(trigger, "avoid", "DODGE")]
+        local lasts = Num(Field(trigger, "duration", 5)) or 5
+        local id = trigger.spellID
+        if id then WearSpell(ts, id) end
+        local met = at ~= nil and now < at + lasts
+        if met and id and CastSince(id, at) then met = false end
+        ts.met = met
+        if met then ts.start, ts.duration = at, lasts else ts.start, ts.duration = nil, nil end
+    end,
+})
+
+-------------------------------------------------------------------------------
 -- Items
 -------------------------------------------------------------------------------
 

@@ -471,6 +471,7 @@ local function CmdHelp()
     ns.Print("      then |cffffd100/chair auras trust <n> yes|r to let it run")
     ns.Print("  |cffffd100/chair auras where|r               the map and instance IDs where you stand")
     ns.Print("  |cffffd100/chair auras range|r               how far your target is, as the Target trigger reads it")
+    ns.Print("  |cffffd100/chair auras dodges|r              the dodges, parries and misses the game has told ChairAuras of")
     ns.Print("  |cffffd100/chair auras probe|r               what this client lets auras use:")
     ns.Print("      custom Lua, health, casts, the combat log and more")
     ns.Print("  |cffffd100/chair auras lock|r / |cffffd100/chair auras status|r")
@@ -607,6 +608,16 @@ SlashCmdList["CHAIRAURAS"] = function(message)
         local mapID, instanceID = ns.Load:WhereAmI()
         local function Show(v) return (v == ns.Load.UNKNOWN or v == nil) and "unknown" or tostring(v) end
         ns.Print("map ID " .. Show(mapID) .. ", instance ID " .. Show(instanceID) .. ".")
+    elseif command == "dodges" then
+        -- What the Target avoided your attack trigger has heard, newest last.
+        local log = type(ChairAurasDB) == "table" and type(ChairAurasDB.probe) == "table"
+            and ChairAurasDB.probe.avoided
+        if type(log) ~= "table" or #log == 0 then
+            ns.Print("no dodge, parry, block or miss heard yet. Fight something, then ask again.")
+        else
+            ns.Print("heard, newest last:")
+            for i = math.max(1, #log - 14), #log do ns.Print("   " .. log[i]) end
+        end
     elseif command == "range" then
         -- What the Target trigger's distance is read from, for your target now.
         local lo, hi, notes = ns.TargetBand(GetTime())
