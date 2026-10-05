@@ -80,6 +80,8 @@ local CHECKS = {}
 -- A buff read out of combat: { spellId, instanceID, name }. The in-combat run
 -- asks for this same buff by both handles.
 local known
+-- The same, but a buff with stacks on it: { spellId, instanceID, name, stacks }.
+local knownStacked
 local function Check(group, name, run) CHECKS[#CHECKS + 1] = { group, name, run } end
 
 -- Custom Lua
@@ -532,6 +534,12 @@ Check("stacks", "per-index read (what ChairAuras uses), every buff", function()
         if not ok then return "error: " .. Describe(data) end
         if not data then break end
         lines[#lines + 1] = StackFields(data)
+        -- The first buff with stacks, for the combat run to look for again.
+        local stacks = ns.StackCount(data)
+        if not knownStacked and stacks and stacks > 0 and not ns.IsSecret(data.auraInstanceID) then
+            knownStacked = { spellId = ns.SafeNumber(data.spellId), instanceID = data.auraInstanceID,
+                             name = ns.SafeText(data.name), stacks = stacks }
+        end
     end
     if #lines == 0 then return "yes, but no buffs" end
     return "yes: " .. table.concat(lines, " | ")
@@ -539,8 +547,83 @@ end)
 Check("stacks", "C_StringUtil.TruncateWhenZero (shows a secret stack count)", function()
     return Exists("C_StringUtil.TruncateWhenZero")
 end)
-Check("stacks", "C_UnitAuras.GetAuraApplicationDisplayCount", function()
-    return Exists("C_UnitAuras.GetAuraApplicationDisplayCount")
+-- The two routes that might still show a stack count in combat. Both need a
+-- buff with stacks remembered from a probe out of combat, with no reload since:
+-- instance IDs do not survive one.
+local function StackedLabel()
+    if not knownStacked then return nil end
+    return (knownStacked.name or "?") .. " x" .. tostring(knownStacked.stacks)
+        .. " instance " .. tostring(knownStacked.instanceID)
+end
+Check("stacks", "buff with stacks remembered from out of combat", function()
+    return StackedLabel() and ("yes: " .. StackedLabel())
+        or "untested (probe out of combat first, with stacks of something up)"
+end)
+
+-- Can the result be drawn? A secret that a font string takes is enough.
+local function DrawsAsText(value)
+    local text = CreateFrame("Frame"):CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local ok, err = pcall(text.SetText, text, value)
+    return ok and "a font string took it" or ("a font string refused it: " .. Describe(err))
+end
+
+Check("stacks", "C_UnitAuras.GetAuraApplicationDisplayCount (that buff)", function()
+    local fn = Fn("C_UnitAuras.GetAuraApplicationDisplayCount")
+    if type(fn) ~= "function" then return "missing" end
+    if not knownStacked then return "untested (no buff with stacks remembered)" end
+    local ok, count = pcall(fn, "player", knownStacked.instanceID)
+    if not ok then return "error: " .. Describe(count) end
+    if count == nil then return "nil (gone, or hidden)" end
+    return Describe(count) .. "; " .. DrawsAsText(count)
+end)
+
+-- Blizzard's own buff bar keeps showing stacks in combat. Its count text is
+-- only read here, never set: driving that frame would taint it.
+local function BlizzardBuffButtons()
+    local list = {}
+    local frame = _G.BuffFrame
+    if type(frame) == "table" and type(frame.auraFrames) == "table" then
+        for _, button in ipairs(frame.auraFrames) do list[#list + 1] = button end
+    end
+    if #list == 0 then
+        for i = 1, 40 do
+            local button = _G["BuffButton" .. i]
+            if not button then break end
+            list[#list + 1] = button
+        end
+    end
+    return list
+end
+
+Check("stacks", "Blizzard buff bar's count text", function()
+    local buttons = BlizzardBuffButtons()
+    if #buttons == 0 then return "no buff buttons found (no BuffFrame.auraFrames or BuffButtonN)" end
+    local lines, sample = {}, nil
+    for _, button in ipairs(buttons) do
+        if #lines >= 8 then break end
+        local okS, shown = pcall(button.IsShown, button)
+        if okS and shown then
+            local name = button.GetName and button:GetName()
+            local count = button.Count or (name and _G[name .. "Count"])
+            -- No truth tests on anything read here: a secret may refuse them.
+            local text, readable = nil, false
+            if count and count.GetText then
+                local okT, value = pcall(count.GetText, count)
+                if okT then text, readable = value, true else text = "error " .. Describe(value) end
+            end
+            local instance = button.auraInstanceID
+            if instance == nil and type(button.buttonInfo) == "table" then
+                instance = button.buttonInfo.auraInstanceID
+            end
+            local mine = knownStacked and not ns.IsSecret(instance) and instance == knownStacked.instanceID
+            local mark = mine and (" <-- " .. (knownStacked.name or "remembered buff")) or ""
+            lines[#lines + 1] = "count=" .. Describe(text) .. " instance=" .. Describe(instance) .. mark
+            if readable and text ~= nil and (sample == nil or mine) then sample = text end
+        end
+    end
+    if #lines == 0 then return "buttons found, none shown" end
+    local drawn = sample ~= nil and ("; copy: " .. DrawsAsText(sample)) or ""
+    return #buttons .. " button(s): " .. table.concat(lines, " | ") .. drawn
 end)
 
 -------------------------------------------------------------------------------

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Changed**
+- **`/chair auras probe` checks two ways to show stacks in combat.** Run it out of combat with stacks of a buff up (Plainsrunning, say), then probe again mid-fight without reloading. It now tries the stack count API on that buff, and reads the count on the game's own buff bar, to see if either can still show the number while the game hides auras in combat.
+
 ## ChairCraft v1.9.0: Bear and Cat Form bar, Frequent Flyer
 
 **New**
