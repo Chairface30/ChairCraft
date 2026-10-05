@@ -245,6 +245,8 @@ local function FindAura(unit, trigger)
     if ns.TriggerFieldValue(trigger, "mine") then filter = filter .. "|PLAYER" end
 
     local unreadable = false
+    -- The right aura at the wrong stack count, kept for what it teaches.
+    local near
 
     for index = 1, MAX_AURAS do
         local ok, data = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
@@ -252,7 +254,7 @@ local function FindAura(unit, trigger)
         -- A refusal is not the end of the list: this client will not hand an
         -- aura to addon code in combat, and all there is to do is know that.
         if not ok then return nil, true end
-        if not data then return nil, unreadable end
+        if not data then return nil, unreadable, near end
 
         local matched, blind = Matches(data, trigger)
         if blind then unreadable = true end
@@ -263,10 +265,11 @@ local function FindAura(unit, trigger)
                 return data
             end
             -- Same aura, wrong size: keep walking.
+            near = near or data
         end
     end
 
-    return nil, unreadable
+    return nil, unreadable, near
 end
 
 -- Every match on one unit, into `out`. Answers whether anything was refused.
@@ -352,6 +355,109 @@ local function AssumeAura(trigger, ts, now)
     end
 end
 
+-------------------------------------------------------------------------------
+-- The game's own buff bar, read in combat
+-------------------------------------------------------------------------------
+-- The probe (2026-10-04) found one thing combat leaves readable: the stack
+-- count on Blizzard's buff buttons. The aura behind a button is refused and
+-- its auraInstanceID turns secret, but the count text reads as a plain number
+-- (Plainsrunning went 2 -> 4 mid-fight). So a buff of yours is found there by
+-- the icon it wore while it could still be read, and its stacks taken off the
+-- button. Read only: nothing here sets, shows or updates that frame.
+
+local LearnBarIcon
+
+local function BuffButtons()
+    local list = {}
+    local frame = _G.BuffFrame
+    if type(frame) == "table" and type(frame.auraFrames) == "table" then
+        for _, button in ipairs(frame.auraFrames) do list[#list + 1] = button end
+    end
+    if #list == 0 then
+        for i = 1, 40 do
+            local button = _G["BuffButton" .. i]
+            if not button then break end
+            list[#list + 1] = button
+        end
+    end
+    return list
+end
+Engine.BlizzardBuffButtons = BuffButtons
+
+-- A method's answer, or nil when it errored or came back secret.
+local function ReadPlain(object, method)
+    if not object or type(object[method]) ~= "function" then return nil end
+    local ok, value = pcall(object[method], object)
+    if not ok or ns.IsSecret(value) then return nil end
+    return value
+end
+
+local function ButtonPart(button, key, suffix)
+    if button[key] then return button[key] end
+    local okN, name = pcall(button.GetName, button)
+    return okN and type(name) == "string" and _G[name .. suffix] or nil
+end
+
+function Engine.BuffButtonIcon(button)
+    return ReadPlain(ButtonPart(button, "Icon", "Icon"), "GetTexture")
+end
+
+-- The count as drawn. Blizzard leaves it blank below two, so blank is one for
+-- a buff known to stack and none for one that does not.
+function Engine.BuffButtonCount(button, stacks)
+    local part = ButtonPart(button, "Count", "Count")
+    if not part then return nil end
+    local okT, text = pcall(part.GetText, part)
+    if not okT or ns.IsSecret(text) then return nil end
+    local n = tonumber(text)
+    if n then return n end
+    return stacks and 1 or 0
+end
+
+-- Out of combat: the icon to look for on the bar, and whether the buff
+-- stacks -- the bar's blank count means one for a buff that does, none else.
+LearnBarIcon = function(ts, data)
+    local icon = ns.AuraField(data, "icon")
+    if icon ~= nil then ts.barIcon = icon end
+    local count = ns.StackCount(data)
+    if count and count > 0 then ts.stacks = true end
+end
+
+-- In combat, with the read refused: what the buff bar says about this one.
+local function ReadBuffBar(trigger, ts)
+    if ns.TriggerFieldValue(trigger, "unit") ~= "player" then return end
+    if ns.TriggerFieldValue(trigger, "harmful") then return end
+    local icon = ns.SafeNumber(ts.barIcon) or ns.SafeText(ts.barIcon)
+    if icon == nil then return end
+
+    local sawIcons = false
+    for _, button in ipairs(BuffButtons()) do
+        if ReadPlain(button, "IsShown") then
+            local texture = Engine.BuffButtonIcon(button)
+            if texture ~= nil then
+                sawIcons = true
+                if texture == icon or tostring(texture) == tostring(icon) then
+                    local count = Engine.BuffButtonCount(button, ts.stacks)
+                    if count == nil then return end
+                    ts.unknown, ts.assumed, ts.fromBuffBar = false, false, true
+                    ts.count, ts.countKnown = count, true
+                    ts.met = StacksSatisfied(trigger, count)
+                    -- Still up past the expiry it had: the timer is no longer known.
+                    if ts.start and ts.duration and GetTime() >= ts.start + ts.duration then
+                        ts.start, ts.duration = nil, nil
+                    end
+                    return
+                end
+            end
+        end
+    end
+    -- Every shown button could be read and none wears it: it is gone.
+    if sawIcons then
+        ts.unknown, ts.assumed, ts.fromBuffBar = false, false, true
+        ClearState(ts)
+    end
+end
+
 local FillFromAura
 
 -- How many matches, against the trigger's count setting. Zero wanted means
@@ -422,7 +528,7 @@ local function EvaluateAura(trigger, ts, now)
         return EvaluateMatches(trigger, ts, now, unit)
     end
     ts.matchCount, ts.cloneStates = nil, nil
-    local data, unknown = FindAura(unit, trigger)
+    local data, unknown, near = FindAura(unit, trigger)
 
     if not data and unknown then
         -- "I could not look" is not "it is not there". An aura set to show when
@@ -431,15 +537,17 @@ local function EvaluateAura(trigger, ts, now)
         -- forward by what is known (see AssumeAura), never guessed at.
         ts.unknown = true
         AssumeAura(trigger, ts, now)
+        ReadBuffBar(trigger, ts)
         return
     end
 
-    ts.unknown, ts.assumed = false, false
+    ts.unknown, ts.assumed, ts.fromBuffBar = false, false, false
     ts.castSeen = now
 
     if not data then
         ClearState(ts)
         ts.icon, ts.name = nil, nil
+        if near then LearnBarIcon(ts, near) end
         return
     end
 
@@ -453,6 +561,7 @@ FillFromAura = function(ts, data, now)
     -- fill in others. nil means the count could not be read, never zero.
     ts.count = ns.StackCount(data)
     ts.countKnown = ts.count ~= nil
+    LearnBarIcon(ts, data)
 
     -- A duration of zero is a permanent aura, not a zero-second one.
     local duration = ns.AuraField(data, "duration")

@@ -579,6 +579,12 @@ end)
 
 -- Blizzard's own buff bar keeps showing stacks in combat. Its count text is
 -- only read here, never set: driving that frame would taint it.
+local function ButtonPart(button, key, suffix)
+    if button[key] then return button[key] end
+    local okN, name = pcall(button.GetName, button)
+    return okN and type(name) == "string" and _G[name .. suffix] or nil
+end
+
 local function BlizzardBuffButtons()
     local list = {}
     local frame = _G.BuffFrame
@@ -603,8 +609,7 @@ Check("stacks", "Blizzard buff bar's count text", function()
         if #lines >= 8 then break end
         local okS, shown = pcall(button.IsShown, button)
         if okS and shown then
-            local name = button.GetName and button:GetName()
-            local count = button.Count or (name and _G[name .. "Count"])
+            local count = ButtonPart(button, "Count", "Count")
             -- No truth tests on anything read here: a secret may refuse them.
             local text, readable = nil, false
             if count and count.GetText then
@@ -617,7 +622,11 @@ Check("stacks", "Blizzard buff bar's count text", function()
             end
             local mine = knownStacked and not ns.IsSecret(instance) and instance == knownStacked.instanceID
             local mark = mine and (" <-- " .. (knownStacked.name or "remembered buff")) or ""
-            lines[#lines + 1] = "count=" .. Describe(text) .. " instance=" .. Describe(instance) .. mark
+            local iconPart = ButtonPart(button, "Icon", "Icon")
+            local okI, texture = true, nil
+            if iconPart and iconPart.GetTexture then okI, texture = pcall(iconPart.GetTexture, iconPart) end
+            lines[#lines + 1] = "count=" .. Describe(text) .. " icon=" .. (okI and Describe(texture) or "error")
+                .. " instance=" .. Describe(instance) .. mark
             if readable and text ~= nil and (sample == nil or mine) then sample = text end
         end
     end

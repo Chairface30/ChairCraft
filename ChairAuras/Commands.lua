@@ -521,9 +521,10 @@ local function CmdWhy()
                     .. (state.error and (" |cffff5555error: " .. tostring(state.error) .. "|r") or ""))
             end
             for i, ts in ipairs(triggerStates) do
-                ns.Print(string.format("   trigger %d: met=%s%s%s", i, tostring(ts.met),
+                ns.Print(string.format("   trigger %d: met=%s%s%s%s", i, tostring(ts.met),
                     ts.unknown and " |cffffd100(unreadable now)|r" or "",
-                    ts.assumed and " |cffffd100assumed from what was known|r" or ""))
+                    ts.assumed and " |cffffd100assumed from what was known|r" or "",
+                    ts.fromBuffBar and " |cff55ff55read off the game's buff bar|r" or ""))
             end
 
             local wanted = ns.DisplayField(aura, "stacks")

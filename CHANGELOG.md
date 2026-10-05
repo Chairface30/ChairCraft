@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+**Fixed**
+- **Buff stacks froze in combat (Plainsrunning and the like).** The game hides your auras from addons in combat, so a stack count stayed at whatever it was when the fight started. ChairAuras now reads the stacks off the game's own buff bar, which still shows them, so an icon keyed to stacks keeps up mid-fight. It also notices the buff dropping off. It works for buffs on you that ChairAuras has seen once out of combat, and needs the game's buff bar to be on. `/chair auras debug` says "read off the game's buff bar" when it is doing this.
+
 **Changed**
 - **`/chair auras probe` checks two ways to show stacks in combat.** Run it out of combat with stacks of a buff up (Plainsrunning, say), then probe again mid-fight without reloading. It now tries the stack count API on that buff, and reads the count on the game's own buff bar, to see if either can still show the number while the game hides auras in combat.
 

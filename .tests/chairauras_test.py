@@ -3154,6 +3154,39 @@ check("casting it puts it on its learned cooldown",
 L.execute("NOW = NOW + 61 ns.Engine:UpdateAll()")
 check("and it is ready again once that has run out", ev("ns.Engine.states.cd.met") is True)
 
+print("-- in combat, stacks read off the game's buff bar")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "plains", triggers = { { trigger = { spellID = 1299038, stacks = 3 } } } },
+} } } }
+""")
+ev = L.eval
+L.execute("""
+local function Part(get, value) local p = { v = value } p[get] = function(self) return self.v end return p end
+function BUFF_BUTTON(icon, count)
+    return { shown = true, IsShown = function(self) return self.shown end,
+             Icon = Part("GetTexture", icon), Count = Part("GetText", count) }
+end
+BUFF_A = BUFF_BUTTON(135000, nil)
+BUFF_P = BUFF_BUTTON(136000, "2")
+BuffFrame = { auraFrames = { BUFF_A, BUFF_P } }
+AURAS.player = { { name = 'Plainsrunning', spellId = 1299038, icon = 136000, applications = 2,
+                   duration = 0, expirationTime = 0 } }
+ns.Engine:UpdateAll()""")
+check("out of combat, two stacks do not meet three", ev("ns.Engine.states.plains.shown") is False)
+L.execute("AURAS_REFUSED = true BUFF_P.Count.v = '4' ns.Engine:UpdateAll()")
+check("in combat the count on its buff button is read, by its icon",
+      ev("ns.Engine.states.plains.shown") is True and ev("ns.Engine.states.plains.count") == 4)
+check("and that is a reading, not an assumption", ev("ns.Engine.states.plains.assumed") is False)
+L.execute("BUFF_P.Count.v = nil ns.Engine:UpdateAll()")
+check("a blank count on a stacking buff is one stack",
+      ev("ns.Engine.states.plains.count") == 1 and ev("ns.Engine.states.plains.shown") is False)
+L.execute("BUFF_P.shown = false ns.Engine:UpdateAll()")
+check("gone from the bar is gone", ev("ns.Engine.states.plains.count") == 0)
+L.execute("BUFF_P.shown = true BUFF_P.Count.v = '5' BUFF_A.Icon.v = SECRET_VALUE() BUFF_P.Icon.v = SECRET_VALUE() ns.Engine:UpdateAll()")
+check("icons it cannot read leave it to what was known",
+      ev("ns.Engine.states.plains.count") == 0 and ev("ns.Engine.states.plains.assumed") is True)
+
 
 # --- the trigger strip in the window -----------------------------------------
 print("-- the trigger strip")
