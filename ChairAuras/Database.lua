@@ -361,7 +361,10 @@ local function InitDatabase()
     if not ChairAurasDB then ChairAurasDB = {} end
     local db = ChairAurasDB
     -- The logs of two in-combat stack experiments (October 2026), both done.
-    if type(db.probe) == "table" then db.probe.auraEvents, db.probe.buffBar = nil, nil end
+    if type(db.probe) == "table" then
+        db.probe.auraEvents, db.probe.buffBar = nil, nil
+        db.probe.avoided = nil   -- the dodge log's first name, now probe.procs
+    end
 
     db.profiles = db.profiles or {}
     load.adoptedFrom = AdoptAccountProfile(db)

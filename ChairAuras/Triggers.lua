@@ -434,40 +434,50 @@ Register("cast", {
 })
 
 -------------------------------------------------------------------------------
--- Your target dodged, parried or blocked
+-- Dodge, parry and block; spells the game lights up
 -------------------------------------------------------------------------------
--- Overpower and the like: a window that opens when the target dodges you. The
--- auras cannot be read in combat and this client has no combat log, so the
--- dodge is heard from what is left, both listened to:
---   UNIT_COMBAT on the target   the feedback the target frame shows ("Dodge")
---   CHAT_MSG_COMBAT_SELF_MISSES and CHAT_MSG_SPELL_SELF_DAMAGE, where the
---                               client still sends them: "You attack. Kobold
---                               dodges." / "Your Heroic Strike was dodged ..."
--- Which of them this client sends, and whether readably, is not known yet, so
--- each one heard is logged to ChairAurasDB.probe.avoided (/chair auras dodges).
+-- Auras cannot be read in combat and this client gives addons no combat log,
+-- so procs are heard from what the game still says out loud:
+--
+--   UNIT_COMBAT            the feedback a unit frame shows. On the target:
+--                          it dodged, parried or blocked (Overpower). On you:
+--                          you did (Revenge, Riposte). A partial block comes
+--                          as a hit with a BLOCK flag, so the flag counts too.
+--   the old combat chat    "You attack. Kobold dodges.", "Kobold attacks. You
+--                          parry.", where the client still sends them.
+--   SPELL_ACTIVATION_OVERLAY_GLOW_SHOW / _HIDE
+--                          the glow the game puts on an action button when a
+--                          proc makes a spell castable. Its spell ID comes
+--                          with it, readable in combat on this client (other
+--                          addons for it rely on that).
+--
+-- What was heard is logged to ChairAurasDB.probe.procs; /chair auras procs
+-- lists it, so a fight can say which of these this client really sends.
 
 local AVOIDS = { DODGE = true, PARRY = true, BLOCK = true }
-local avoidedAt = {}          -- "DODGE" -> GetTime() it last happened
+local avoidedAt = {}          -- "target:DODGE" -> GetTime() it last happened
 ns.avoidedAt = avoidedAt
-local AVOID_LOG_MAX = 40
+local glowing = {}            -- lower-case spell name -> true while it glows
+ns.glowing = glowing
+local PROC_LOG_MAX = 40
 
-local function AvoidLog(line)
+local function ProcLog(line)
     if type(ChairAurasDB) ~= "table" then return end
     if type(ChairAurasDB.probe) ~= "table" then ChairAurasDB.probe = { runs = {} } end
-    local log = ChairAurasDB.probe.avoided
+    local log = ChairAurasDB.probe.procs
     if type(log) ~= "table" then
         log = {}
-        ChairAurasDB.probe.avoided = log
+        ChairAurasDB.probe.procs = log
     end
     local okD, stamp = pcall(date, "%H:%M:%S")
     log[#log + 1] = (okD and stamp or "?") .. " " .. line
-    while #log > AVOID_LOG_MAX do table.remove(log, 1) end
+    while #log > PROC_LOG_MAX do table.remove(log, 1) end
 end
-ns.AvoidLog = AvoidLog
+ns.ProcLog = ProcLog
 
-local function Avoided(kind, from)
-    avoidedAt[kind] = GetTime()
-    AvoidLog(kind .. " heard from " .. from)
+local function Avoided(unit, kind, from)
+    avoidedAt[unit .. ":" .. kind] = GetTime()
+    ProcLog((unit == "player" and "you " or "target ") .. kind .. ", heard from " .. from)
     ns.RequestUpdate()
 end
 
@@ -481,29 +491,64 @@ local function FromChat(text)
 end
 ns.AvoidFromChat = FromChat
 
+-- Whose avoidance each chat event reports: your attacks, or attacks on you.
+local CHAT_UNIT = {
+    CHAT_MSG_COMBAT_SELF_MISSES = "target",
+    CHAT_MSG_SPELL_SELF_DAMAGE = "target",
+    CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES = "player",
+    CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE = "player",
+}
+
+local function GlowName(spellID)
+    local id = ns.SafeNumber(spellID)
+    local name = id and ns.Engine:SpellName(id)
+    return name and name:lower(), id
+end
+
 do
     local frame = CreateFrame("Frame")
-    pcall(frame.RegisterUnitEvent or frame.RegisterEvent, frame, "UNIT_COMBAT", "target")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_COMBAT_SELF_MISSES")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_SPELL_SELF_DAMAGE")
-    frame:SetScript("OnEvent", function(_, event, a1, a2)
+    if not (frame.RegisterUnitEvent and pcall(frame.RegisterUnitEvent, frame, "UNIT_COMBAT", "player", "target")) then
+        pcall(frame.RegisterEvent, frame, "UNIT_COMBAT")
+    end
+    for event in pairs(CHAT_UNIT) do pcall(frame.RegisterEvent, frame, event) end
+    pcall(frame.RegisterEvent, frame, "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+    pcall(frame.RegisterEvent, frame, "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+    frame:SetScript("OnEvent", function(_, event, a1, a2, a3)
         if event == "UNIT_COMBAT" then
-            if a1 ~= "target" then return end
+            if a1 ~= "target" and a1 ~= "player" then return end
             if ns.IsSecret(a2) then
-                AvoidLog("UNIT_COMBAT target: action SECRET")
+                ProcLog("UNIT_COMBAT " .. a1 .. ": action SECRET")
                 return
             end
-            local action = ns.SafeText(a2)
-            if action and AVOIDS[action] then Avoided(action, "UNIT_COMBAT") end
+            local action, flag = ns.SafeText(a2), ns.SafeText(a3)
+            if action and AVOIDS[action] then
+                Avoided(a1, action, "UNIT_COMBAT")
+            elseif flag and AVOIDS[flag] then
+                Avoided(a1, flag, "UNIT_COMBAT (partial)")
+            end
             return
         end
+        if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" or event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
+            local on = event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW"
+            if ns.IsSecret(a1) then
+                ProcLog("button glow " .. (on and "on" or "off") .. ": spell SECRET")
+                return
+            end
+            local name, id = GlowName(a1)
+            if name then glowing[name] = on or nil end
+            ProcLog("button glow " .. (on and "on" or "off") .. ": " .. (name or tostring(id)))
+            ns.RequestUpdate()
+            return
+        end
+        local unit = CHAT_UNIT[event]
+        if not unit then return end
         if ns.IsSecret(a1) then
-            AvoidLog(event .. ": text SECRET")
+            ProcLog(event .. ": text SECRET")
             return
         end
         local text = ns.SafeText(a1)
         local kind = text and FromChat(text:lower())
-        if kind then Avoided(kind, event) end
+        if kind then Avoided(unit, kind, event) end
     end)
 end
 
@@ -520,18 +565,17 @@ local function CastSince(spellID, since)
 end
 
 -- One trigger each, so the picker says plainly what it watches.
-local function AvoidTrigger(key, kind, text, verb, example)
+local function AvoidTrigger(key, unit, kind, text, tip)
     Register(key, {
         text = text,
-        tip = "Your target " .. verb .. " your attack. Shows for as long as you set,"
-           .. " or until you cast the spell given" .. example .. ".",
+        tip = tip .. " Shows for as long as you set, or until you cast the spell given.",
         fields = {
             { kind = "slider", key = "duration", label = "Show for (seconds)", min = 1, max = 30, default = 5 },
             { kind = "spell", key = "spellID", label = "Until I cast",
               tip = "Optional: casting it ends the window early. Any rank counts." },
         },
         Evaluate = function(trigger, ts, now)
-            local at = avoidedAt[kind]
+            local at = avoidedAt[unit .. ":" .. kind]
             local lasts = Num(Field(trigger, "duration", 5)) or 5
             local id = trigger.spellID
             if id then WearSpell(ts, id) end
@@ -542,9 +586,16 @@ local function AvoidTrigger(key, kind, text, verb, example)
         end,
     })
 end
-AvoidTrigger("dodged", "DODGE", "Target dodged", "dodged", ": Overpower, 5 seconds")
-AvoidTrigger("parried", "PARRY", "Target parried", "parried", "")
-AvoidTrigger("blocked", "BLOCK", "Target blocked", "blocked", "")
+AvoidTrigger("dodged", "target", "DODGE", "Target dodged",
+    "Your target dodged your attack. Overpower: 5 seconds, until I cast Overpower.")
+AvoidTrigger("parried", "target", "PARRY", "Target parried", "Your target parried your attack.")
+AvoidTrigger("blocked", "target", "BLOCK", "Target blocked", "Your target blocked your attack.")
+AvoidTrigger("selfdodged", "player", "DODGE", "You dodged",
+    "You dodged an attack. Revenge and Mongoose Bite-style reactions.")
+AvoidTrigger("selfparried", "player", "PARRY", "You parried",
+    "You parried an attack. Riposte, Revenge, Counterattack.")
+AvoidTrigger("selfblocked", "player", "BLOCK", "You blocked",
+    "You blocked an attack, a partial block included. Revenge.")
 
 -- The one trigger these replaced (1.9.x alphas), with the kind as a setting:
 -- an aura saved with it becomes the matching new one the first time it runs.
@@ -556,6 +607,20 @@ do
         return ns.Engine.EVALUATORS[trigger.type](trigger, ts, now, aura, index)
     end
 end
+
+Register("glow", {
+    text = "Spell glows",
+    tip = "The game lights the spell up on your action bars: a proc has made it"
+       .. " castable. Heard in combat, where auras cannot be read. Any rank counts.",
+    fields = { SPELL },
+    Evaluate = function(trigger, ts)
+        local id = trigger.spellID
+        if not id then ts.met = false return end
+        WearSpell(ts, id)
+        local name = ns.Engine:SpellName(id)
+        ts.met = (name and glowing[name:lower()]) and true or false
+    end,
+})
 
 -------------------------------------------------------------------------------
 -- Items

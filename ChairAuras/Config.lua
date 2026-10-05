@@ -3683,8 +3683,10 @@ do
         if field.key == "type" and field.kind == "choice" then
             local GROUPS = {
                 { "Auras & cooldowns", { "aura", "cooldown" } },
-                { "Spells", { "usable", "known", "range", "charges", "cast" } },
-                { "Target", { "target", "dodged", "parried", "blocked" } },
+                { "Spells", { "usable", "glow", "known", "range", "charges", "cast" } },
+                { "Target", { "target" } },
+                { "Dodge, parry & block", { "dodged", "parried", "blocked",
+                                            "selfdodged", "selfparried", "selfblocked" } },
                 { "Items", { "itemcooldown", "slotcooldown", "itemcount", "equipped", "enchant" } },
                 { "You", { "form", "threat", "xp", "reputation", "money", "status", "zone" } },
                 { "Events", { "chat", "readycheck" } },

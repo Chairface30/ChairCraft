@@ -3385,6 +3385,8 @@ ChairAurasDB = { version = 3, profiles = { account = { auras = {
     { id = "ovp", triggers = { { trigger = { type = "dodged", duration = 5, spellID = 7384 } } } },
     { id = "par", triggers = { { trigger = { type = "parried" } } } },
     { id = "old", triggers = { { trigger = { type = "avoided", avoid = "BLOCK" } } } },
+    { id = "rev", triggers = { { trigger = { type = "selfblocked" } } } },
+    { id = "glw", triggers = { { trigger = { type = "glow", spellID = 7384 } } } },
     { id = "chg", triggers = { { trigger = { type = "charges", spellID = 1, charges = 2 } } } },
     { id = "cst", triggers = { { trigger = { type = "cast", spellID = 5, duration = 4 } } } },
     { id = "icd", triggers = { { trigger = { type = "itemcooldown", itemID = 6948 } } } },
@@ -3516,10 +3518,20 @@ check("a partly blocked hit is not a block",
       ev("ns.AvoidFromChat('you hit kobold for 30. (12 blocked)')") is None
       and ev("ns.AvoidFromChat('kobold blocks your attack.')") == "BLOCK")
 L.execute("FireEvent('UNIT_COMBAT', 'target', SECRET_VALUE(), '', 0, 1)")
-log = " | ".join(str(v) for v in ev("ChairAurasDB.probe.avoided").values())
+check("the target blocking is not you blocking", shown("rev") is False)
+L.execute("FireEvent('UNIT_COMBAT', 'player', 'WOUND', 'BLOCK', 40, 1) ns.Engine:UpdateAll()")
+check("a partial block on you counts as you blocking", shown("rev") is True)
+check("spell glows: not lit", shown("glw") is False)
+L.execute("FireEvent('SPELL_ACTIVATION_OVERLAY_GLOW_SHOW', 7887) ns.Engine:UpdateAll()")
+check("the game lighting up any rank of it brings it up", shown("glw") is True)
+L.execute("FireEvent('SPELL_ACTIVATION_OVERLAY_GLOW_HIDE', 7887) ns.Engine:UpdateAll()")
+check("and the glow going takes it down", shown("glw") is False)
+log = " | ".join(str(v) for v in ev("ChairAurasDB.probe.procs").values())
 check("each one heard is logged, a secret one as secret",
-      "DODGE heard from UNIT_COMBAT" in log and "DODGE heard from CHAT_MSG_COMBAT_SELF_MISSES" in log
-      and "action SECRET" in log, log)
+      "target DODGE, heard from UNIT_COMBAT" in log
+      and "target DODGE, heard from CHAT_MSG_COMBAT_SELF_MISSES" in log
+      and "you BLOCK, heard from UNIT_COMBAT (partial)" in log
+      and "button glow on: overpower" in log and "action SECRET" in log, log)
 L.execute("USABLE = false ns.Engine:UpdateAll()")
 check("and not when it is not", shown("use") is False)
 check("spell known: not known", shown("kno") is False)
@@ -3599,6 +3611,8 @@ check("naming the type in use", ev("FIND_WIDGET('type', 'choice', 'trigger').dro
       str(ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.button:GetText()")))
 L.execute("local d = FIND_WIDGET('type', 'choice', 'trigger').dropdown d.button._scripts.OnClick(d.button)")
 check("clicking it opens the list", ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.menu:IsShown()") is True)
+L.execute("local d = FIND_WIDGET('type', 'choice', 'trigger').dropdown"
+          " for _ = 1, 10 do d.menu._scripts.OnMouseWheel(d.menu, 1) end")
 check("grouped under headings",
       "Auras" in str(ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.rows[1].text._text")),
       str(ev("FIND_WIDGET('type', 'choice', 'trigger').dropdown.rows[1].text._text")))
