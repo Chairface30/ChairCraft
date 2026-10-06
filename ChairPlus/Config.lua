@@ -114,6 +114,7 @@ ns.defaults = {
     -- Camera
     maxCameraZoom       = false,
     selfHighlightCombat = false,    -- Self Highlight only in combat (SelfHighlight.lua)
+    cooldownViewerCombat = false,   -- Cooldown Manager only in combat (CooldownViewer.lua)
 
     -- Chat (Chat.lua)
     chatScrollLeft      = false,    -- scroll bar and arrows on the left

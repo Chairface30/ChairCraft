@@ -132,6 +132,9 @@ local ROWS = {
     { key = "selfHighlightCombat", label = "Self Highlight only in combat", tab = "comfort",
       tip = "Turns the game's Self Highlight (Accessibility options) off out of combat, and back to the style you picked when combat starts. "
          .. "Pick a style there as usual; switching this off puts it back for good." },
+    { key = "cooldownViewerCombat", label = "Cooldown Manager only in combat", tab = "comfort",
+      tip = "The game's Cooldown Manager (cooldowns, buff icons and buff bars) is see-through out of combat and shows when combat starts. "
+         .. "It stays visible while Edit Mode is open so you can still move it." },
     { header = "Druid", tab = "comfort", classes = { DRUID = true } },
     { key = "formAltBar", label = "Alternate resource bar only in Bear and Cat Form", tab = "comfort",
       classes = { DRUID = true },
