@@ -28,14 +28,7 @@ local function Method(k)
             if type(self) ~= "table" then return Mock() end
             if k == "SetText" then rawset(self, "_text", (...))
             elseif k == "GetText" then return rawget(self, "_text")
-            elseif k == "Show" then
-                -- Likewise OnShow hooks, only when the frame was hidden.
-                local was = rawget(self, "_shown")
-                rawset(self, "_shown", true)
-                if not was then
-                    local hooks = rawget(self, "_showHooks")
-                    for _, fn in ipairs(hooks or {}) do fn(self) end
-                end
+            elseif k == "Show" then rawset(self, "_shown", true)
             elseif k == "Hide" then
                 -- As the client does: OnHide and anything hooked on it run,
                 -- but only when the frame was showing.
@@ -51,10 +44,6 @@ local function Method(k)
                     local hooks = rawget(self, "_hideHooks") or {}
                     hooks[#hooks + 1] = fn
                     rawset(self, "_hideHooks", hooks)
-                elseif name == "OnShow" then
-                    local hooks = rawget(self, "_showHooks") or {}
-                    hooks[#hooks + 1] = fn
-                    rawset(self, "_showHooks", hooks)
                 end
             elseif k == "SetShown" then rawset(self, "_shown", (...) and true or false)
             elseif k == "IsShown" then return rawget(self, "_shown") == true
@@ -399,7 +388,7 @@ SUITE_TABLE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit)
 SUITE_TABLE.IsSecret = function(v) return not pcall(function() return "" .. tostring(v) end) end
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "Quests.lua", "Gossip.lua",
-    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "CooldownViewer.lua", "Arrow.lua",
+    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Arrow.lua",
     "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
 for _, file in ipairs(files) do
@@ -4945,64 +4934,6 @@ check("a bar named otherwise, one level down, is found and hidden",
 rt.execute("PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, ' ')) end NS.ProbeFormBar() NS.Print = old")
 check("the probe names where it found it",
       "PersonalResourceDisplayFrame.Bars.AltManaStatusBar" in (rt.eval("PRINTED[1]") or ""), rt.eval("PRINTED[1]"))
-
-print("\nCooldown Manager only in combat")
-rt, g = fresh()
-rt.execute("""
-LOCKED = false
-function InCombatLockdown() return LOCKED end
-function hooksecurefunc(obj, name, fn)
-    if type(obj) == "string" then obj, name, fn = _G, obj, name end
-    local original = obj[name]
-    rawset(obj, name, function(...)
-        local a, b, c = original(...)
-        fn(...)
-        return a, b, c
-    end)
-end
-EssentialCooldownViewer = CreateFrame("Frame", "EssentialCooldownViewer", UIParent)
-BuffIconCooldownViewer = CreateFrame("Frame", "BuffIconCooldownViewer", UIParent)
-BuffIconCooldownViewer:SetAlpha(0.6)
-EditModeManagerFrame = CreateFrame("Frame", "EditModeManagerFrame", UIParent)
-EditModeManagerFrame:Hide()
-HIDE_CALLS = 0
-rawset(EssentialCooldownViewer, "Hide", function() HIDE_CALLS = HIDE_CALLS + 1 end)
-ChairPlusDB = { settings = {} }
-BOOT()
-""")
-check("off by default", rt.eval("NS.IsEnabled('cooldownViewerCombat')") is False
-      and rt.eval("EssentialCooldownViewer:GetAlpha()") == 1)
-rt.execute('NS.Set("cooldownViewerCombat", true)')
-check("on, out of combat: see-through", rt.eval("EssentialCooldownViewer:GetAlpha()") == 0
-      and rt.eval("BuffIconCooldownViewer:GetAlpha()") == 0)
-rt.execute('EssentialCooldownViewer:SetAlpha(1)')
-check("Blizzard putting the alpha back out of combat is undone", rt.eval("EssentialCooldownViewer:GetAlpha()") == 0)
-rt.execute('FireEvent("PLAYER_REGEN_DISABLED")')
-check("combat starts: shown again", rt.eval("EssentialCooldownViewer:GetAlpha()") == 1)
-check("with Blizzard's own opacity kept", abs(rt.eval("BuffIconCooldownViewer:GetAlpha()") - 0.6) < 1e-6,
-      rt.eval("BuffIconCooldownViewer:GetAlpha()"))
-rt.execute('LOCKED = true FireEvent("EDIT_MODE_LAYOUTS_UPDATED")')
-check("an update in combat leaves them shown", rt.eval("EssentialCooldownViewer:GetAlpha()") == 1)
-rt.execute('LOCKED = false FireEvent("PLAYER_REGEN_ENABLED")')
-check("combat ends: see-through again", rt.eval("EssentialCooldownViewer:GetAlpha()") == 0)
-rt.execute('EditModeManagerFrame:Show()')
-check("Edit Mode open: shown to be placed", rt.eval("EssentialCooldownViewer:GetAlpha()") == 1)
-rt.execute('EditModeManagerFrame:Hide()')
-check("Edit Mode closed: see-through again", rt.eval("EssentialCooldownViewer:GetAlpha()") == 0)
-rt.execute('UtilityCooldownViewer = CreateFrame("Frame", "UtilityCooldownViewer", UIParent) '
-           'FireEvent("ADDON_LOADED", "Blizzard_CooldownViewer")')
-check("a viewer built later is found when its addon loads", rt.eval("UtilityCooldownViewer:GetAlpha()") == 0)
-check("Blizzard's Hide is never called", rt.eval("HIDE_CALLS") == 0)
-check("no error from the module", rt.eval("NS.modules.cooldownViewerCombat.broken") is None)
-rt.execute('NS.Set("cooldownViewerCombat", false)')
-check("switched off, they come back", rt.eval("EssentialCooldownViewer:GetAlpha()") == 1
-      and abs(rt.eval("BuffIconCooldownViewer:GetAlpha()") - 0.6) < 1e-6)
-rt.execute('EssentialCooldownViewer:SetAlpha(0.5)')
-check("and the client's own alpha stands", rt.eval("EssentialCooldownViewer:GetAlpha()") == 0.5)
-check("the option is on the comfort page",
-      rt.eval("""(function() for _, r in ipairs(NS.ROWS or {}) do
-          if r.key == "cooldownViewerCombat" then return r.tab == "comfort" end end
-          return "no ROWS" end)()""") in (True, "no ROWS"))
 
 print("\nRestock")
 RESTOCK_SETUP = """
