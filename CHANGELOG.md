@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## ChairCraft v1.10.0: Dodge, parry and block triggers
 
 **New**
 - **Dodge, parry and block triggers,** in their own group of the trigger list: Target dodged, Target parried and Target blocked (Overpower), and You dodged, You parried and You blocked (Revenge, Riposte, Counterattack). A partial block counts. Each shows for as long as you set (5 seconds for Overpower), with a timer. Give it a spell under "Until I cast" and casting it ends the window early, whatever its rank. The game hides auras and the combat log from addons, so ChairAuras listens for the dodge, parry and block feedback the game shows on your target and on you, and for the old combat chat lines where the game still sends them.

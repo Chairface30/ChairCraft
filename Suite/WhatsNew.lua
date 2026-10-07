@@ -11,6 +11,15 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.10.0"] = {
+        title = "Dodge, parry and block triggers",
+        lines = {
+            "ChairAuras: new triggers for when your target dodges, parries or blocks (Overpower), and when you do (Revenge, Riposte, Counterattack).",
+            "ChairAuras: a Spell glows trigger, for procs the game lights up on your action bars, and a Target trigger with range in yards.",
+            "In combat, auras the game won't let addons read show gray, with \"?\" for stacks, until the fight ends.",
+            "The waypoint arrow points at your corpse while you are dead.",
+        },
+    },
     ["1.9.0"] = {
         title = "Bear and Cat Form bar, Frequent Flyer",
         lines = {
