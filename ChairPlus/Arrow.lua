@@ -508,6 +508,81 @@ local function TextBox(fs)
     return ScreenBox(fs, w, (h and h > 0) and h or 24)
 end
 
+-- The red and yellow messages ("Out of range.", quest progress) go through
+-- UIErrorsFrame, a scrolling message frame with no font strings of its own to
+-- read. So its AddMessage is hooked (after the fact, never replaced): each
+-- message is timed and measured in a hidden font string in the frame's font,
+-- and counts as covering the frame's band, as wide as the text, while it is up
+-- and fading. A message that cannot be measured counts as the frame's width.
+local errorLines, measure = {}, nil
+local ERROR_HOLD, ERROR_FADE = 2, 1.5
+
+local function ErrorTiming()
+    local f = _G.UIErrorsFrame
+    local okH, hold = pcall(function() return f:GetTimeVisible() end)
+    local okF, fade = pcall(function() return f:GetFadeDuration() end)
+    hold, fade = okH and ns.Num(hold), okF and ns.Num(fade)
+    return (hold and hold > 0) and hold or ERROR_HOLD, (fade and fade >= 0) and fade or ERROR_FADE
+end
+
+local function OnErrorMessage(_, text)
+    if not ns.Get("arrowHideForZoneText") then return end
+    local width
+    if measure then
+        local f = _G.UIErrorsFrame
+        pcall(function() measure:SetFont(f:GetFont()) end)
+        if pcall(measure.SetText, measure, text) then
+            local ok, w = pcall(measure.GetStringWidth, measure)
+            width = ok and ns.Num(w) or nil
+            pcall(measure.SetText, measure, "")
+        end
+    end
+    local hold, fade = ErrorTiming()
+    local now = Now()
+    -- Drop the ones long gone, and keep no more than the frame can show.
+    for i = #errorLines, 1, -1 do
+        local line = errorLines[i]
+        if now - line.at > line.hold + line.fade then table.remove(errorLines, i) end
+    end
+    if #errorLines >= 5 then table.remove(errorLines, 1) end
+    errorLines[#errorLines + 1] = { at = now, width = width, hold = hold, fade = fade }
+end
+
+local function HookErrors()
+    local f = _G.UIErrorsFrame
+    if measure or not f or type(_G.hooksecurefunc) ~= "function" then return end
+    measure = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    measure:Hide()
+    pcall(_G.hooksecurefunc, f, "AddMessage", OnErrorMessage)
+end
+
+-- The strongest error message still on screen and over the arrow's box.
+local function ErrorCover(l, r, b, t)
+    local f = _G.UIErrorsFrame
+    if not f or #errorLines == 0 then return 0 end
+    local okV, visible = pcall(f.IsVisible, f)
+    if not (okV and ns.Bool(visible)) then return 0 end
+    local okW, fw = pcall(f.GetWidth, f)
+    local okH, fh = pcall(f.GetHeight, f)
+    fw, fh = okW and ns.Num(fw), okH and ns.Num(fh)
+    local now, cover = Now(), 0
+    for _, line in ipairs(errorLines) do
+        local age = now - line.at
+        local a = 0
+        if age < line.hold then
+            a = 1
+        elseif line.fade > 0 and age < line.hold + line.fade then
+            a = 1 - (age - line.hold) / line.fade
+        end
+        if a > cover then
+            local width = line.width and fw and math.min(line.width, fw) or fw
+            local el, er, eb, et = ScreenBox(f, width, fh)
+            if el and el < r and er > l and eb < t and et > b then cover = a end
+        end
+    end
+    return cover
+end
+
 -- How strongly the pop-up text covers the arrow, 0 (not at all) to 1.
 local function PopupCover()
     if not ns.Get("arrowHideForZoneText") then return 0 end
@@ -522,7 +597,7 @@ local function PopupCover()
         end
     end
 
-    local cover = 0
+    local cover = ErrorCover(l, r, b, t)
     for _, name in ipairs(POPUP_TEXT) do
         local fs = _G[name]
         local okV, visible = pcall(function() return fs and fs:IsVisible() end)
@@ -662,6 +737,8 @@ local function Build()
     -- The zone, under the quest's name and in the same font and size.
     zoneLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     zoneLabel:SetPoint("TOP", subLabel, "BOTTOM", 0, -2)
+
+    HookErrors()
 
     frame:SetScript("OnDragStart", function(self)
         if ns.Get("arrowLocked") then return end

@@ -162,7 +162,7 @@ local ROWS = {
       swatch = { "arrowColorR", "arrowColorG", "arrowColorB" } },
     { key = "arrowShowDistance",    label = "Show the distance", tab = "travel", sub = "arrow" },
     { key = "arrowShowName",        label = "Show the quest's name", tab = "travel", sub = "arrow" },
-    { key = "arrowHideForZoneText", label = "Fade under zone names and raid warnings", tab = "travel", sub = "arrow" },
+    { key = "arrowHideForZoneText", label = "Fade under the game's on-screen messages", tab = "travel", sub = "arrow" },
     { slider = "arrowScale", label = "Size", tab = "travel", sub = "arrow", min = 0.5, max = 3, step = 0.05, fmt = "x" },
     { slider = "arrowAlpha", label = "Opacity", tab = "travel", sub = "arrow", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
 
