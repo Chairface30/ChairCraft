@@ -475,6 +475,69 @@ local function ZoneOf(mapID)
     return nil
 end
 
+-- The game's own pop-up text: the zone and subzone names on entering, their
+-- PvP lines, raid warnings and boss emotes. While any of it sits over the
+-- arrow, the arrow fades out as the text fades in and comes back as it goes.
+-- Only read, never driven (see never-drive-blizzard-frames); a string this
+-- client lacks or will not measure is skipped.
+local POPUP_TEXT = {
+    "ZoneTextString", "PVPInfoTextString",
+    "SubZoneTextString", "PVPArenaTextString",
+    "RaidWarningFrameSlot1", "RaidWarningFrameSlot2",
+    "RaidBossEmoteFrameSlot1", "RaidBossEmoteFrameSlot2",
+}
+
+-- A region's box in screen pixels, so frames at different scales compare.
+local function ScreenBox(region, width, height)
+    local okC, cx, cy = pcall(region.GetCenter, region)
+    local okS, scale = pcall(region.GetEffectiveScale, region)
+    cx, cy, scale = okC and ns.Num(cx), okC and ns.Num(cy), okS and ns.Num(scale)
+    if not (cx and cy and scale and width and height) then return nil end
+    local hw, hh = width * scale / 2, height * scale / 2
+    cx, cy = cx * scale, cy * scale
+    return cx - hw, cx + hw, cy - hh, cy + hh
+end
+
+-- A font string's box: as wide as its text, not the 512 the zone text is laid
+-- out in.
+local function TextBox(fs)
+    local okW, w = pcall(fs.GetStringWidth, fs)
+    local okH, h = pcall(fs.GetStringHeight, fs)
+    w, h = okW and ns.Num(w), okH and ns.Num(h)
+    if not w or w <= 0 then return nil end
+    return ScreenBox(fs, w, (h and h > 0) and h or 24)
+end
+
+-- How strongly the pop-up text covers the arrow, 0 (not at all) to 1.
+local function PopupCover()
+    if not ns.Get("arrowHideForZoneText") then return 0 end
+    local okW, fw = pcall(frame.GetWidth, frame)
+    local okH, fh = pcall(frame.GetHeight, frame)
+    local l, r, b, t = ScreenBox(frame, okW and ns.Num(fw), okH and ns.Num(fh))
+    if not l then return 0 end
+    for _, fs in ipairs({ label, subLabel, zoneLabel }) do
+        local fl, fr, fb, ft = TextBox(fs)
+        if fl then
+            l, r, b, t = math.min(l, fl), math.max(r, fr), math.min(b, fb), math.max(t, ft)
+        end
+    end
+
+    local cover = 0
+    for _, name in ipairs(POPUP_TEXT) do
+        local fs = _G[name]
+        local okV, visible = pcall(function() return fs and fs:IsVisible() end)
+        if okV and ns.Bool(visible) then
+            local okA, a = pcall(function() return fs:GetAlpha() * fs:GetParent():GetEffectiveAlpha() end)
+            a = okA and ns.Num(a) or 1
+            if a > cover then
+                local pl, pr, pb, pt = TextBox(fs)
+                if pl and pl < r and pr > l and pb < t and pt > b then cover = a end
+            end
+        end
+    end
+    return math.min(1, cover)
+end
+
 local function SetLines(distance, name, zone)
     label:SetText(distance or "")
     pcall(subLabel.SetText, subLabel, ns.Get("arrowShowName") and name or "")
@@ -493,7 +556,7 @@ local function Update()
     -- On another continent there is no direction to give, but there is still
     -- somewhere to go: say where, and leave the arrow out.
     if not bearing and target and yards == "elsewhere" then
-        frame:SetAlpha(alpha)
+        frame:SetAlpha(alpha * (1 - PopupCover()))
         frame:EnableMouse(not ns.Get("arrowLocked"))
         arrowTex:Hide()
         -- "Go to Kalimdor" is the instruction; the zone rides along with the
@@ -528,7 +591,7 @@ local function Update()
         return
     end
 
-    frame:SetAlpha(alpha)
+    frame:SetAlpha(alpha * (1 - PopupCover()))
     frame:EnableMouse(not ns.Get("arrowLocked"))
     arrowTex:Show()
     local okF, facing = pcall(_G.GetPlayerFacing)

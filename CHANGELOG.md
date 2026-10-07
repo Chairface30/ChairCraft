@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Changed**
+- **The waypoint arrow fades out under the game's pop-up text.** When a zone or subzone name, a raid warning or a boss emote appears over the arrow, the arrow fades out as the text fades in and comes back as it fades away. Text elsewhere on the screen leaves it alone. Turn it off with "Fade under zone names and raid warnings" on the Travel page. Not yet confirmed in game.
+
 ## ChairCraft v1.10.0: Dodge, parry and block triggers
 
 **New**
