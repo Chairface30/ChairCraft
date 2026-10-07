@@ -183,7 +183,6 @@ ns.defaults = {
     arrowColorB         = 0.25,
     arrowShowDistance   = true,
     arrowShowName       = true,
-    arrowHideForZoneText = true,    -- fade out under zone names, errors, quest progress, raid warnings
     arrowAlpha          = 1.0,
     arrowAnchor         = "TOP",
     arrowRelAnchor      = "TOP",

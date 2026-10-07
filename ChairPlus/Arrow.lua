@@ -526,7 +526,6 @@ local function ErrorTiming()
 end
 
 local function OnErrorMessage(_, text)
-    if not ns.Get("arrowHideForZoneText") then return end
     local width
     if measure then
         local f = _G.UIErrorsFrame
@@ -585,7 +584,6 @@ end
 
 -- How strongly the pop-up text covers the arrow, 0 (not at all) to 1.
 local function PopupCover()
-    if not ns.Get("arrowHideForZoneText") then return 0 end
     local okW, fw = pcall(frame.GetWidth, frame)
     local okH, fh = pcall(frame.GetHeight, frame)
     local l, r, b, t = ScreenBox(frame, okW and ns.Num(fw), okH and ns.Num(fh))
