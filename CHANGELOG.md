@@ -3,7 +3,7 @@
 ## Unreleased
 
 **Changed**
-- **The waypoint arrow fades out under the game's on-screen messages.** When a zone or subzone name, a red or yellow message ("Out of range.", quest progress like "Claw: 1/7", quest accepted and completed), a raid warning or a boss emote appears over the arrow, the arrow fades out as the text fades in and comes back as it fades away. Text elsewhere on the screen leaves it alone. Turn it off with "Fade under the game's on-screen messages" on the Travel page. Not yet confirmed in game.
+- **The waypoint arrow fades out under the game's on-screen messages.** When a zone or subzone name, a red or yellow message ("Out of range.", quest progress like "Claw: 1/7", quest accepted and completed), a raid warning or a boss emote appears over the arrow, the arrow fades out as the text fades in, stays hidden while the text fades away, and fades back in once the text is completely gone. Text elsewhere on the screen leaves it alone. Turn it off with "Fade under the game's on-screen messages" on the Travel page. Not yet confirmed in game.
 
 ## ChairCraft v1.10.0: Dodge, parry and block triggers
 

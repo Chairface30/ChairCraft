@@ -613,6 +613,31 @@ local function PopupCover()
     return math.min(1, cover)
 end
 
+-- How much of the arrow to show, 0 to 1. It fades out as the text fades in,
+-- stays out while the text fades away, and only once the last of it is gone
+-- fades back in, over FADE_IN seconds.
+local FADE_IN = 0.5
+local held, clearedAt, clearedFrom = 0, nil, 1
+
+local function PopupShown()
+    local cover = PopupCover()
+    if cover > 0 then
+        held = math.max(held, cover)
+        clearedAt = nil
+        return 1 - held
+    end
+    if held > 0 then
+        clearedAt, clearedFrom, held = Now(), 1 - held, 0
+    end
+    if not clearedAt then return 1 end
+    local t = (Now() - clearedAt) / FADE_IN
+    if t >= 1 then
+        clearedAt = nil
+        return 1
+    end
+    return clearedFrom + (1 - clearedFrom) * t
+end
+
 local function SetLines(distance, name, zone)
     label:SetText(distance or "")
     pcall(subLabel.SetText, subLabel, ns.Get("arrowShowName") and name or "")
@@ -631,7 +656,7 @@ local function Update()
     -- On another continent there is no direction to give, but there is still
     -- somewhere to go: say where, and leave the arrow out.
     if not bearing and target and yards == "elsewhere" then
-        frame:SetAlpha(alpha * (1 - PopupCover()))
+        frame:SetAlpha(alpha * PopupShown())
         frame:EnableMouse(not ns.Get("arrowLocked"))
         arrowTex:Hide()
         -- "Go to Kalimdor" is the instruction; the zone rides along with the
@@ -666,7 +691,7 @@ local function Update()
         return
     end
 
-    frame:SetAlpha(alpha * (1 - PopupCover()))
+    frame:SetAlpha(alpha * PopupShown())
     frame:EnableMouse(not ns.Get("arrowLocked"))
     arrowTex:Show()
     local okF, facing = pcall(_G.GetPlayerFacing)
