@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+**Fixed**
+- **Nameplate threat colors stayed in the normal color in combat.** The game keeps a nameplate's threat hidden from addons in combat, so the colors couldn't tell who had aggro. They now read it through another name the game gives the same mob (your target, a group member's target), as the threat % on nameplates already does, and check again every moment of a fight. Not yet confirmed in game.
+
 **Changed**
 - **The waypoint arrow fades out under the game's on-screen messages.** When a zone or subzone name, a red or yellow message ("Out of range.", quest progress like "Claw: 1/7", quest accepted and completed), a raid warning or a boss emote appears over the arrow, the arrow fades out as the text fades in, stays hidden while the text fades away, and fades back in once the text is completely gone. Text elsewhere on the screen leaves it alone. Not yet confirmed in game.
 

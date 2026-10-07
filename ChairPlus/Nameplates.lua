@@ -51,27 +51,63 @@ local function HealthBar(unit)
     return bar
 end
 
--- Which state a mob is in, or nil for its normal color.
-function ns.NameplateState(unit)
-    -- A mob the client won't say is fighting is let through while you are.
-    local fighting = Bool(_G.UnitAffectingCombat, unit)
-    if fighting == false then return nil end
-    if fighting == nil and not ns.PlayerFighting() then return nil end
-    local okS, status = pcall(_G.UnitThreatSituation, "player", unit)
-    status = okS and ns.Num(status) or nil
-    if status == 3 then return "npMine" end
-    if status == 1 or status == 2 then return "npChanging" end
-
-    -- Someone else has it: who.
-    local target = unit .. "target"
-    if not Bool(_G.UnitExists, target) then return nil end
-    if Bool(_G.UnitIsUnit, target, "player") then return "npMine" end
-    local grouped = Bool(_G.UnitInParty, target) or Bool(_G.UnitInRaid, target)
-    if not grouped then return nil end
-    local okR, role = pcall(_G.UnitGroupRolesAssigned, target)
+local function RoleState(unit)
+    local okR, role = pcall(_G.UnitGroupRolesAssigned, unit)
     role = okR and ns.Text(role) or nil
     if role == "TANK" then return "npOtherTank" end
     return "npNonTank"
+end
+
+-- Which state a mob is in, or nil for its normal color.
+--
+-- Asked the way the threat % is (see ns.ThreatAlias below): in combat Forever
+-- keeps a "nameplateN" unit's threat secret but answers in the clear for
+-- another name the same mob has -- your target, a group member's target. So
+-- that name is asked first, and the plate's own after it.
+function ns.NameplateState(unit)
+    local alias = ns.ThreatAlias and ns.ThreatAlias(unit)
+    local mobs = alias and { alias, unit } or { unit }
+
+    -- A mob the client won't say is fighting is let through while you are.
+    local fighting
+    for _, mob in ipairs(mobs) do
+        fighting = Bool(_G.UnitAffectingCombat, mob)
+        if fighting ~= nil then break end
+    end
+    if fighting == false then return nil end
+    if fighting == nil and not ns.PlayerFighting() then return nil end
+
+    local status
+    for _, mob in ipairs(mobs) do
+        local okS, s = pcall(_G.UnitThreatSituation, "player", mob)
+        status = okS and ns.Num(s) or nil
+        if status then break end
+    end
+    if status == 3 then return "npMine" end
+    if status == 1 or status == 2 then return "npChanging" end
+
+    -- Someone else has it: who. The threat list says who is tanking it.
+    local rows = alias and ns.ThreatRows and ns.ThreatRows(alias)
+    if type(rows) == "table" then
+        for _, row in ipairs(rows) do
+            if row.tanking then
+                if row.isMe then return "npMine" end
+                return row.unit and RoleState(row.unit) or "npNonTank"
+            end
+        end
+    end
+
+    -- No list: whoever the mob is targeting.
+    for _, mob in ipairs(mobs) do
+        local target = mob .. "target"
+        if Bool(_G.UnitExists, target) then
+            if Bool(_G.UnitIsUnit, target, "player") then return "npMine" end
+            local grouped = Bool(_G.UnitInParty, target) or Bool(_G.UnitInRaid, target)
+            if grouped then return RoleState(target) end
+            if grouped == false then return nil end
+        end
+    end
+    return nil
 end
 
 local function Paint(unit)
@@ -105,7 +141,25 @@ end
 local driver
 local hooked = false
 
+-- In combat the colors are also checked on a timer, like the threat %: the
+-- name a plate borrows changes when you or the group change targets, which
+-- no event on the plate's own unit reports.
+local COLOR_TICK = 0.3
+local colorTicker
+
+local function StartColorTicker()
+    if colorTicker or not (C_Timer and C_Timer.NewTicker) then return end
+    colorTicker = C_Timer.NewTicker(COLOR_TICK, function() pcall(PaintAll) end)
+end
+
+local function StopColorTicker()
+    if colorTicker then colorTicker:Cancel() end
+    colorTicker = nil
+end
+
 local function OnEvent(_, event, unit)
+    if event == "PLAYER_REGEN_DISABLED" then StartColorTicker()
+    elseif event == "PLAYER_REGEN_ENABLED" then StopColorTicker() end
     if event == "NAME_PLATE_UNIT_ADDED" then
         if type(unit) == "string" and not Bool(_G.UnitIsFriend, "player", unit) then
             plates[unit] = true
@@ -164,6 +218,18 @@ ns.RegisterModule("nameplateThreat", {
                     Paint(unit)
                 end
             end)
+        end
+        if enabled then
+            -- Plates already on screen when it is switched on.
+            for i = 1, 40 do
+                local unit = "nameplate" .. i
+                if Bool(_G.UnitExists, unit) and not Bool(_G.UnitIsFriend, "player", unit) then
+                    plates[unit] = true
+                end
+            end
+            if ns.PlayerFighting() then StartColorTicker() end
+        else
+            StopColorTicker()
         end
         -- Every plate put back or painted, whichever way the switch went.
         PaintAll()

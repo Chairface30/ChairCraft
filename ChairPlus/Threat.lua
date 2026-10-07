@@ -124,6 +124,7 @@ function ns.ThreatRows(mob)
                     status = ok and ns.Num(status) or 0,
                     class = okC and ns.Text(class) or nil,
                     isMe = IsMe(unit),
+                    unit = unit,
                 }
             end
         end
