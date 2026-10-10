@@ -35,6 +35,9 @@ local GetContainerNumSlots = addon.GetContainerNumSlots
 local GetContainerItemID = addon.GetContainerItemID
 
 local FOOD_SLOT_ORDER = { "food", "drink", "conjuredFood", "conjuredDrink", "feedPet" }
+-- Classes with no mana have nothing to drink for, so the drink slot stays off
+-- the bar for them. Read from the class because power is secret on Forever.
+local NO_MANA_CLASSES = { WARRIOR = true, ROGUE = true }
 -- Healthstone sits at the far right of the bar by choice, away from the
 -- potions, so its position stays constant as other slots come and go.
 local POTION_SLOT_ORDER = { "health", "zoneHealth", "mana", "zoneMana",
@@ -927,9 +930,11 @@ function addon:UpdateAutoBar()
         local pools = GatherFoodPools(BagContents())
         local slots = grid.autoSlots or {}
         local added = {}
+        local _, class = UnitClass("player")
+        local noMana = NO_MANA_CLASSES[class]
 
         for _, slotName in ipairs(FOOD_SLOT_ORDER) do
-            if slots[slotName] ~= false then
+            if slots[slotName] ~= false and not (noMana and slotName == "drink") then
                 if slotName == "feedPet" then
                     local pet = SelectPetFood(grid)
                     if pet and pet.needsSetup then

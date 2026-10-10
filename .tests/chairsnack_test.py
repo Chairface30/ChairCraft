@@ -485,6 +485,34 @@ check("ammo shows what is loaded", L.eval("FIRST.count") == 200)
 check("and when it runs out, the same ammo at 0 rather than nothing",
       L.eval("SECOND ~= nil and SECOND.count == 0 and SECOND.name == 'Rough Arrow'") is True)
 
+print("-- drink only for classes with mana")
+L = boot('SnapSnackDB = nil')
+L.execute('FireEvent("ADDON_LOADED", "Chaircraft") SnapSnackDB = { version = 2 }')
+L.execute('IMMEDIATE_TIMERS = true FireEvent("PLAYER_LOGIN") IMMEDIATE_TIMERS = false')
+L.execute("""
+local grid = addon:GetGrid(addon.AUTO_GRID_ID)
+grid.enabled = true
+-- The mock items carry no use spell, so nothing classifies them; say which
+-- one is the drink outright.
+addon.IsPlayerDrink = function(id) return id == 1179 end
+function HasMilk()
+    addon:UpdateAutoBar()
+    for _, item in ipairs(grid.items) do
+        if addon.GetItemIDFromData(item) == 1179 then return true end
+    end
+    return false
+end
+DRUID_MILK = HasMilk()
+function UnitClass() return "Warrior", "WARRIOR" end
+WARRIOR_MILK = HasMilk()
+function UnitClass() return "Rogue", "ROGUE" end
+ROGUE_MILK = HasMilk()
+function UnitClass() return "Druid", "DRUID" end
+""")
+check("a druid gets drink on the food bar", L.eval("DRUID_MILK") is True)
+check("a warrior does not", L.eval("WARRIOR_MILK") is False)
+check("nor a rogue", L.eval("ROGUE_MILK") is False)
+
 L.execute("""
 SECRET = setmetatable({}, { __tostring = function() error("secret") end,
                             __concat = function() error("secret") end })
