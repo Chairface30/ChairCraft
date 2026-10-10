@@ -4,11 +4,15 @@
 --
 -- What counts as "the current waypoint", in order:
 --   0. your corpse, while you are dead -- it beats everything below;
+--   0b. where a town guard said to go (a flag on the city map);
 --   1. the quest you have selected (super-tracked, by clicking it in the
 --      tracker or on the map), wherever the client can say where it is --
 --      including another zone, which is searched for (see FindQuest);
 --   2. the map pin (ctrl-click on the world map);
 --   3. nothing, and the arrow disappears.
+--
+-- While a guide addon's own arrow is up (see "Other addons' arrows"), steps 0
+-- and 1 are left to it, and so is a map pin that an addon placed.
 --
 -- Only a quest you picked counts. The watch list does not: the client adds
 -- quests to it on its own as they are accepted, so falling back to it kept
@@ -313,8 +317,122 @@ local function CorpseTarget(playerMap)
     return nil
 end
 
+-- Where a town guard said to go. Asking a guard for directions puts a flag on
+-- the city map, which the client calls a gossip POI; it is your own request,
+-- so it shows whatever else is pointing where.
+local function GuardTarget(playerMap)
+    if not playerMap then return nil end
+    local ok, poiID = Call(_G.C_GossipInfo, "GetPoiForUiMapID", playerMap)
+    poiID = ok and ns.Num(poiID)
+    if not poiID then return nil end
+    local okInfo, info = Call(_G.C_GossipInfo, "GetPoiInfo", playerMap, poiID)
+    if not okInfo or type(info) ~= "table" then return nil end
+    local x, y = XY(info.position)
+    if not (x and y) then return nil end
+    local name = ns.Text(info.name)
+    return { map = playerMap, x = x, y = y, name = name or "Directions", kind = "guard" }
+end
+
+-------------------------------------------------------------------------------
+-- Other addons' arrows
+-------------------------------------------------------------------------------
+-- Guide addons draw arrows of their own. While one is up, this arrow stands
+-- aside for the same kind of waypoint rather than drawing a second arrow to
+-- it: the selected quest (RestedXP selects quests itself as a guide runs),
+-- your corpse where that addon points at it too, and any map pin an addon
+-- placed. A pin you placed yourself and a guard's directions still show.
+--
+-- Questie has no arrow of its own; it hands waypoints to TomTom, so TomTom's
+-- arrow is what counts for it. The Guidelime and TomTom checks are from their
+-- settings and have not been tried in game.
+
+local function RXPArrow()
+    local f = _G.RXPG_ARROW
+    if type(f) ~= "table" or type(f.IsFeatureEnabled) ~= "function" then return false end
+    local ok, shown = pcall(f.IsFeatureEnabled)
+    return ok and shown == true
+end
+
+local function TomTomArrow()
+    local tt = _G.TomTom
+    local arrow = type(tt) == "table" and type(tt.profile) == "table" and tt.profile.arrow
+    return type(arrow) == "table" and arrow.enable ~= false
+end
+
+local function GuidelimeArrow()
+    local loaded = _G.C_AddOns and _G.C_AddOns.IsAddOnLoaded
+    local ok, isLoaded = pcall(loaded or _G.IsAddOnLoaded, "Guidelime")
+    if not (ok and isLoaded) then return false end
+    local data = _G.GuidelimeDataChar
+    return not (type(data) == "table" and data.showArrow == false)
+end
+
+-- corpse: whether that addon's arrow also leads you back to your body.
+local GUIDE_ARROWS = {
+    { name = "RestedXP",  active = RXPArrow,       corpse = true },
+    { name = "TomTom",    active = TomTomArrow,    corpse = true },
+    { name = "Guidelime", active = GuidelimeArrow, corpse = false },
+}
+
+-- The first guide arrow that is up, or nil. Nil too when stepping aside is
+-- turned off.
+function ns.GuideArrow()
+    if not ns.Get("arrowYieldToGuides") then return nil end
+    for _, guide in ipairs(GUIDE_ARROWS) do
+        if guide.active() then return guide end
+    end
+    return nil
+end
+
+-- Who placed the map pin: the addon whose code called SetUserWaypoint, or
+-- false for the game's own (a ctrl-click on the world map, a guard, a quest
+-- link). Read from the call stack in a hook that runs after the pin is set,
+-- so nothing about setting it changes. A pin from before this login is
+-- nobody's that we know of, and counts as yours.
+ns.pinSetBy = false
+
+local function CallingAddon(stack)
+    if type(stack) ~= "string" then return false end
+    for name in stack:gmatch("AddOns[/\\]([^/\\%]]+)[/\\]") do
+        if name ~= suiteName and not name:find("^Blizzard_") then return name end
+    end
+    return false
+end
+ns.ArrowCallingAddon = CallingAddon
+
+local function HookPins()
+    local map = _G.C_Map
+    if type(map) ~= "table" or type(_G.hooksecurefunc) ~= "function" then return end
+    if type(map.SetUserWaypoint) == "function" then
+        pcall(_G.hooksecurefunc, map, "SetUserWaypoint", function()
+            local ok, stack = pcall(_G.debugstack, 2)
+            ns.pinSetBy = ok and CallingAddon(stack) or false
+        end)
+    end
+    if type(map.ClearUserWaypoint) == "function" then
+        pcall(_G.hooksecurefunc, map, "ClearUserWaypoint", function()
+            ns.pinSetBy = false
+        end)
+    end
+end
+-- At load rather than when the arrow is built, so a guide addon setting its
+-- first pin during login is already seen.
+HookPins()
+ns.ArrowHookPins = HookPins
+
 function ns.ArrowTarget(playerMap)
-    return CorpseTarget(playerMap) or QuestTarget(playerMap) or PinTarget()
+    local guide = ns.GuideArrow()
+    local corpse = CorpseTarget(playerMap)
+    if corpse then
+        -- Dead, and the guide is already leading you back: no second arrow.
+        if guide and guide.corpse then return nil end
+        return corpse
+    end
+    local guard = GuardTarget(playerMap)
+    if guard then return guard end
+    if not guide then return QuestTarget(playerMap) or PinTarget() end
+    if ns.pinSetBy then return nil end
+    return PinTarget()
 end
 
 -- Bearing and distance from the player to a target, or nil when either end
@@ -785,7 +903,7 @@ end
 
 ns.RegisterModule("arrow", {
     title = "Waypoint arrow",
-    desc = "A large arrow at the top of the screen pointing at the tracked quest or map pin, or your corpse while you are dead.",
+    desc = "A large arrow at the top of the screen pointing at the tracked quest, map pin or a guard's directions, or your corpse while you are dead.",
     Apply = function(enabled)
         if not enabled then
             if frame then frame:Hide() end
@@ -825,6 +943,8 @@ function ns.ArrowProbe()
         { "C_Map", "GetPlayerMapPosition" },
         { "C_Map", "GetWorldPosFromMapPos" },
         { "C_Map", "GetMapWorldSize" },
+        { "C_GossipInfo", "GetPoiForUiMapID" },
+        { "C_GossipInfo", "GetPoiInfo" },
     }
     ns.Print("waypoint arrow APIs:")
     for _, pair in ipairs(names) do
@@ -841,6 +961,9 @@ function ns.ArrowProbe()
     print("  player map = " .. tostring(playerMap))
     local quest = TrackedQuest()
     print("  selected quest = " .. tostring(quest))
+    local guide = ns.GuideArrow()
+    print("  guide arrow = " .. (guide and guide.name or "none")
+        .. ", map pin placed by " .. (ns.pinSetBy or "you or the game"))
     local target = ns.ArrowTarget(playerMap)
     if target then
         local bearing, yards = ns.ArrowVector(target)

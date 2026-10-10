@@ -162,6 +162,8 @@ local ROWS = {
       swatch = { "arrowColorR", "arrowColorG", "arrowColorB" } },
     { key = "arrowShowDistance",    label = "Show the distance", tab = "travel", sub = "arrow" },
     { key = "arrowShowName",        label = "Show the quest's name", tab = "travel", sub = "arrow" },
+    { key = "arrowYieldToGuides",   label = "Step aside for guide arrows", tab = "travel", sub = "arrow",
+      tip = "While RestedXP, TomTom (Questie's waypoints) or Guidelime shows its own arrow, this one leaves quests, your corpse and addon-placed map pins to it. Your own map pins and a guard's directions still show." },
     { slider = "arrowScale", label = "Size", tab = "travel", sub = "arrow", min = 0.5, max = 3, step = 0.05, fmt = "x" },
     { slider = "arrowAlpha", label = "Opacity", tab = "travel", sub = "arrow", min = 0.1, max = 1, step = 0.05, fmt = "pct" },
 

@@ -2241,6 +2241,91 @@ rt.execute("DRIVER_TICK()")
 check("alive, it goes back to the selected quest",
       g.NS.arrowState.target.kind == "quest")
 
+# Another addon's arrow. RestedXP's frame says whether its arrow is up; while
+# it is, quests, the corpse and pins an addon placed are left to it. A pin you
+# placed and a guard's directions still show.
+GUIDE_SETUP = """
+RXP_ON = true
+RXPG_ARROW = { IsFeatureEnabled = function() return RXP_ON, false end }
+STACK = ""
+function debugstack() return STACK end
+function hooksecurefunc(tbl, name, fn)
+    local orig = tbl[name]
+    tbl[name] = function(...) local r = orig(...) fn(...) return r end
+end
+C_Map.SetUserWaypoint = function(point) PIN = point end
+C_Map.ClearUserWaypoint = function() PIN = nil end
+GUARD = nil
+C_GossipInfo = {
+    GetPoiForUiMapID = function(map) return GUARD and map == GUARD.map and 5 or nil end,
+    GetPoiInfo = function(map, id)
+        return { name = "Bank", position = { x = GUARD.x, y = GUARD.y } }
+    end,
+}
+"""
+RXP_STACK = "[Interface/AddOns/RXPGuides/functions.lua]:2358: in function <...>"
+MAP_STACK = ("[Interface/AddOns/Blizzard_SharedMapDataProviders/WaypointLocationDataProvider.lua]:40: "
+             "in function <...>")
+
+
+def guide_rt(extra=""):
+    rt, g = arrow_rt(GUIDE_SETUP + extra)
+    rt.execute("NS.ArrowHookPins()")
+    return rt, g
+
+
+def set_pin(rt, stack, x=0.5, y=0.4):
+    rt.execute(f'STACK = {stack!r} '
+               f'C_Map.SetUserWaypoint({{ map = 1, x = {x}, y = {y} }})')
+
+
+rt, g = guide_rt("SUPER = 77 QUEST_WP[77] = { map = 1, x = 0.6, y = 0.5 }")
+rt.execute("DRIVER_TICK()")
+check("with RestedXP's arrow up, the selected quest is left to it",
+      g.NS.arrowState.target is None, str(g.NS.arrowState.target))
+rt.execute("RXP_ON = false DRIVER_TICK()")
+check("and comes back when RestedXP's arrow is off",
+      g.NS.arrowState.target is not None and g.NS.arrowState.target.kind == "quest")
+
+rt, g = guide_rt()
+set_pin(rt, RXP_STACK)
+rt.execute("DRIVER_TICK()")
+check("a map pin RestedXP placed is left to it", g.NS.arrowState.target is None)
+check("and the probe can say who placed it", g.NS.pinSetBy == "RXPGuides")
+set_pin(rt, MAP_STACK)
+rt.execute("DRIVER_TICK()")
+check("a pin you ctrl-clicked on the map still shows",
+      g.NS.arrowState.target is not None and g.NS.arrowState.target.kind == "pin")
+rt.execute("RXP_ON = false")
+set_pin(rt, RXP_STACK)
+rt.execute("DRIVER_TICK()")
+check("with RestedXP's arrow off, its pin shows here instead",
+      g.NS.arrowState.target is not None and g.NS.arrowState.target.kind == "pin")
+
+rt, g = guide_rt("SUPER = 77 QUEST_WP[77] = { map = 1, x = 0.6, y = 0.5 } "
+                 "GUARD = { map = 1, x = 0.5, y = 0.4 }")
+rt.execute("DRIVER_TICK()")
+st = g.NS.arrowState
+check("a guard's directions show even with RestedXP's arrow up",
+      st.target is not None and st.target.kind == "guard" and st.target.name == "Bank"
+      and abs(st.yards - 100) < 0.01, str(st.target and st.target.kind))
+rt.execute("RXP_ON = false DRIVER_TICK()")
+check("and beat the selected quest, being the newer ask",
+      g.NS.arrowState.target.kind == "guard")
+
+rt, g = guide_rt(CORPSE_SETUP)
+rt.execute("DRIVER_TICK()")
+check("dead, with RestedXP leading you back, there is no second arrow",
+      g.NS.arrowState.target is None)
+
+rt, g = guide_rt("SUPER = 77 QUEST_WP[77] = { map = 1, x = 0.6, y = 0.5 }")
+rt.execute('NS.Set("arrowYieldToGuides", false) DRIVER_TICK()')
+check("with stepping aside turned off, it points at the quest anyway",
+      g.NS.arrowState.target is not None and g.NS.arrowState.target.kind == "quest")
+rt, g = fresh(stock=True)
+rt.execute("BOOT()")
+check("stepping aside ships on", g.NS.Get("arrowYieldToGuides") is True)
+
 rt, g = arrow_rt('PIN = { map = 1, x = 0.5, y = 0.4 } '
                  'C_Map.GetPlayerMapPosition = function() return nil end')
 rt.execute("DRIVER_TICK()")

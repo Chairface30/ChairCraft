@@ -183,6 +183,7 @@ ns.defaults = {
     arrowColorB         = 0.25,
     arrowShowDistance   = true,
     arrowShowName       = true,
+    arrowYieldToGuides  = true,     -- stand aside while RestedXP/TomTom/Guidelime point
     arrowAlpha          = 1.0,
     arrowAnchor         = "TOP",
     arrowRelAnchor      = "TOP",
