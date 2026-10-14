@@ -2318,6 +2318,15 @@ rt.execute("DRIVER_TICK()")
 check("dead, with RestedXP leading you back, there is no second arrow",
       g.NS.arrowState.target is None)
 
+rt, g = guide_rt("RXP_ON = false SUPER = 77 QUEST_WP[77] = { map = 1, x = 0.6, y = 0.5 } "
+                 "CF_SHOWN = true CompassForeverArrow = { IsShown = function() return CF_SHOWN end }")
+rt.execute("DRIVER_TICK()")
+check("with Compass Forever's arrow up, the selected quest is left to it",
+      g.NS.arrowState.target is None, str(g.NS.arrowState.target))
+rt.execute("CF_SHOWN = false DRIVER_TICK()")
+check("and comes back when Compass Forever's arrow hides",
+      g.NS.arrowState.target is not None and g.NS.arrowState.target.kind == "quest")
+
 rt, g = guide_rt("SUPER = 77 QUEST_WP[77] = { map = 1, x = 0.6, y = 0.5 }")
 rt.execute('NS.Set("arrowYieldToGuides", false) DRIVER_TICK()')
 check("with stepping aside turned off, it points at the quest anyway",

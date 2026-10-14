@@ -336,7 +336,7 @@ end
 -------------------------------------------------------------------------------
 -- Other addons' arrows
 -------------------------------------------------------------------------------
--- Guide addons draw arrows of their own. While one is up, this arrow stands
+-- Guide addons (and Compass Forever) draw arrows of their own. While one is up, this arrow stands
 -- aside for the same kind of waypoint rather than drawing a second arrow to
 -- it: the selected quest (RestedXP selects quests itself as a guide runs),
 -- your corpse where that addon points at it too, and any map pin an addon
@@ -367,8 +367,18 @@ local function GuidelimeArrow()
     return not (type(data) == "table" and data.showArrow == false)
 end
 
+-- Compass Forever's arrow is up while it has a route under way, or leads a
+-- ghost back to the corpse.
+local function CompassArrow()
+    local f = _G.CompassForeverArrow
+    if type(f) ~= "table" or type(f.IsShown) ~= "function" then return false end
+    local ok, shown = pcall(f.IsShown, f)
+    return ok and shown == true
+end
+
 -- corpse: whether that addon's arrow also leads you back to your body.
 local GUIDE_ARROWS = {
+    { name = "Compass Forever", active = CompassArrow, corpse = true },
     { name = "RestedXP",  active = RXPArrow,       corpse = true },
     { name = "TomTom",    active = TomTomArrow,    corpse = true },
     { name = "Guidelime", active = GuidelimeArrow, corpse = false },
