@@ -5,6 +5,9 @@
 **Fixed**
 - **Nameplate threat colors stayed in the normal color in combat.** The game keeps a nameplate's threat hidden from addons in combat, so the colors couldn't tell who had aggro. They now read it through another name the game gives the same mob (your target, a group member's target), as the threat % on nameplates already does, and check again every moment of a fight. Not yet confirmed in game.
 
+**Changed**
+- **The sort button is on the left of the combined backpack.** It sits at the start of the search bar, and the search bar fills the space on the right where the button was. The separate backpack keeps the button on the right. Not yet confirmed in game.
+
 **Added**
 - **The waypoint arrow steps aside for guide arrows.** While RestedXP, TomTom (where Questie sends its waypoints) or Guidelime shows its own arrow, ChairCraft's arrow leaves the selected quest, your corpse and any map pin an addon placed to it, so you don't get two arrows to the same place. Map pins you place yourself and a guard's directions still show. Turn it off with "Step aside for guide arrows" under the waypoint arrow options. Not yet confirmed in game; the TomTom and Guidelime checks have not been tried with those addons installed.
 - **The waypoint arrow points to a guard's directions.** Ask a town guard where something is, and the arrow points to the spot they mark on the map, ahead of the selected quest and the map pin. Not yet confirmed in game.

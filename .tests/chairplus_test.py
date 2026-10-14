@@ -2869,6 +2869,84 @@ rt.execute("MakeWindow('ContainerFrameCombinedBags') FireEvent('ADDON_LOADED', '
 check("the bags get their handle once the frame exists",
       rt.eval("ContainerFrameCombinedBags.chairMoverHandle") is not None)
 
+# The combined backpack's sort button goes on the left, the search box after
+# it; the separate backpack keeps Blizzard's top-right button.
+rt = lua51.LuaRuntime(unpack_returned_tuples=True)
+g = rt.globals()
+rt.execute(HARNESS)
+rt.execute(MOVERS_SETUP)
+rt.execute('''
+local plainHook = hooksecurefunc
+function hooksecurefunc(a, b, c)
+    if type(a) == "table" then
+        local original = a[b]
+        a[b] = function(...) local r = original(...) c(...) return r end
+        return
+    end
+    return plainHook(a, b)
+end
+-- Regions that keep every point, as the client does.
+function PointRegion(w)
+    local r = { points = {}, w = w }
+    function r:SetParent(p) self.parent = p end
+    function r:GetParent() return self.parent end
+    function r:ClearAllPoints() self.points = {} end
+    function r:SetPoint(p, rel, rp, x, y)
+        for i, pt in ipairs(self.points) do
+            if pt[1] == p then table.remove(self.points, i) break end
+        end
+        self.points[#self.points + 1] = { p, rel, rp, x, y }
+    end
+    function r:GetNumPoints() return #self.points end
+    function r:GetPoint(i) local pt = self.points[i] return pt[1], pt[2], pt[3], pt[4], pt[5] end
+    function r:GetWidth() return self.w end
+    function r:SetWidth(w) self.w = w end
+    return r
+end
+BagItemSearchBox = PointRegion(96)
+BagItemAutoSortButton = PointRegion(28)
+local function Bag(name, searchX, searchW)
+    local f = MakeWindow(name)
+    rawset(f, "UpdateSearchBox", function(self)
+        BagItemSearchBox:SetParent(self)
+        BagItemSearchBox:ClearAllPoints()
+        BagItemSearchBox:SetPoint("TOPLEFT", self, "TOPLEFT", searchX, -37)
+        BagItemSearchBox:SetWidth(searchW)
+        BagItemAutoSortButton:SetParent(self)
+        BagItemAutoSortButton:SetPoint("TOPRIGHT", self, "TOPRIGHT", -9, -34)
+    end)
+end
+Bag("ContainerFrameCombinedBags", 62, 330)
+Bag("ContainerFrame1", 42, 96)
+''')
+rt.execute(LOAD)
+rt.execute("BOOT() ContainerFrameCombinedBags:UpdateSearchBox()")
+rt.execute('''
+local function Find(r, p)
+    for _, pt in ipairs(r.points) do if pt[1] == p then return pt end end
+end
+local s, b = BagItemAutoSortButton, BagItemSearchBox
+SORT_N = #s.points
+SORT_L = Find(s, "TOPLEFT")
+BOX_L, BOX_R = Find(b, "TOPLEFT"), Find(b, "TOPRIGHT")
+''')
+sl, bl, br = rt.eval("SORT_L"), rt.eval("BOX_L"), rt.eval("BOX_R")
+check("the combined bags' sort button sits on the left, where the search box began",
+      rt.eval("SORT_N") == 1 and sl is not None and sl[4] == 60 and sl[5] == -34,
+      str(sl and (sl[4], sl[5])))
+check("and the search box starts after it and reaches the button's old place",
+      bl is not None and br is not None and bl[4] == 92 and bl[5] == -37 and br[4] == -13,
+      str(bl and (bl[4], br and br[4])))
+rt.execute("ContainerFrameCombinedBags:UpdateSearchBox()")
+check("a second layout leaves the button with one point, on the left",
+      rt.eval("#BagItemAutoSortButton.points") == 1
+      and rt.eval("BagItemAutoSortButton.points[1][1]") == "TOPLEFT")
+rt.execute("ContainerFrame1:UpdateSearchBox()")
+check("the separate backpack keeps Blizzard's top-right button, the left point cleared",
+      rt.eval("#BagItemAutoSortButton.points") == 1
+      and rt.eval("BagItemAutoSortButton.points[1][1]") == "TOPRIGHT"
+      and rt.eval("BagItemAutoSortButton.points[1][2] == ContainerFrame1") is True)
+
 # The spellbook. A SpellBookFrame made after login gets its handle when the
 # spellbook is opened; a newer client's PlayerSpellsFrame (load on demand, and
 # opened through PlayerSpellsUtil) gets it the same way.

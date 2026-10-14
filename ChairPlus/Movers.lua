@@ -360,3 +360,71 @@ function ns.ResetMovers()
     local store = Store()
     if store then wipe(store) end
 end
+
+-- The combined backpack's sort button sits on the left, where the search box
+-- starts, and the search box shifts right to take the button's old place.
+-- Blizzard pins the button to the top right in the bag's UpdateSearchBox,
+-- each time a bag shows, so the move follows that method. Hooked, never
+-- called. The separate backpack keeps Blizzard's layout; since Blizzard sets
+-- the button's point there without clearing the old ones, the left anchor
+-- is cleared off it first.
+local SORT_GAP = 4
+
+local function TopRightPoint(region)
+    local okN, count = pcall(region.GetNumPoints, region)
+    count = okN and ns.Num(count) or 0
+    for i = 1, count do
+        local ok, point, rel, relPoint, x, y = pcall(region.GetPoint, region, i)
+        if ok and point == "TOPRIGHT" then return rel, relPoint, ns.Num(x) or 0, ns.Num(y) or 0, count end
+    end
+    return nil, nil, nil, nil, count
+end
+
+local function PlaceSortButton(bags)
+    local sort, search = _G.BagItemAutoSortButton, _G.BagItemSearchBox
+    if not sort or not search then return end
+    local okP, parent = pcall(sort.GetParent, sort)
+    if not okP or parent ~= bags then return end
+    local rel, relPoint, sortX, sortY, count = TopRightPoint(sort)
+    if not rel then return end
+    if bags ~= _G.ContainerFrameCombinedBags then
+        if count > 1 then
+            sort:ClearAllPoints()
+            sort:SetPoint("TOPRIGHT", rel, relPoint, sortX, sortY)
+        end
+        return
+    end
+    local okS, point, _, _, searchX, searchY = pcall(search.GetPoint, search, 1)
+    searchX, searchY = ns.Num(searchX), ns.Num(searchY)
+    if not okS or point ~= "TOPLEFT" or not searchX or not searchY then return end
+    local okW, sortW = pcall(sort.GetWidth, sort)
+    sortW = okW and ns.Num(sortW) or 28
+    sort:ClearAllPoints()
+    sort:SetPoint("TOPLEFT", bags, "TOPLEFT", searchX - 2, sortY)
+    search:ClearAllPoints()
+    search:SetPoint("TOPLEFT", bags, "TOPLEFT", searchX - 2 + sortW + SORT_GAP, searchY)
+    search:SetPoint("TOPRIGHT", bags, "TOPRIGHT", sortX - SORT_GAP, searchY)
+end
+
+local sortHooked = {}
+local function HookSortButton(bags)
+    if type(bags) ~= "table" or sortHooked[bags] or type(bags.UpdateSearchBox) ~= "function" then return end
+    sortHooked[bags] = true
+    hooksecurefunc(bags, "UpdateSearchBox", function(self) pcall(PlaceSortButton, self) end)
+    pcall(PlaceSortButton, bags)
+end
+
+local function HookSortButtons()
+    HookSortButton(_G.ContainerFrameCombinedBags)
+    for i = 1, 13 do HookSortButton(_G["ContainerFrame" .. i]) end
+end
+HookSortButtons()
+-- In case the bag frames are made after this file loads.
+local sortDriver = CreateFrame("Frame")
+for _, event in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN" }) do
+    pcall(sortDriver.RegisterEvent, sortDriver, event)
+end
+sortDriver:SetScript("OnEvent", HookSortButtons)
+for _, opener in ipairs({ "ToggleAllBags", "OpenAllBags", "ToggleBackpack" }) do
+    if type(_G[opener]) == "function" then hooksecurefunc(opener, HookSortButtons) end
+end
