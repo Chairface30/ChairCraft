@@ -11,6 +11,15 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.11.0"] = {
+        title = "Guide arrows and guard directions",
+        lines = {
+            "The waypoint arrow steps aside while RestedXP, TomTom or Guidelime shows its own arrow.",
+            "Ask a town guard for directions and the arrow points to the spot they mark.",
+            "The arrow fades out under the game's on-screen messages, like zone names and quest progress.",
+            "Nameplate threat colors work in combat, and the bag sort button is on the left of the combined backpack.",
+        },
+    },
     ["1.10.0"] = {
         title = "Dodge, parry and block triggers",
         lines = {
