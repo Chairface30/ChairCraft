@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## ChairCraft v1.11.1: Steps aside for Compass Forever
 
 **Changed**
 - **The waypoint arrow steps aside for Compass Forever too.** While Compass Forever's arrow is up (a route under way, or leading you back to your corpse), ChairCraft's arrow leaves the selected quest, your corpse and addon-placed map pins to it, as it does for RestedXP, TomTom and Guidelime. Your own map pins and a guard's directions still show. Not yet confirmed in game.

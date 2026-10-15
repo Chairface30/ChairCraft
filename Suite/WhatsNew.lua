@@ -11,6 +11,12 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.11.1"] = {
+        title = "Steps aside for Compass Forever",
+        lines = {
+            "The waypoint arrow steps aside while Compass Forever's arrow is up, so you don't get two arrows.",
+        },
+    },
     ["1.11.0"] = {
         title = "Guide arrows and guard directions",
         lines = {
