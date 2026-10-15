@@ -11,6 +11,12 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.11.2"] = {
+        title = "Your corpse arrow stays",
+        lines = {
+            "The waypoint arrow leads you back to your corpse even while Compass Forever's arrow is up.",
+        },
+    },
     ["1.11.1"] = {
         title = "Steps aside for Compass Forever",
         lines = {
