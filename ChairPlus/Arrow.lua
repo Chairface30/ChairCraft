@@ -342,21 +342,40 @@ end
 -- your corpse where that addon points at it too, and any map pin an addon
 -- placed. A pin you placed yourself and a guard's directions still show.
 --
+-- An arrow counts only while it's actually on screen: one turned on in its
+-- addon's settings but with nothing to point at is hidden, and then this
+-- arrow leads to the selected quest as usual.
+--
 -- Questie has no arrow of its own; it hands waypoints to TomTom, so TomTom's
--- arrow is what counts for it. The Guidelime and TomTom checks are from their
--- settings and have not been tried in game.
+-- arrow is what counts for it. Guidelime's arrow frame has no name to look
+-- at, so it counts while Guidelime's arrow setting is on. The Guidelime and
+-- TomTom checks have not been tried in game.
+
+-- A frame on screen: shown, its parents too, and not faded out.
+local function OnScreen(f)
+    if type(f) ~= "table" or type(f.IsVisible) ~= "function" then return false end
+    local ok, visible = pcall(f.IsVisible, f)
+    if not (ok and visible == true) then return false end
+    if type(f.GetAlpha) == "function" then
+        local okA, alpha = pcall(f.GetAlpha, f)
+        alpha = okA and ns.Num(alpha)
+        if alpha and alpha <= 0 then return false end
+    end
+    return true
+end
 
 local function RXPArrow()
     local f = _G.RXPG_ARROW
     if type(f) ~= "table" or type(f.IsFeatureEnabled) ~= "function" then return false end
-    local ok, shown = pcall(f.IsFeatureEnabled)
-    return ok and shown == true
+    local ok, enabled = pcall(f.IsFeatureEnabled)
+    return ok and enabled == true and OnScreen(f)
 end
 
 local function TomTomArrow()
     local tt = _G.TomTom
     local arrow = type(tt) == "table" and type(tt.profile) == "table" and tt.profile.arrow
-    return type(arrow) == "table" and arrow.enable ~= false
+    if type(arrow) == "table" and arrow.enable == false then return false end
+    return OnScreen(_G.TomTomCrazyArrow)
 end
 
 local function GuidelimeArrow()
@@ -370,10 +389,7 @@ end
 -- Compass Forever's arrow is up while it has a route under way. It doesn't
 -- lead to your corpse, so that stays here.
 local function CompassArrow()
-    local f = _G.CompassForeverArrow
-    if type(f) ~= "table" or type(f.IsShown) ~= "function" then return false end
-    local ok, shown = pcall(f.IsShown, f)
-    return ok and shown == true
+    return OnScreen(_G.CompassForeverArrow)
 end
 
 -- corpse: whether that addon's arrow also leads you back to your body.

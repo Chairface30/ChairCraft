@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Fixed**
+- **The waypoint arrow stood aside for RestedXP or TomTom even when their arrow wasn't showing.** It only counted whether their arrow was turned on in their settings, so with nothing for it to point at, the selected quest got no arrow at all. Now it steps aside only while their arrow is actually on screen. Not yet confirmed in game.
+
 ## ChairCraft v1.11.2: Your corpse arrow stays
 
 **Fixed**

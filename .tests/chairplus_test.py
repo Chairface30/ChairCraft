@@ -2246,7 +2246,9 @@ check("alive, it goes back to the selected quest",
 # placed and a guard's directions still show.
 GUIDE_SETUP = """
 RXP_ON = true
-RXPG_ARROW = { IsFeatureEnabled = function() return RXP_ON, false end }
+RXP_SHOWN = true
+RXPG_ARROW = { IsFeatureEnabled = function() return RXP_ON, false end,
+               IsVisible = function() return RXP_SHOWN end, GetAlpha = function() return 1 end }
 STACK = ""
 function debugstack() return STACK end
 function hooksecurefunc(tbl, name, fn)
@@ -2286,6 +2288,10 @@ check("with RestedXP's arrow up, the selected quest is left to it",
 rt.execute("RXP_ON = false DRIVER_TICK()")
 check("and comes back when RestedXP's arrow is off",
       g.NS.arrowState.target is not None and g.NS.arrowState.target.kind == "quest")
+rt.execute("RXP_ON = true RXP_SHOWN = false DRIVER_TICK()")
+check("RestedXP's arrow turned on but hidden (nothing to point at): the quest shows here",
+      g.NS.arrowState.target is not None and g.NS.arrowState.target.kind == "quest")
+rt.execute("RXP_SHOWN = true")
 
 rt, g = guide_rt()
 set_pin(rt, RXP_STACK)
@@ -2319,7 +2325,7 @@ check("dead, with RestedXP leading you back, there is no second arrow",
       g.NS.arrowState.target is None)
 
 rt, g = guide_rt("RXP_ON = false SUPER = 77 QUEST_WP[77] = { map = 1, x = 0.6, y = 0.5 } "
-                 "CF_SHOWN = true CompassForeverArrow = { IsShown = function() return CF_SHOWN end }")
+                 "CF_SHOWN = true CompassForeverArrow = { IsVisible = function() return CF_SHOWN end }")
 rt.execute("DRIVER_TICK()")
 check("with Compass Forever's arrow up, the selected quest is left to it",
       g.NS.arrowState.target is None, str(g.NS.arrowState.target))
