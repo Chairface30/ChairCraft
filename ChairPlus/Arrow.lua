@@ -367,8 +367,8 @@ local function GuidelimeArrow()
     return not (type(data) == "table" and data.showArrow == false)
 end
 
--- Compass Forever's arrow is up while it has a route under way, or leads a
--- ghost back to the corpse.
+-- Compass Forever's arrow is up while it has a route under way. It doesn't
+-- lead to your corpse, so that stays here.
 local function CompassArrow()
     local f = _G.CompassForeverArrow
     if type(f) ~= "table" or type(f.IsShown) ~= "function" then return false end
@@ -378,7 +378,7 @@ end
 
 -- corpse: whether that addon's arrow also leads you back to your body.
 local GUIDE_ARROWS = {
-    { name = "Compass Forever", active = CompassArrow, corpse = true },
+    { name = "Compass Forever", active = CompassArrow, corpse = false },
     { name = "RestedXP",  active = RXPArrow,       corpse = true },
     { name = "TomTom",    active = TomTomArrow,    corpse = true },
     { name = "Guidelime", active = GuidelimeArrow, corpse = false },

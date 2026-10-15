@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Fixed**
+- **The waypoint arrow keeps your corpse while Compass Forever's arrow is up.** Compass Forever no longer leads you back to your body, so ChairCraft's arrow does. Not yet confirmed in game.
+
 ## ChairCraft v1.11.1: Steps aside for Compass Forever
 
 **Changed**
