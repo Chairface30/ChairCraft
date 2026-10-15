@@ -2144,8 +2144,20 @@ local TRIGGER_FIELDS = {
     CodeField("customStacks", "Stacks", nil, "Optional. return the stack count."),
 }
 
+-- Whether a setting for one shape applies. On a group it does when anything
+-- inside is that shape: set there, it is handed down to all of them (see
+-- SetDisplay), so a group of bars can be styled once for every bar.
+local function Holds(aura, wanted)
+    if not ns.IsGroup(aura) then return wanted[ns.RegionKind(aura)] and true or false end
+    for _, child in ipairs(ns.Descendants(aura.id)) do
+        if wanted[ns.RegionKind(child)] then return true end
+    end
+    return false
+end
+
 local function IsKind(wanted)
-    return function(aura) return ns.RegionKind(aura) == wanted end
+    local set = { [wanted] = true }
+    return function(aura) return Holds(aura, set) end
 end
 
 local OUTLINES = {
@@ -2279,9 +2291,12 @@ end
 local function KindIn(...)
     local wanted = {}
     for i = 1, select("#", ...) do wanted[select(i, ...)] = true end
-    return function(aura) return wanted[ns.RegionKind(aura)] and true or false end
+    return function(aura) return Holds(aura, wanted) end
 end
 local function NotGroup(aura) return not ns.IsGroup(aura) end
+-- Border, background and glow: on a group they are handed down too, since a
+-- group draws nothing of its own.
+local function Any() return true end
 local function Both(a, b) return function(aura) return a(aura) and b(aura) end end
 local function DisplayIs(key, value)
     return function(aura) return ns.DisplayField(aura, key) == value end
@@ -2364,12 +2379,17 @@ local function CurText(aura)
     local list = TextsOf(aura)
     return list and list[currentText]
 end
-local function HasText(aura) return not ns.IsGroup(aura) and CurText(aura) ~= nil end
+local function HasText(aura) return CurText(aura) ~= nil end
 local function TextValue(aura, key) return ns.SubRegions.TextField(CurText(aura), key) end
+-- A group's texts go to everything inside it, whole, each time they change.
+local function HandTextsDown(aura)
+    if ns.IsGroup(aura) then SetDisplay(aura, "texts", TextsOf(aura)) end
+end
 local function SetText(aura, key, value)
     local entry = CurText(aura)
     if not entry then return end
     entry[key] = value
+    HandTextsDown(aura)
     Commit(false)
 end
 function Config.__textCursor(i)
@@ -2401,17 +2421,38 @@ local DISPLAY_FIELDS = {
     {
         kind = "choice", label = "Draw it as", key = "type", width = 160, dropdown = true,
         tip = "The same trigger, drawn differently. Everything else about the "
-           .. "aura survives the change.",
+           .. "aura survives the change.\n\n"
+           .. "On a group this draws everything inside it that way, and the "
+           .. "settings below then apply to all of them.",
         values = { { text = "Icon", value = "icon" },
                    { text = "Text", value = "text" },
                    { text = "Bar", value = "bar" },
                    { text = "Texture", value = "texture" },
                    { text = "Progress texture", value = "progress" },
                    { text = "Model", value = "model" } },
-        enabled = function(aura) return not ns.IsGroup(aura) end,
-        get = function(aura) return ns.RegionKind(aura) end,
+        -- On a group: what everything inside is drawn as (blank when they
+        -- differ), and picking one draws them all that way.
+        enabled = function(aura) return not ns.IsGroup(aura) or #ns.Descendants(aura.id) > 0 end,
+        get = function(aura)
+            if not ns.IsGroup(aura) then return ns.RegionKind(aura) end
+            local kind
+            for _, child in ipairs(ns.Descendants(aura.id)) do
+                if not ns.IsGroup(child) then
+                    local k = ns.RegionKind(child)
+                    if kind and k ~= kind then return nil end
+                    kind = k
+                end
+            end
+            return kind
+        end,
         set = function(aura, value)
-            aura.type = value
+            if ns.IsGroup(aura) then
+                for _, child in ipairs(ns.Descendants(aura.id)) do
+                    if not ns.IsGroup(child) then child.type = value end
+                end
+            else
+                aura.type = value
+            end
             Commit(true)
         end,
     },
@@ -2576,7 +2617,7 @@ local DISPLAY_FIELDS = {
         { text = "Pet", value = "pet" } }, Both(IsKind("model"), DisplayIs("modelSource", "unit")), 62),
     {
         kind = "text", label = "ID", key = "modelID", width = 120,
-        visible = function(aura) return ns.RegionKind(aura) == "model" and ns.DisplayField(aura, "modelSource") ~= "unit" end,
+        visible = function(aura) return IsKind("model")(aura) and ns.DisplayField(aura, "modelSource") ~= "unit" end,
         get = function(aura) return tostring(ns.DisplayField(aura, "modelID") or 0) end,
         set = function(aura, text)
             SetDisplay(aura, "modelID", tonumber(text) or nil)
@@ -2716,28 +2757,28 @@ local DISPLAY_FIELDS = {
     DisplayCheck("barSpark", "Spark", IsKind("bar"), "A spark at the moving edge while it has a timer."),
     DisplayCheck("barInverse", "Inverse", IsKind("bar"), "Fill with the time gone rather than the time left."),
 
-    { kind = "header", label = "Border and background", visible = NotGroup },
-    DisplayCheck("border", "Border", NotGroup),
-    DisplayColour("borderColour", "Border color", Both(NotGroup, DisplayIs("border", true))),
-    DisplaySlider("borderSize", "Border size", 1, 10, Both(NotGroup, DisplayIs("border", true))),
-    DisplaySlider("borderOffset", "Border and background offset", -10, 10, NotGroup,
+    { kind = "header", label = "Border and background", visible = Any },
+    DisplayCheck("border", "Border", Any),
+    DisplayColour("borderColour", "Border color", Both(Any, DisplayIs("border", true))),
+    DisplaySlider("borderSize", "Border size", 1, 10, Both(Any, DisplayIs("border", true))),
+    DisplaySlider("borderOffset", "Border and background offset", -10, 10, Any,
         "Out from the edge, or in from it."),
-    DisplayCheck("backdrop", "Background", NotGroup),
-    DisplayColour("backdropColour", "Background color", Both(NotGroup, DisplayIs("backdrop", true))),
-    DisplaySlider("backdropAlpha", "Background opacity (%)", 0, 100, Both(NotGroup, DisplayIs("backdrop", true))),
+    DisplayCheck("backdrop", "Background", Any),
+    DisplayColour("backdropColour", "Background color", Both(Any, DisplayIs("backdrop", true))),
+    DisplaySlider("backdropAlpha", "Background opacity (%)", 0, 100, Both(Any, DisplayIs("backdrop", true))),
 
-    { kind = "header", label = "Glow", visible = NotGroup },
-    DisplayCheck("glow", "Glow while it shows", NotGroup,
+    { kind = "header", label = "Glow", visible = Any },
+    DisplayCheck("glow", "Glow while it shows", Any,
         "A glow round it for as long as it shows. A condition can glow it too; it uses the style set here."),
     DisplayChoice("glowType", "Style", { { text = "Pulse", value = "pulse" },
-        { text = "Pixel", value = "pixel" }, { text = "Shine", value = "shine" } }, NotGroup, 62, false,
+        { text = "Pixel", value = "pixel" }, { text = "Shine", value = "shine" } }, Any, 62, false,
         "Pulse breathes a border in and out; pixel runs lines round the edge; shine runs dots round it. "
         .. "The game's own action-button glow is not on this client."),
-    DisplayColour("glowColour", "Glow color", NotGroup),
-    DisplaySlider("glowLines", "Lines or dots", 1, 30, Both(NotGroup, function(aura)
+    DisplayColour("glowColour", "Glow color", Any),
+    DisplaySlider("glowLines", "Lines or dots", 1, 30, Both(Any, function(aura)
         return ns.DisplayField(aura, "glowType") ~= "pulse" end)),
-    DisplaySlider("glowThickness", "Thickness", 1, 8, NotGroup),
-    DisplaySlider("glowSpeed", "Speed", 5, 200, Both(NotGroup, function(aura)
+    DisplaySlider("glowThickness", "Thickness", 1, 8, Any),
+    DisplaySlider("glowSpeed", "Speed", 5, 200, Both(Any, function(aura)
         return ns.DisplayField(aura, "glowType") ~= "pulse" end),
         "How far round it goes in a second, per cent."),
 
@@ -2749,9 +2790,9 @@ local DISPLAY_FIELDS = {
     DisplayColour("tickColour", "Tick color", KindIn("bar", "progress")),
     DisplaySlider("tickThickness", "Tick thickness", 1, 8, KindIn("bar", "progress")),
 
-    { kind = "header", label = "More text", visible = NotGroup },
+    { kind = "header", label = "More text" },
     {
-        kind = "strip", label = "Texts", key = "texts", max = 8, visible = NotGroup,
+        kind = "strip", label = "Texts", key = "texts", max = 8,
         empty = "none yet -- + adds one",
         tip = "Any number of texts, each placed and styled on its own, with the text codes.",
         count = function(aura) local list = TextsOf(aura) return list and #list or 0 end,
@@ -2762,12 +2803,14 @@ local DISPLAY_FIELDS = {
             display.texts = display.texts or {}
             display.texts[#display.texts + 1] = { text = "%n" }
             currentText = #display.texts
+            HandTextsDown(aura)
         end,
         remove = function(aura)
             local list = TextsOf(aura)
             if not list then return end
             table.remove(list, currentText)
             currentText = math.max(1, currentText - 1)
+            HandTextsDown(aura)
         end,
     },
     {

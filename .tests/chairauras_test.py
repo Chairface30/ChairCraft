@@ -1404,6 +1404,61 @@ check("but not the icon",
       ev("(ns.GetAuras()[#ns.GetAuras()].display or {}).icon") is None
       and ev("(ns.GetAuras()[#ns.GetAuras()].display or {}).iconSpell") is None)
 
+print("-- a dynamic group of bars is styled from the group")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "g1", type = "dynamic", name = "Bars", growth = "DOWN" },
+    { id = "b1", parent = "g1", triggers = { { trigger = { spellID = 774 } } } },
+    { id = "b2", parent = "g1", triggers = { { trigger = { spellID = 8936 } } } },
+} } } }
+""")
+ev = L.eval
+L.execute("""function DF(key, label)
+    for _, f in ipairs(ns.Config.__displayFields) do
+        if f.key == key and (not label or f.label == label) then return f end
+    end
+end""")
+check("bar settings are off on a group of icons",
+      ev("DF('barWidth').enabled(ns.FindAura('g1'))") is False)
+check("the group says its children are icons", ev("DF('type').get(ns.FindAura('g1'))") == "icon")
+L.execute("DF('type').set(ns.FindAura('g1'), 'bar')")
+check("drawing the group as bars draws every child as a bar",
+      ev("ns.FindAura('b1').type") == "bar" and ev("ns.FindAura('b2').type") == "bar"
+      and ev("ns.FindAura('g1').type") == "dynamic")
+check("and the group's bar settings come on",
+      ev("DF('barWidth').enabled(ns.FindAura('g1'))") is True
+      and ev("DF('barTexture').visible(ns.FindAura('g1'))") is True
+      and ev("DF('tickColour').visible(ns.FindAura('g1'))") is True)
+L.execute("""DF('barWidth').set(ns.FindAura('g1'), 300)
+DF('barHeight').set(ns.FindAura('g1'), 30)
+DF('barBackColour').set(ns.FindAura('g1'), '112233')
+DF('barSpark').set(ns.FindAura('g1'), true)
+DF('barFontSize').set(ns.FindAura('g1'), 14)
+DF('border').set(ns.FindAura('g1'), true)
+DF('glow').set(ns.FindAura('g1'), true)""")
+for key, want in (("barWidth", 300), ("barHeight", 30), ("barBackColour", "112233"),
+                  ("barSpark", True), ("barFontSize", 14), ("border", True), ("glow", True)):
+    check("the group's " + key + " reaches every bar",
+          ev("ns.DisplayField(ns.FindAura('b1'), '%s')" % key) == want
+          and ev("ns.DisplayField(ns.FindAura('b2'), '%s')" % key) == want)
+check("border and glow can be set on the group",
+      ev("DF('border').visible(ns.FindAura('g1'))") is True
+      and ev("DF('glowColour').visible(ns.FindAura('g1'))") is True)
+L.execute("""local strip = DF('texts')
+strip.add(ns.FindAura('g1'))
+ns.Config.__textCursor(1)
+DF('subText').set(ns.FindAura('g1'), '%t left')""")
+check("a group's extra text goes to every bar",
+      ev("ns.FindAura('b1').display.texts[1].text") == "%t left"
+      and ev("ns.FindAura('b2').display.texts[1].text") == "%t left")
+check("each bar gets its own copy",
+      ev("ns.FindAura('b1').display.texts ~= ns.FindAura('b2').display.texts") is True)
+L.execute("ns.FindAura('b2').type = 'icon'")
+check("mixed children leave the group's shape blank", ev("DF('type').get(ns.FindAura('g1'))") is None)
+L.execute("ns.Config:Select('g1'); ns.Config:AddNamed('Drink')")
+check("a bar added later takes the group's bar settings",
+      ev("ns.DisplayField(ns.GetAuras()[#ns.GetAuras()], 'barWidth')") == 300)
+
 # --- 6l. export and import -------------------------------------------------
 # A string that leaves one game and arrives in another has to survive being
 # serialised, encoded, pasted, and read back by an addon that shares nothing
