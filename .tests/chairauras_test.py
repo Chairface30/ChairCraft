@@ -3163,6 +3163,46 @@ check("casting it puts it on its learned cooldown",
 L.execute("NOW = NOW + 61 ns.Engine:UpdateAll()")
 check("and it is ready again once that has run out", ev("ns.Engine.states.cd.met") is True)
 
+print("-- a cooldown trigger's Show: ready, on cooldown, always")
+L = boot("""
+ChairAurasDB = { version = 3, profiles = { account = { auras = {
+    { id = "ready", triggers = { { trigger = { type = "cooldown", spellID = 5487 } } } },
+    { id = "oncd", type = "bar", display = { hide = true },
+      triggers = { { trigger = { type = "cooldown", spellID = 5487, showOn = "cooldown" } } } },
+    { id = "always", triggers = { { trigger = { type = "cooldown", spellID = 5487, showOn = "always" } } } },
+    { id = "fresh", display = { hide = true },
+      triggers = { { trigger = { type = "cooldown", spellID = 2687, showOn = "cooldown" } } } },
+} } } }
+""")
+ev = L.eval
+L.execute("ns.Engine:UpdateAll()")
+check("ready: shown while the spell is ready", ev("ns.Engine.states.ready.shown") is True)
+check("on cooldown: hidden while it is ready",
+      ev("ns.Engine.states.oncd.shown") is False and ev("ns.Display.__regions.oncd:GetAlpha()") == 0)
+check("always: shown while ready", ev("ns.Engine.states.always.shown") is True)
+L.execute("COOLDOWNS[5487] = { duration = 60, start = NOW } ns.Engine:UpdateAll()")
+check("ready: hidden while on cooldown", ev("ns.Engine.states.ready.shown") is False)
+check("on cooldown: shown while on cooldown, with its timer",
+      ev("ns.Engine.states.oncd.shown") is True and ev("ns.Engine.states.oncd.duration") == 60
+      and ev("ns.Display.__regions.oncd:GetAlpha()") == 1)
+check("always: shown while on cooldown", ev("ns.Engine.states.always.shown") is True)
+L.execute("""COOLDOWNS[5487] = nil ns.Engine:UpdateAll()
+C_Spell.GetSpellCooldownDuration = function(id) return { kind = "duration" } end
+COOLDOWNS[5487] = { duration = SECRET_VALUE(), start = SECRET_VALUE() }
+ns.Engine.lastCast[5487] = NOW + 1 NOW = NOW + 1 ns.Engine:UpdateAll()""")
+check("in combat, cast: on cooldown shows", ev("ns.Engine.states.oncd.shown") is True
+      and ev("ns.Engine.states.ready.shown") is False)
+L.execute("NOW = NOW + 61 ns.Engine:UpdateAll()")
+check("in combat, run out: on cooldown hides again", ev("ns.Engine.states.oncd.shown") is False
+      and ev("ns.Engine.states.ready.shown") is True)
+L.execute("""C_Spell.GetSpellBaseCooldown = function(id) if id == 2687 then return 60000 end end
+COOLDOWNS[2687] = { duration = SECRET_VALUE(), start = SECRET_VALUE() }
+ns.Engine.lastCast[2687] = NOW + 1 NOW = NOW + 1 ns.Engine:UpdateAll()""")
+check("first cast in combat, never seen: the spell's listed cooldown is used",
+      ev("ns.Engine.states.fresh.shown") is True and ev("ns.Engine.states.fresh.duration") == 60)
+L.execute("NOW = NOW + 61 ns.Engine:UpdateAll()")
+check("and it hides when that has run out", ev("ns.Engine.states.fresh.shown") is False)
+
 print("-- in combat, an aura that cannot be read says so")
 L = boot("""
 ChairAurasDB = { version = 3, probe = { runs = {}, auraEvents = { "old" } },

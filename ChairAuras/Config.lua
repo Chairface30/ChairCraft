@@ -1895,6 +1895,22 @@ local TRIGGER_FIELDS = {
         end,
     },
     {
+        kind = "choice", label = "Show", key = "showOn", width = 110,
+        tip = "When the cooldown trigger is active: while the spell is ready, "
+           .. "while it is on cooldown (a bar counting it down), or always.",
+        values = { { text = "Ready", value = "ready" },
+                   { text = "On cooldown", value = "cooldown" },
+                   { text = "Always", value = "always" } },
+        enabled = function(aura)
+            return not ns.IsGroup(aura) and ns.TriggerField(aura, "type", currentTrigger) == "cooldown"
+        end,
+        get = function(aura) return ns.TriggerField(aura, "showOn", currentTrigger) end,
+        set = function(aura, value)
+            TriggerOf(aura).showOn = (value ~= "ready") and value or nil
+            Commit(true)
+        end,
+    },
+    {
         kind = "text", label = "Aura name", key = "text",
         tip = "The text as it appears on the aura: Well Fed, Drink, a proc you "
            .. "only know by sight. Case does not matter.",

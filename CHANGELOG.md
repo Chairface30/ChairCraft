@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+**New**
+- **Cooldown triggers have a Show choice: Ready, On cooldown or Always.** A cooldown trigger always counted as active while the spell was ready, so a bar meant to count a cooldown down did the opposite: it showed while the spell was ready and hid while it was cooling down. Pick "On cooldown" on the Trigger tab for that. Ready stays the default, so existing auras don't change. A spell first cast in combat, whose cooldown hadn't been seen out of combat yet, now uses the spell's listed cooldown. Not yet confirmed in game.
+
 **Fixed**
 - **The waypoint arrow stood aside for RestedXP or TomTom even when their arrow wasn't showing.** It only counted whether their arrow was turned on in their settings, so with nothing for it to point at, the selected quest got no arrow at all. Now it steps aside only while their arrow is actually on screen. Not yet confirmed in game.
 

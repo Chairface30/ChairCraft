@@ -491,6 +491,16 @@ FillFromAura = function(ts, data, now)
     ts.name = name
 end
 
+-- When a cooldown trigger counts as met, WeakAuras' "Show" choice: while the
+-- spell is ready (the default, what an icon with a swipe wants), while it is
+-- on cooldown (what a bar counting it down wants), or always.
+local function ShowCooldown(trigger, ready)
+    local showOn = ns.TriggerFieldValue(trigger, "showOn")
+    if showOn == "cooldown" then return not ready end
+    if showOn == "always" then return true end
+    return ready
+end
+
 local function EvaluateCooldown(trigger, ts, now)
     local spellID = trigger.spellID
     if not spellID then
@@ -520,14 +530,23 @@ local function EvaluateCooldown(trigger, ts, now)
         ts.durationObject = okD and object or nil
         local cast = lastCast[spellID]
         local base = learnedCooldown[spellID]
+        if not base and cast then
+            -- Never seen running out of combat: the spell's listed cooldown,
+            -- when the client gives it readably (in milliseconds).
+            local getBase = (C_Spell and C_Spell.GetSpellBaseCooldown) or _G.GetSpellBaseCooldown
+            local okB, ms = pcall(getBase, spellID)
+            ms = okB and ns.SafeNumber(ms)
+            if ms and ms > 1500 then base = ms / 1000 end
+        end
         if cast and base and cast > (ts.castSeen or 0) then
             ts.castSeen = cast
             ts.start, ts.duration = cast, base
         end
         if ts.start and ts.duration then
-            ts.met = now >= ts.start + ts.duration
-            if ts.met then ts.start, ts.duration = nil, nil end
+            ts.ready = now >= ts.start + ts.duration
+            if ts.ready then ts.start, ts.duration = nil, nil end
         end
+        ts.met = ShowCooldown(trigger, ts.ready ~= false)
         ts.count = nil
         return
     end
@@ -543,7 +562,8 @@ local function EvaluateCooldown(trigger, ts, now)
     -- whether this one is ready.
     local onRealCooldown = duration > 1.5 and start > 0
 
-    ts.met = not onRealCooldown
+    ts.ready = not onRealCooldown
+    ts.met = ShowCooldown(trigger, ts.ready)
     -- A spell cooldown has no stacks, which is not the same as having none.
     ts.count = nil
     if onRealCooldown then

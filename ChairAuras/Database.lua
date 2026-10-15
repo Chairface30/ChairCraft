@@ -61,6 +61,7 @@ ns.AURA_DEFAULTS = AURA_DEFAULTS
 
 local TRIGGER_DEFAULTS = {
     type    = "aura",      -- aura | cooldown
+    showOn  = "ready",     -- cooldown: ready | cooldown | always
     unit    = "player",    -- player | target | focus | pet
     harmful = false,       -- a debuff rather than a buff
     match   = "id",        -- id | name
