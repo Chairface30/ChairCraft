@@ -11,6 +11,14 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.12.0"] = {
+        title = "Cooldown bars and group styling",
+        lines = {
+            "ChairAuras: cooldown triggers have a Show choice (Ready, On cooldown or Always), so a bar can count a cooldown down.",
+            "ChairAuras: set up a group of bars from the group. Bar size, texture, colors, text, border and glow apply to every bar inside.",
+            "The waypoint arrow steps aside for RestedXP or TomTom only while their arrow is actually on screen.",
+        },
+    },
     ["1.11.2"] = {
         title = "Your corpse arrow stays",
         lines = {

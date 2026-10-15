@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## ChairCraft v1.12.0: Cooldown bars and group styling
 
 **New**
 - **Cooldown triggers have a Show choice: Ready, On cooldown or Always.** A cooldown trigger always counted as active while the spell was ready, so a bar meant to count a cooldown down did the opposite: it showed while the spell was ready and hid while it was cooling down. Pick "On cooldown" on the Trigger tab for that. Ready stays the default, so existing auras don't change. A spell first cast in combat, whose cooldown hadn't been seen out of combat yet, now uses the spell's listed cooldown. Not yet confirmed in game.
