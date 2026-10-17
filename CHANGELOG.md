@@ -8,6 +8,9 @@
 **Changed**
 - **The bag sort button on the left is an option now.** ChairCraft always moved the combined backpack's sort button to the left, before the search box. Now that's "Bag sort button on the left" on the Comfort page, and it's off to start with, so the button stays in Blizzard's top-right spot unless you turn it on. Switching it off puts the button and search box back straight away, even with the bag open. Not yet confirmed in game.
 
+**Fixed**
+- **The bag search box disappeared after sorting, with the sort button on the left.** Each bag update during a sort pushed the search box further right until it had no width left. It now stays put however many updates a sort fires. Not yet confirmed in game.
+
 ## ChairCraft v1.12.0: Cooldown bars and group styling
 
 **New**

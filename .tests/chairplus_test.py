@@ -2923,10 +2923,13 @@ BagItemAutoSortButton = PointRegion(28)
 local function Bag(name, searchX, searchW)
     local f = MakeWindow(name)
     rawset(f, "UpdateSearchBox", function(self)
-        BagItemSearchBox:SetParent(self)
-        BagItemSearchBox:ClearAllPoints()
-        BagItemSearchBox:SetPoint("TOPLEFT", self, "TOPLEFT", searchX, -37)
-        BagItemSearchBox:SetWidth(searchW)
+        -- SORTING: a bag update that re-pins the button only.
+        if not SORTING then
+            BagItemSearchBox:SetParent(self)
+            BagItemSearchBox:ClearAllPoints()
+            BagItemSearchBox:SetPoint("TOPLEFT", self, "TOPLEFT", searchX, -37)
+            BagItemSearchBox:SetWidth(searchW)
+        end
         BagItemAutoSortButton:SetParent(self)
         BagItemAutoSortButton:SetPoint("TOPRIGHT", self, "TOPRIGHT", -9, -34)
     end)
@@ -2980,6 +2983,29 @@ rt.execute('NS.Set("bagSortLeft", true)')
 check("switched back on, it moves left again",
       rt.eval("BagItemAutoSortButton.points[1][1]") == "TOPLEFT"
       and rt.eval("BagItemAutoSortButton.points[1][4]") == 60)
+# A sort: dozens of bag updates that re-pin the button but leave the search
+# box alone. The box used to shift right on each one until it vanished.
+rt.execute('''
+-- The real hook path: Blizzard's UpdateSearchBox with its search box lines
+-- doing nothing, which is what a sort's bag updates look like.
+SORTING = true
+for _ = 1, 25 do ContainerFrameCombinedBags:UpdateSearchBox() end
+SORTING = nil
+local function Find(r, p) for _, pt in ipairs(r.points) do if pt[1] == p then return pt end end end
+SORTED_L, SORTED_R = Find(BagItemSearchBox, "TOPLEFT"), Find(BagItemSearchBox, "TOPRIGHT")
+''')
+sl2, sr2 = rt.eval("SORTED_L"), rt.eval("SORTED_R")
+check("after a sort's bag updates the search box has not crept right",
+      sl2 is not None and sr2 is not None and sl2[4] == 92 and sr2[4] == -13,
+      str(sl2 and (sl2[4], sr2 and sr2[4])))
+check("and the button is still on the left, one point",
+      rt.eval("#BagItemAutoSortButton.points") == 1
+      and rt.eval("BagItemAutoSortButton.points[1][1]") == "TOPLEFT"
+      and rt.eval("BagItemAutoSortButton.points[1][4]") == 60)
+rt.execute('NS.Set("bagSortLeft", false)')
+check("switched off after a sort, the search box gets Blizzard's spot and width back",
+      rt.eval("BagItemSearchBox.points[1][4]") == 62 and rt.eval("BagItemSearchBox:GetWidth()") == 330)
+rt.execute('NS.Set("bagSortLeft", true)')
 check("the option is on the Comfort page",
       rt.eval("""(function() for _, r in ipairs(NS.ROWS or {}) do
           if r.key == "bagSortLeft" then return r.tab == "comfort" end end

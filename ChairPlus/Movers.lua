@@ -375,15 +375,17 @@ end
 local SORT_GAP = 4
 local blizzardSpot = {}   -- bags -> Blizzard's sort button and search box spots
 
-local function TopRightPoint(region)
+local function FindPoint(region, which)
     local okN, count = pcall(region.GetNumPoints, region)
     count = okN and ns.Num(count) or 0
     for i = 1, count do
         local ok, point, rel, relPoint, x, y = pcall(region.GetPoint, region, i)
-        if ok and point == "TOPRIGHT" then return rel, relPoint, ns.Num(x) or 0, ns.Num(y) or 0, count end
+        if ok and point == which then return rel, relPoint, ns.Num(x) or 0, ns.Num(y) or 0, count end
     end
     return nil, nil, nil, nil, count
 end
+
+local function TopRightPoint(region) return FindPoint(region, "TOPRIGHT") end
 
 local function PlaceSortButton(bags)
     local sort, search = _G.BagItemAutoSortButton, _G.BagItemSearchBox
@@ -410,23 +412,35 @@ local function PlaceSortButton(bags)
         end
         return
     end
+    -- Every layout works from Blizzard's spots, never from our own: a bag
+    -- update (a sort fires dozens) may re-pin the button but leave the search
+    -- box where we put it, and reading our own spot back as Blizzard's
+    -- shifted the box right on every update until it had no width left.
+    -- A point is Blizzard's when it is not the one we set.
     local rel, relPoint, sortX, sortY = TopRightPoint(sort)
+    if not rel and spot then rel, relPoint, sortX, sortY = spot.rel, spot.relPoint, spot.sortX, spot.sortY end
     if not rel then return end
-    local okS, point, _, _, searchX, searchY = pcall(search.GetPoint, search, 1)
-    searchX, searchY = ns.Num(searchX), ns.Num(searchY)
-    if not okS or point ~= "TOPLEFT" or not searchX or not searchY then return end
+    local _, _, searchX, searchY, searchPoints = FindPoint(search, "TOPLEFT")
+    if spot and (searchX == nil or (searchX == spot.placedX and searchY == spot.searchY)) then
+        searchX, searchY = spot.searchX, spot.searchY
+    end
+    if not searchX or not searchY then return end
     local okW, sortW = pcall(sort.GetWidth, sort)
     sortW = okW and ns.Num(sortW) or 28
-    if not spot then
+    spot = spot or {}
+    spot.rel, spot.relPoint, spot.sortX, spot.sortY = rel, relPoint, sortX, sortY
+    spot.searchX, spot.searchY = searchX, searchY
+    -- Blizzard's width, only while the box has Blizzard's one anchor.
+    if searchPoints == 1 then
         local okB, searchW = pcall(search.GetWidth, search)
-        blizzardSpot[bags] = { rel = rel, relPoint = relPoint, sortX = sortX, sortY = sortY,
-                               searchX = searchX, searchY = searchY,
-                               searchW = okB and ns.Num(searchW) or nil }
+        spot.searchW = okB and ns.Num(searchW) or spot.searchW
     end
+    spot.placedX = searchX - 2 + sortW + SORT_GAP
+    blizzardSpot[bags] = spot
     sort:ClearAllPoints()
     sort:SetPoint("TOPLEFT", bags, "TOPLEFT", searchX - 2, sortY)
     search:ClearAllPoints()
-    search:SetPoint("TOPLEFT", bags, "TOPLEFT", searchX - 2 + sortW + SORT_GAP, searchY)
+    search:SetPoint("TOPLEFT", bags, "TOPLEFT", spot.placedX, searchY)
     search:SetPoint("TOPRIGHT", bags, "TOPRIGHT", sortX - SORT_GAP, searchY)
 end
 
