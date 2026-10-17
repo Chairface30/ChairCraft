@@ -387,7 +387,7 @@ SUITE_TABLE = { ChairPlus = NS }
 SUITE_TABLE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit) if not ok or a == nil then return nil end a = tostring(a) if b ~= nil and tostring(b) ~= "" then return a .. " " .. tostring(b) end return a end
 SUITE_TABLE.IsSecret = function(v) return not pcall(function() return "" .. tostring(v) end) end
 local files = {
-    "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "Quests.lua", "Gossip.lua",
+    "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "QueuedCost.lua", "Quests.lua", "Gossip.lua",
     "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Arrow.lua",
     "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
@@ -5112,6 +5112,90 @@ check("a bar named otherwise, one level down, is found and hidden",
 rt.execute("PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, ' ')) end NS.ProbeFormBar() NS.Print = old")
 check("the probe names where it found it",
       "PersonalResourceDisplayFrame.Bars.AltManaStatusBar" in (rt.eval("PRINTED[1]") or ""), rt.eval("PRINTED[1]"))
+
+print("\nQueued ability cost on the resource bar")
+QUEUED_SETUP = """
+MY_CLASS, MY_POWER = "WARRIOR", 1
+function UnitClass() return "Warrior", MY_CLASS end
+function UnitPowerType() return MY_POWER end
+CURRENT = {}
+function IsCurrentSpell(id) return CURRENT[id] == true end
+-- Power is secret: reading it throws, as formatting a secret does.
+SECRET = setmetatable({}, { __tostring = function() error("secret") end })
+function UnitPower() return SECRET end
+MAX_POWER = 100
+function UnitPowerMax() return MAX_POWER end
+COSTS = { [11567] = 12 }
+C_Spell = { GetSpellPowerCost = function(id)
+    if COSTS[id] then return { { type = 1, cost = COSTS[id] } } end
+    return nil
+end }
+PersonalResourceDisplayFrame = CreateFrame("Frame", "PersonalResourceDisplayFrame", UIParent)
+BAR = CreateFrame("StatusBar", nil, PersonalResourceDisplayFrame)
+FILL = CreateFrame("Frame")
+rawset(BAR, "GetStatusBarTexture", function() return FILL end)
+rawset(BAR, "GetWidth", function() return 200 end)
+rawset(BAR, "GetMinMaxValues", function() return 0, SECRET end)
+rawset(BAR, "GetReverseFill", function() return false end)
+PersonalResourceDisplayFrame.PowerBar = BAR
+ChairPlusDB = { settings = {} }
+BOOT()
+"""
+rt, g = fresh()
+rt.execute(QUEUED_SETUP)
+check("off by default", rt.eval("NS.IsEnabled('queuedCost')") is False)
+rt.execute('CURRENT[11567] = true FireEvent("CURRENT_SPELL_CAST_CHANGED")')
+check("off, a queued Heroic Strike draws nothing", rt.eval("(NS.QueuedCostState())") is False)
+rt.execute('CURRENT = {} NS.Set("queuedCost", true)')
+check("on, nothing queued: nothing drawn", rt.eval("(NS.QueuedCostState())") is False)
+rt.execute('CURRENT[11567] = true FireEvent("CURRENT_SPELL_CAST_CHANGED")')
+check("Heroic Strike queued: the highlight is up",
+      rt.eval("(NS.QueuedCostState())") is True)
+check("12 of 100 rage on a 200-wide bar is 24 wide",
+      abs((rt.eval("(select(2, NS.QueuedCostState()))") or 0) - 24) < 0.01,
+      rt.eval("(select(2, NS.QueuedCostState()))"))
+rt.execute('CURRENT = {} FireEvent("CURRENT_SPELL_CAST_CHANGED")')
+check("the queue cancelled (or the swing landed): it goes away", rt.eval("(NS.QueuedCostState())") is False)
+rt.execute('CURRENT[845] = true MAX_POWER = SECRET FireEvent("CURRENT_SPELL_CAST_CHANGED")')
+check("Cleave with the cost and max unreadable: 20 of 100 rage, 40 wide",
+      abs((rt.eval("(select(2, NS.QueuedCostState()))") or 0) - 40) < 0.01,
+      rt.eval("(select(2, NS.QueuedCostState()))"))
+rt.execute('CURRENT = {} MY_POWER = 0 CURRENT[2973] = true FireEvent("CURRENT_SPELL_CAST_CHANGED")')
+check("Raptor Strike with mana's max unreadable: nothing drawn", rt.eval("(NS.QueuedCostState())") is False)
+rt.execute('MAX_POWER = 1000 COSTS[2973] = 50 FireEvent("CURRENT_SPELL_CAST_CHANGED")')
+check("and with it readable: 50 of 1000 mana, 10 wide",
+      abs((rt.eval("(select(2, NS.QueuedCostState()))") or 0) - 10) < 0.01,
+      rt.eval("(select(2, NS.QueuedCostState()))"))
+rt.execute('CURRENT = {} NS.Set("queuedCost", false)')
+check("no error from the module", rt.eval("NS.modules.queuedCost.broken") is None)
+check("the option shows for warriors, druids and hunters",
+      rt.eval("""(function() for _, r in ipairs(NS.ROWS or {}) do
+          if r.key == "queuedCost" then return r.classes and r.classes.WARRIOR and r.classes.DRUID
+              and r.classes.HUNTER and r.tab == "comfort" end end
+          return "no ROWS" end)()""") in (True, "no ROWS"))
+# IsCurrentSpell kept secret: the lit action button is used instead.
+rt, g = fresh()
+rt.execute(QUEUED_SETUP)
+rt.execute("""
+function IsCurrentSpell() return SECRET end
+LIT = {}
+function IsCurrentAction(slot) return LIT[slot] == true end
+function GetActionInfo(slot) if slot == 7 then return "spell", 99999 end return nil end
+function GetSpellInfo(id) if id == 99999 then return "Heroic Strike" end end
+NS.Set("queuedCost", true)
+LIT[7] = true FireEvent("ACTIONBAR_UPDATE_STATE")
+""")
+check("a lit button holding Heroic Strike under another ID is found by name",
+      rt.eval("(NS.QueuedCostState())") is True and rt.eval("(select(3, NS.QueuedCostState()))") == 99999)
+check("its cost falls back to 15 rage, 30 wide",
+      abs((rt.eval("(select(2, NS.QueuedCostState()))") or 0) - 30) < 0.01,
+      rt.eval("(select(2, NS.QueuedCostState()))"))
+rt.execute("PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, ' ')) end NS.ProbeQueuedCost() NS.Print = old")
+check("the probe names the bar and how the queue was seen",
+      "PersonalResourceDisplayFrame.PowerBar" in (rt.eval("PRINTED[1]") or "")
+      and "action button 7" in (rt.eval("PRINTED[2]") or ""), [rt.eval("PRINTED[1]"), rt.eval("PRINTED[2]")])
+rt.execute('LIT = {} FireEvent("ACTIONBAR_UPDATE_STATE")')
+check("the button no longer lit: it goes away", rt.eval("(NS.QueuedCostState())") is False)
 
 print("\nRestock")
 RESTOCK_SETUP = """

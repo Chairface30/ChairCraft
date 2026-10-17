@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**New**
+- **A queued ability's cost shows on your resource bar.** Queue Heroic Strike, Cleave, Maul or Raptor Strike for your next swing, and the rage (or mana) it will take lights up at the end of the power bar on the Personal Resource Display. It goes away when the swing lands or you cancel the queue. Turn it on with "Show a queued ability's cost" on the Comfort page (warriors, druids and hunters). `/chair plus queued` says what it found. Not yet confirmed in game.
+
 ## ChairCraft v1.12.0: Cooldown bars and group styling
 
 **New**

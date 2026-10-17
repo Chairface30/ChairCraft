@@ -28,6 +28,7 @@ ChairPlus\Config.lua
 ChairPlus\OSD.lua
 ChairPlus\StatusBars.lua
 ChairPlus\FormBar.lua
+ChairPlus\QueuedCost.lua
 ChairPlus\Quests.lua
 ChairPlus\Gossip.lua
 ChairPlus\Vendor.lua

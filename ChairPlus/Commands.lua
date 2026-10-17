@@ -138,6 +138,12 @@ local ROWS = {
       tip = "Leave the alternate resource checkbox on for the Personal Resource Display in Edit Mode, and the bar "
          .. "(your mana while shifted) is see-through except in Bear and Cat Form. "
          .. "/chair plus formbar says whether the bar was found and what your form reads as." },
+    { header = "Resource bar", tab = "comfort", classes = { WARRIOR = true, DRUID = true, HUNTER = true } },
+    { key = "queuedCost", label = "Show a queued ability's cost", tab = "comfort",
+      classes = { WARRIOR = true, DRUID = true, HUNTER = true },
+      tip = "While Heroic Strike, Cleave, Maul or Raptor Strike is queued for your next swing, the power it will take "
+         .. "lights up at the end of the power bar on the Personal Resource Display. It goes away when the swing lands "
+         .. "or you cancel the queue. /chair plus queued says what it found." },
     { header = "Tooltips", tab = "comfort" },
     { key = "tooltipExtras",    label = "Tooltip extras", tab = "comfort" },
     { key = "tooltipSellPrice", label = "Sell price", tab = "comfort",          sub = "tooltipExtras",
@@ -2119,6 +2125,7 @@ local function PrintHelp()
     print("  |cffffd100/chair threat|r - the threat meter's options; "
         .. "|cffffd100on||off||toggle||lock||unlock||reset||preview||nameplates|r")
     print("  |cffffd100/chair plus formbar|r - druids: whether the alternate resource bar was found, and your form")
+    print("  |cffffd100/chair plus queued|r - the power bar found, and the next-swing ability queued and its cost")
     print("  |cffffd100/chair plus movers reset|r - forget where every dragged Blizzard window was put")
     print("  |cffffd100/chair plus movers add|r - make the window under the mouse draggable by its title bar")
     print("  |cffffd100/chair plus bake|r - print current settings as code that survives a restart")
@@ -2256,6 +2263,9 @@ local function Handler(input)
 
     elseif cmd == "formbar" then
         if ns.ProbeFormBar then ns.ProbeFormBar() end
+
+    elseif cmd == "queued" then
+        if ns.ProbeQueuedCost then ns.ProbeQueuedCost() end
 
     elseif cmd == "movers" then
         if (rest or ""):lower() == "reset" then
