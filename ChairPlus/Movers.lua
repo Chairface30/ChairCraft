@@ -361,14 +361,19 @@ function ns.ResetMovers()
     if store then wipe(store) end
 end
 
--- The combined backpack's sort button sits on the left, where the search box
--- starts, and the search box shifts right to take the button's old place.
--- Blizzard pins the button to the top right in the bag's UpdateSearchBox,
--- each time a bag shows, so the move follows that method. Hooked, never
--- called. The separate backpack keeps Blizzard's layout; since Blizzard sets
--- the button's point there without clearing the old ones, the left anchor
--- is cleared off it first.
+-- With the bagSortLeft option, the combined backpack's sort button sits on the
+-- left, where the search box starts, and the search box shifts right to take
+-- the button's old place. Blizzard pins the button to the top right in the
+-- bag's UpdateSearchBox, each time a bag shows, so the move follows that
+-- method. Hooked, never called. The separate backpack keeps Blizzard's layout;
+-- since Blizzard sets the button's point there without clearing the old ones,
+-- the left anchor is cleared off it first.
+--
+-- Blizzard's own spots are kept from before the first move, so switching the
+-- option off puts them back at once, open bag or not, without calling
+-- Blizzard's layout.
 local SORT_GAP = 4
+local blizzardSpot = {}   -- bags -> Blizzard's sort button and search box spots
 
 local function TopRightPoint(region)
     local okN, count = pcall(region.GetNumPoints, region)
@@ -385,20 +390,39 @@ local function PlaceSortButton(bags)
     if not sort or not search then return end
     local okP, parent = pcall(sort.GetParent, sort)
     if not okP or parent ~= bags then return end
-    local rel, relPoint, sortX, sortY, count = TopRightPoint(sort)
-    if not rel then return end
-    if bags ~= _G.ContainerFrameCombinedBags then
-        if count > 1 then
+    local spot = blizzardSpot[bags]
+    if not ns.IsEnabled("bagSortLeft") or bags ~= _G.ContainerFrameCombinedBags then
+        -- Blizzard's layout: put back what was moved, else just clear a left
+        -- anchor left behind on the button.
+        if spot then
+            blizzardSpot[bags] = nil
+            sort:ClearAllPoints()
+            sort:SetPoint("TOPRIGHT", spot.rel, spot.relPoint, spot.sortX, spot.sortY)
+            search:ClearAllPoints()
+            search:SetPoint("TOPLEFT", bags, "TOPLEFT", spot.searchX, spot.searchY)
+            if spot.searchW then pcall(search.SetWidth, search, spot.searchW) end
+            return
+        end
+        local rel, relPoint, sortX, sortY, count = TopRightPoint(sort)
+        if rel and count > 1 then
             sort:ClearAllPoints()
             sort:SetPoint("TOPRIGHT", rel, relPoint, sortX, sortY)
         end
         return
     end
+    local rel, relPoint, sortX, sortY = TopRightPoint(sort)
+    if not rel then return end
     local okS, point, _, _, searchX, searchY = pcall(search.GetPoint, search, 1)
     searchX, searchY = ns.Num(searchX), ns.Num(searchY)
     if not okS or point ~= "TOPLEFT" or not searchX or not searchY then return end
     local okW, sortW = pcall(sort.GetWidth, sort)
     sortW = okW and ns.Num(sortW) or 28
+    if not spot then
+        local okB, searchW = pcall(search.GetWidth, search)
+        blizzardSpot[bags] = { rel = rel, relPoint = relPoint, sortX = sortX, sortY = sortY,
+                               searchX = searchX, searchY = searchY,
+                               searchW = okB and ns.Num(searchW) or nil }
+    end
     sort:ClearAllPoints()
     sort:SetPoint("TOPLEFT", bags, "TOPLEFT", searchX - 2, sortY)
     search:ClearAllPoints()
@@ -428,3 +452,11 @@ sortDriver:SetScript("OnEvent", HookSortButtons)
 for _, opener in ipairs({ "ToggleAllBags", "OpenAllBags", "ToggleBackpack" }) do
     if type(_G[opener]) == "function" then hooksecurefunc(opener, HookSortButtons) end
 end
+
+ns.RegisterModule("bagSortLeft", {
+    title = "Bag sort button on the left",
+    desc = "In the combined backpack, the sort button sits on the left, before the search box.",
+    Apply = function()
+        for bags in pairs(sortHooked) do pcall(PlaceSortButton, bags) end
+    end,
+})

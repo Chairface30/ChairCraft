@@ -127,6 +127,9 @@ local ROWS = {
     { header = "Everyday", tab = "comfort" },
     { key = "autoDismount",     label = "Dismount and stand when needed", tab = "comfort" },
     { key = "skipCinematics",   label = "Skip cinematics", tab = "comfort" },
+    { key = "bagSortLeft",      label = "Bag sort button on the left", tab = "comfort",
+      tip = "In the combined backpack, the sort button moves from the top right to the left, before the search box. "
+         .. "Switched off, it goes back to Blizzard's spot." },
     { key = "maxCameraZoom",    label = "Max camera zoom", tab = "comfort",
       tip = "Lets the camera zoom out further than the game's own slider allows. Left off, the game's setting is not touched." },
     { key = "selfHighlightCombat", label = "Self Highlight only in combat", tab = "comfort",

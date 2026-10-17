@@ -5,6 +5,9 @@
 **New**
 - **A queued ability's cost shows on your resource bar.** Queue Heroic Strike, Cleave, Maul or Raptor Strike for your next swing, and the rage (or mana) it will take lights up at the end of the power bar on the Personal Resource Display. It goes away when the swing lands or you cancel the queue. Turn it on with "Show a queued ability's cost" on the Comfort page (warriors, druids and hunters). `/chair plus queued` says what it found. Not yet confirmed in game.
 
+**Changed**
+- **The bag sort button on the left is an option now.** ChairCraft always moved the combined backpack's sort button to the left, before the search box. Now that's "Bag sort button on the left" on the Comfort page, and it's off to start with, so the button stays in Blizzard's top-right spot unless you turn it on. Switching it off puts the button and search box back straight away, even with the bag open. Not yet confirmed in game.
+
 ## ChairCraft v1.12.0: Cooldown bars and group styling
 
 **New**
