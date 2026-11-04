@@ -940,6 +940,8 @@ skillPoll:SetScript("OnUpdate", function(_, elapsed)
     -- Before the database is in, the remembered table is a throwaway and
     -- writing to it would be work with nowhere to land.
     if not (WOWFTrackerDB and type(WOWFTrackerDB) == "table") then return end
+    -- (anchor is declared further down, so reach it by its global name)
+    if not (WOWFTrackerFrame and WOWFTrackerFrame.dbReady) then return end
     -- Nothing tracked, nothing to keep up to date.
     if type(WOWFTrackerDB.skills) ~= "table" or next(WOWFTrackerDB.skills) == nil then return end
     WOWFTrackerNS.PollWeaponSkills()
@@ -1927,6 +1929,9 @@ function WOWFTrackerNS.UpdateReputation()
     -- runs there is no profile to draw from -- on a cold start not even the
     -- global. The login pass draws everything anyway.
     if type(WOWFTrackerDB) ~= "table" or not WOWFTrackerDB.settings then return end
+    -- Before PLAYER_LOGIN the global is still the raw saved table, which can
+    -- have settings and skills but no factions; only InitDB fills those in.
+    if not anchor.dbReady or type(WOWFTrackerDB.factions) ~= "table" then return end
 
     -- Belt and braces for the hook above: if the window turns out to hold more
     -- than the list does, the list is out of date whatever did or did not fire.

@@ -10,6 +10,7 @@
 
 **Fixed**
 - **The bag search box disappeared after sorting, with the sort button on the left.** Each bag update during a sort pushed the search box further right until it had no width left. It now stays put however many updates a sort fires. Not yet confirmed in game.
+- **ChairTracker could error at login with weapon skills tracked.** Its skill check ran before your character's settings had loaded and tried to draw reputation bars from a faction list that wasn't there yet. It now waits for login to finish. Not yet confirmed in game.
 
 ## ChairCraft v1.12.0: Cooldown bars and group styling
 
