@@ -11,6 +11,14 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.13.0"] = {
+        title = "Queued ability cost",
+        lines = {
+            "ChairPlus: a queued Heroic Strike, Cleave, Maul or Raptor Strike shows its cost on your resource bar.",
+            "ChairPlus: the bag sort button on the left is now an option, off to start with.",
+            "Fixed: the bag search box disappearing after a sort, and a ChairTracker error at login.",
+        },
+    },
     ["1.12.0"] = {
         title = "Cooldown bars and group styling",
         lines = {
