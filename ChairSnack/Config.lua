@@ -1709,6 +1709,88 @@ local function BuildTeleportPanel(parent)
     return panel
 end
 
+local CRAFT_SLOT_LABELS = {
+    { key = "anvil", label = "Anvil: Blacksmithing" },
+    { key = "forge", label = "Forge: Smelting" },
+    { key = "fire", label = "Cooking fire: Cooking" },
+}
+
+local function BuildCraftingPanel(parent)
+    local panel = CreateScrollingPanel(parent)
+    local content = panel.content
+
+    local function CraftGrid()
+        return addon:GetGrid(addon.CRAFT_GRID_ID)
+    end
+
+    local title = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 10, -10)
+    title:SetText("Crafting (Auto)")
+
+    local desc = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", 10, -32)
+    desc:SetWidth(410)
+    desc:SetJustifyH("LEFT")
+    desc:SetText("Shows a profession's button while you stand at its station: " ..
+                 "Blacksmithing at an anvil, Smelting at a forge, Cooking at a " ..
+                 "cooking fire. Only professions you know. The bar can't change " ..
+                 "in combat, so it catches up when the fight ends.")
+
+    local slotsTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    slotsTitle:SetPoint("TOPLEFT", 10, -95)
+    slotsTitle:SetText("|cffFFD100Include|r")
+
+    local slotHolder = CreateFrame("Frame", nil, content)
+    slotHolder:SetPoint("TOPLEFT", 0, -115)
+    slotHolder:SetSize(ROW_WIDTH, 50)
+    BuildSlotToggles(slotHolder, panel, CRAFT_SLOT_LABELS, CraftGrid, function()
+        addon:UpdateCraftingBar()
+        addon:RequestUpdate()
+        panel:Refresh()
+    end)
+
+    panel.appearance = CreateAppearanceControls(content, CraftGrid)
+    panel.appearance:SetPoint("TOPLEFT", 10, -175)
+
+    local pickTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    pickTitle:SetPoint("TOPLEFT", 10, -435)
+    pickTitle:SetText("|cffFFD100Right now|r")
+
+    panel.pickText = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    panel.pickText:SetPoint("TOPLEFT", 10, -455)
+    panel.pickText:SetWidth(410)
+    panel.pickText:SetJustifyH("LEFT")
+
+    function panel:Refresh()
+        self.appearance:Refresh()
+        for _, check in pairs(self.slotChecks) do check:Refresh() end
+        addon:UpdateCraftingBar()
+        local selection = addon.craftingSelection or {}
+        local grid = CraftGrid()
+        local lines = {}
+        for _, slot in ipairs(CRAFT_SLOT_LABELS) do
+            local s = selection[slot.key] or {}
+            local state
+            if grid.autoSlots[slot.key] == false then
+                state = "|cff808080off|r"
+            elseif not grid.enabled then
+                state = "|cff808080bar is off|r"
+            elseif not s.known then
+                state = "|cff808080profession not known|r"
+            elseif s.near == nil then
+                state = "|cffff5555can't tell yet - open the professions window once|r"
+            else
+                state = s.near and "|cff00ff00here|r" or "|cff808080not here|r"
+            end
+            table.insert(lines, slot.label .. ": " .. state)
+        end
+        self.pickText:SetText(table.concat(lines, "\n"))
+        self.content:SetHeight(540)
+    end
+
+    return panel
+end
+
 local AMMO_SLOT_LABELS = {
     { key = "ammo", label = "Hunter ammo" },
 }
@@ -2284,6 +2366,7 @@ function addon:SelectGrid(gridID)
     HidePanel("potionPanel")
     HidePanel("teleportPanel")
     HidePanel("enchantPanel")
+    HidePanel("craftingPanel")
     HidePanel("ammoPanel")
     HidePanel("buffFoodPanel")
     HidePanel("petFoodPanel")
@@ -2309,6 +2392,8 @@ function addon:SelectGrid(gridID)
         panel = configFrame.teleportPanel
     elseif gridID == self.ENCHANT_GRID_ID then
         panel = configFrame.enchantPanel
+    elseif gridID == self.CRAFT_GRID_ID then
+        panel = configFrame.craftingPanel
     elseif gridID == self.AMMO_GRID_ID then
         panel = configFrame.ammoPanel
     elseif gridID == self.BUFF_FOOD_GRID_ID then
@@ -2646,6 +2731,7 @@ function addon:SetupConfig()
     Build("potionPanel", BuildPotionPanel)
     Build("teleportPanel", BuildTeleportPanel)
     Build("enchantPanel", BuildEnchantPanel)
+    Build("craftingPanel", BuildCraftingPanel)
     Build("ammoPanel", BuildAmmoPanel)
     Build("buffFoodPanel", BuildBuffFoodPanel)
     Build("petFoodPanel", BuildPetFoodPanel)

@@ -130,6 +130,10 @@ local ROWS = {
     { key = "bagSortLeft",      label = "Bag sort button on the left", tab = "comfort",
       tip = "In the combined backpack, the sort button moves from the top right to the left, before the search box. "
          .. "Switched off, it goes back to Blizzard's spot." },
+    { key = "keepTracking",     label = "Keep tracking on", tab = "comfort",
+      tip = "Remembers the tracking you last picked (Find Minerals, Find Herbs, Track Beasts...) and turns it back on "
+         .. "whenever it goes off: dying, a reload, anything. It waits until you are alive, out of combat and not casting. "
+         .. "Switch it off from the minimap's tracking menu and it stays off. /chair plus tracking says what it sees." },
     { key = "maxCameraZoom",    label = "Max camera zoom", tab = "comfort",
       tip = "Lets the camera zoom out further than the game's own slider allows. Left off, the game's setting is not touched." },
     { key = "selfHighlightCombat", label = "Self Highlight only in combat", tab = "comfort",
@@ -2129,6 +2133,8 @@ local function PrintHelp()
         .. "|cffffd100on||off||toggle||lock||unlock||reset||preview||nameplates|r")
     print("  |cffffd100/chair plus formbar|r - druids: whether the alternate resource bar was found, and your form")
     print("  |cffffd100/chair plus queued|r - the power bar found, and the next-swing ability queued and its cost")
+    print("  |cffffd100/chair plus tracking|r - the tracking that is on, the one kept on, and what happened last")
+    print("  |cffffd100/chair plus nearby|r - whether the game says you are near a forge, anvil or cooking fire")
     print("  |cffffd100/chair plus movers reset|r - forget where every dragged Blizzard window was put")
     print("  |cffffd100/chair plus movers add|r - make the window under the mouse draggable by its title bar")
     print("  |cffffd100/chair plus bake|r - print current settings as code that survives a restart")
@@ -2269,6 +2275,117 @@ local function Handler(input)
 
     elseif cmd == "queued" then
         if ns.ProbeQueuedCost then ns.ProbeQueuedCost() end
+
+    elseif cmd == "tracking" then
+        if ns.ProbeTracking then ns.ProbeTracking() end
+
+    elseif cmd == "nearby" then
+        -- Whether this client says you are near a forge, anvil, cooking fire...
+        -- Run it next to one and away from it; what changes is what can be used.
+        local function Try(fn, ...)
+            if type(fn) ~= "function" then return "missing" end
+            local r = { pcall(fn, ...) }
+            if not r[1] then return "error: " .. tostring(r[2]) end
+            for i = 2, #r do r[i] = tostring(r[i]) end
+            return #r > 1 and table.concat(r, ", ", 2) or "nothing"
+        end
+        -- Printed, and kept (last 6 runs) in the saved variables so the
+        -- results can be read after a /reload.
+        local profile = ns.Profile()
+        if type(profile.nearbySeen) ~= "table" then profile.nearbySeen = {} end
+        local runs = profile.nearbySeen
+        local run = { at = date and date("%H:%M:%S") or "?" }
+        table.insert(runs, run)
+        while #runs > 6 do table.remove(runs, 1) end
+        -- An optional note, e.g. /chair plus nearby at anvil
+        if rest and rest ~= "" then run.note = rest end
+        local function Out(...)
+            ns.Print(...)
+            local parts = {}
+            for i = 1, select("#", ...) do parts[i] = tostring((select(i, ...))) end
+            table.insert(run, table.concat(parts, " "))
+        end
+        local T, E = _G.C_TradeSkillUI, _G.Enum and _G.Enum.Profession
+        local near = T and T.IsNearProfessionSpellFocus
+        if type(near) ~= "function" then
+            Out("IsNearProfessionSpellFocus: missing")
+        elseif type(E) ~= "table" then
+            Out("IsNearProfessionSpellFocus: found, but no Enum.Profession")
+        else
+            for _, p in ipairs({ "Mining", "Blacksmithing", "Engineering", "Cooking", "Alchemy",
+                                 "Tailoring", "Leatherworking", "Enchanting", "Jewelcrafting" }) do
+                if E[p] ~= nil then Out("Near " .. p .. ":", Try(near, E[p])) end
+            end
+        end
+        local usable = (_G.C_Spell and _G.C_Spell.IsSpellUsable) or _G.IsUsableSpell
+        Out("Smelting (2656) usable:", Try(usable, 2656), "- by name:", Try(usable, "Smelting"),
+            "- known:", Try(_G.IsPlayerSpell, 2656))
+        -- The recipes themselves need the forge or anvil, not the window spell.
+        Out("Smelt Copper (2657) usable:", Try(usable, 2657),
+            "- Rough Bronze Shoulders (3328) usable:", Try(usable, 3328))
+        -- The profession window's "Requires: Anvil" line, red or white. Only
+        -- there while the window is open; open it before running this.
+        local num = _G.GetNumTradeSkills
+        local tools = _G.GetTradeSkillTools
+        local okN, n = pcall(type(num) == "function" and num or function() return nil end)
+        local okL, line = pcall(type(_G.GetTradeSkillLine) == "function" and _G.GetTradeSkillLine or function() end)
+        Out("Profession window:", okL and tostring(line) or "?", "- recipes:", okN and tostring(n) or "?",
+            "- GetTradeSkillTools:", type(tools) == "function" and "found" or "missing")
+        if okN and type(n) == "number" and type(tools) == "function" then
+            local shown = 0
+            for i = 1, n do
+                local okT, t = pcall(function() return { tools(i) } end)
+                if okT and #t > 0 and shown < 8 then
+                    shown = shown + 1
+                    local okI, rname = pcall(_G.GetTradeSkillInfo, i)
+                    local okR, link = pcall(_G.GetTradeSkillRecipeLink, i)
+                    local spellID = okR and type(link) == "string" and tonumber(link:match("enchant:(%d+)"))
+                    for k = 1, #t do t[k] = tostring(t[k]) end
+                    Out("  " .. (okI and tostring(rname) or "?") .. " [" .. tostring(spellID) .. "]:",
+                        table.concat(t, ", "), "- usable:", spellID and Try(usable, spellID) or "?")
+                end
+            end
+            if shown == 0 then Out("  no recipe in the window lists a tool") end
+        end
+        -- The newer professions window: requirements come as { name, met }.
+        local frames = {}
+        for _, f in ipairs({ "TradeSkillFrame", "ProfessionsFrame", "CraftFrame" }) do
+            local fr = _G[f]
+            if fr then frames[#frames + 1] = f .. (fr.IsShown and fr:IsShown() and "(shown)" or "(hidden)") end
+        end
+        Out("Frames:", #frames > 0 and table.concat(frames, " ") or "none")
+        if type(T) == "table" then
+            local req = T.GetRecipeRequirements
+            for _, id in ipairs({ 3328, 2657 }) do
+                if type(req) ~= "function" then Out("GetRecipeRequirements: missing") break end
+                local okQ, list = pcall(req, id)
+                if not okQ then
+                    Out("Requirements " .. id .. ": error: " .. tostring(list))
+                elseif type(list) ~= "table" then
+                    Out("Requirements " .. id .. ":", tostring(list))
+                else
+                    local parts = {}
+                    for _, r in ipairs(list) do
+                        parts[#parts + 1] = (type(r) == "table" and (tostring(r.name) .. "=" .. tostring(r.met))) or tostring(r)
+                    end
+                    Out("Requirements " .. id .. ":", #parts > 0 and table.concat(parts, ", ") or "empty")
+                end
+            end
+            local okA, ids = pcall(T.GetAllRecipeIDs or function() return nil end)
+            Out("GetAllRecipeIDs:", okA and (type(ids) == "table" and (#ids .. " recipes") or tostring(ids)) or "error")
+            local names = {}
+            for k, v in pairs(T) do if type(v) == "function" then names[#names + 1] = k end end
+            table.sort(names)
+            -- Saved in chunks so no single line is enormous.
+            for i = 1, #names, 25 do
+                local chunk = {}
+                for j = i, math.min(i + 24, #names) do chunk[#chunk + 1] = names[j] end
+                table.insert(run, "C_TradeSkillUI: " .. table.concat(chunk, " "))
+            end
+            ns.Print("C_TradeSkillUI has " .. #names .. " functions (saved, not printed).")
+        else
+            Out("C_TradeSkillUI: missing")
+        end
 
     elseif cmd == "movers" then
         if (rest or ""):lower() == "reset" then

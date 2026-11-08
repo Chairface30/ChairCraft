@@ -36,12 +36,14 @@ addon.TELEPORT_GRID_ID = "teleports"
 addon.ENCHANT_GRID_ID = "enchants"
 addon.AMMO_GRID_ID = "ammo"
 addon.BUFF_FOOD_GRID_ID = "bufffood"
+addon.CRAFT_GRID_ID = "crafting"
 local AUTO_GRID_ID = addon.AUTO_GRID_ID
 local POTION_GRID_ID = addon.POTION_GRID_ID
 local TELEPORT_GRID_ID = addon.TELEPORT_GRID_ID
 local ENCHANT_GRID_ID = addon.ENCHANT_GRID_ID
 local AMMO_GRID_ID = addon.AMMO_GRID_ID
 local BUFF_FOOD_GRID_ID = addon.BUFF_FOOD_GRID_ID
+local CRAFT_GRID_ID = addon.CRAFT_GRID_ID
 
 -- Reserved grids are generated, cannot be deleted, and get their own config
 -- panels instead of an editable item list.
@@ -52,6 +54,7 @@ local RESERVED_GRIDS = {
     [ENCHANT_GRID_ID] = true,
     [AMMO_GRID_ID] = true,
     [BUFF_FOOD_GRID_ID] = true,
+    [CRAFT_GRID_ID] = true,
 }
 addon.RESERVED_GRIDS = RESERVED_GRIDS
 
@@ -221,6 +224,35 @@ local enchantGridDefaults = {
 }
 addon.enchantGridDefaults = enchantGridDefaults
 
+-- A profession's button while you stand at its station (Crafting.lua): the
+-- anvil gives Blacksmithing, a forge Smelting, a cooking fire Cooking.
+local craftGridDefaults = {
+    name = "Crafting (Auto)",
+    enabled = false,
+    isAuto = true,
+    items = {},
+    keybinds = {},
+    anchor = { point = "CENTER", x = 0, y = -240 },
+    columns = 3,
+    iconSize = 36,
+    padding = 2,
+    showInCombat = false,
+    showTooltips = true,
+    columnGrowth = "RIGHT",
+    rowGrowth = "DOWN",
+    hideWhenDead = true,
+    onlyInInstance = false,
+    onlyInGroup = false,
+    lowSupply = 5,
+    warnOnInstanceEntry = false,
+    autoSlots = {
+        anvil = true,
+        forge = true,
+        fire = true,
+    },
+}
+addon.craftGridDefaults = craftGridDefaults
+
 -- Hunter ammo. Its own bar rather than a slot on the potion bar, because a
 -- count you want in the corner of your eye and a row of buttons you click in a
 -- fight want to live in different places. Non-hunters never get a frame for it.
@@ -313,6 +345,7 @@ local function NewProfile()
             [ENCHANT_GRID_ID] = addon.DeepCopy(enchantGridDefaults),
             [AMMO_GRID_ID] = addon.DeepCopy(ammoGridDefaults),
             [BUFF_FOOD_GRID_ID] = addon.DeepCopy(buffFoodGridDefaults),
+            [CRAFT_GRID_ID] = addon.DeepCopy(craftGridDefaults),
         },
         nextGridID = 2,
         minimap = addon.DeepCopy(minimapDefaults),
@@ -592,6 +625,7 @@ local DEFAULTS_FOR = {
     [ENCHANT_GRID_ID] = enchantGridDefaults,
     [AMMO_GRID_ID] = ammoGridDefaults,
     [BUFF_FOOD_GRID_ID] = buffFoodGridDefaults,
+    [CRAFT_GRID_ID] = craftGridDefaults,
 }
 
 -- Screen coordinates carry fourteen digits of precision describing a
@@ -809,6 +843,9 @@ function addon:RepairProfile(profile)
     end
     if not profile.grids[ENCHANT_GRID_ID] then
         profile.grids[ENCHANT_GRID_ID] = addon.DeepCopy(enchantGridDefaults)
+    end
+    if not profile.grids[CRAFT_GRID_ID] then
+        profile.grids[CRAFT_GRID_ID] = addon.DeepCopy(craftGridDefaults)
     end
     if not profile.grids[AMMO_GRID_ID] then
         local ammoGrid = addon.DeepCopy(ammoGridDefaults)
@@ -1057,7 +1094,8 @@ function addon:GetGridList()
     end
     local order = { [AUTO_GRID_ID] = 1, [BUFF_FOOD_GRID_ID] = 2,
                     [POTION_GRID_ID] = 3, [AMMO_GRID_ID] = 4,
-                    [TELEPORT_GRID_ID] = 5, [ENCHANT_GRID_ID] = 6 }
+                    [TELEPORT_GRID_ID] = 5, [ENCHANT_GRID_ID] = 6,
+                    [CRAFT_GRID_ID] = 7 }
     table.sort(list, function(a, b)
         local ra, rb = order[a.id], order[b.id]
         if ra or rb then

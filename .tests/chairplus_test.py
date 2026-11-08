@@ -388,7 +388,7 @@ SUITE_TABLE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit)
 SUITE_TABLE.IsSecret = function(v) return not pcall(function() return "" .. tostring(v) end) end
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "QueuedCost.lua", "Quests.lua", "Gossip.lua",
-    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Arrow.lua",
+    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Tracking.lua", "Arrow.lua",
     "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
 for _, file in ipairs(files) do
@@ -5560,6 +5560,163 @@ check("the General page offers both again",
           for _, r in ipairs(NS.ROWS) do
               if r.tab == "general" and (r.action == "Quick setup..." or r.action == "What's new...") then found = found + 1 end
           end return found end)()""") == 2)
+
+
+print("\nKeep tracking on")
+TRACKING_SETUP = r"""
+function UnitGUID(u) if u == "player" then return "Player-1-0001" end end
+DEAD, LOCKDOWN, CASTING = false, false, nil
+function UnitIsDeadOrGhost() return DEAD end
+function InCombatLockdown() return LOCKDOWN end
+function UnitCastingInfo() return CASTING end
+function UnitChannelInfo() return nil end
+function UnitOnTaxi() return false end
+TRACK = {
+    { name = "Find Minerals", type = "spell", spellID = 2580, active = false },
+    { name = "Find Herbs",    type = "spell", spellID = 2383, active = false },
+    { name = "Flight Master", type = "other", active = true },
+}
+SET_CALLS = {}
+HOOKED = {}
+function hooksecurefunc(tbl, name, fn) HOOKED[name] = fn end
+C_Minimap = {
+    GetNumTrackingTypes = function() return #TRACK end,
+    GetTrackingInfo = function(i) local t = TRACK[i] if not t then return nil end
+        return { name = t.name, type = t.type, spellID = t.spellID, active = t.active } end,
+    SetTracking = function(i, on)
+        table.insert(SET_CALLS, i)
+        if TRACK[i].type == "spell" then for _, t in ipairs(TRACK) do if t.type == "spell" then t.active = false end end end
+        TRACK[i].active = on and true or false
+        if HOOKED.SetTracking then HOOKED.SetTracking(i, on) end
+    end,
+}
+-- The player picking from the minimap menu.
+function PICK(i, on) C_Minimap.SetTracking(i, on) RUN_TIMERS(1) FireEvent("MINIMAP_UPDATE_TRACKING") RUN_TIMERS(1) end
+function DROP() for _, t in ipairs(TRACK) do if t.type == "spell" then t.active = false end end end
+function SETTLE() FireEvent("MINIMAP_UPDATE_TRACKING") RUN_TIMERS(2) end
+ChairPlusDB = { settings = {} }
+BOOT()
+"""
+rt, g = fresh()
+rt.execute(TRACKING_SETUP)
+check("off by default", rt.eval("NS.IsEnabled('keepTracking')") is False)
+rt.execute('PICK(1, true) DROP() SETTLE()')
+check("off: nothing is turned back on", rt.eval("#SET_CALLS") == 1)
+rt.execute('NS.Set("keepTracking", true) SET_CALLS = {} PICK(1, true)')
+check("on: Find Minerals is remembered for this character",
+      rt.eval("NS.Profile().trackingLast['guid:Player-1-0001'].name") == "Find Minerals")
+rt.execute('SET_CALLS = {} DEAD = true DROP() SETTLE()')
+check("dead: it waits", rt.eval("#SET_CALLS") == 0 and rt.eval("TRACK[1].active") is False)
+rt.execute('DEAD = false NOW = NOW + 5 FireEvent("PLAYER_ALIVE") RUN_TIMERS(1)')
+check("alive again: Find Minerals goes back on", rt.eval("TRACK[1].active") is True
+      and rt.eval("SET_CALLS[1]") == 1)
+check("putting it back isn't taken for the player switching it off",
+      rt.eval("NS.Profile().trackingLast['guid:Player-1-0001'].name") == "Find Minerals")
+rt.execute('SET_CALLS = {} PICK(2, true) NOW = NOW + 5 DROP() LOCKDOWN = true SETTLE()')
+check("a new pick is remembered, and in combat it waits",
+      rt.eval("NS.Profile().trackingLast['guid:Player-1-0001'].name") == "Find Herbs"
+      and rt.eval("#SET_CALLS") == 1)
+rt.execute('LOCKDOWN = false CASTING = "Fireball" FireEvent("PLAYER_REGEN_ENABLED") RUN_TIMERS(1)')
+check("while casting it waits", rt.eval("TRACK[2].active") is False)
+rt.execute('CASTING = nil FireEvent("UNIT_SPELLCAST_STOP", "player") RUN_TIMERS(1)')
+check("after the cast: Find Herbs goes back on", rt.eval("TRACK[2].active") is True)
+rt.execute('SET_CALLS = {} NOW = NOW + 5 PICK(2, false) NOW = NOW + 5 SETTLE()')
+check("switched off from the minimap menu: it stays off",
+      rt.eval("TRACK[2].active") is False and rt.eval("#SET_CALLS") == 1
+      and rt.eval("NS.Profile().trackingLast['guid:Player-1-0001']") is None)
+rt.execute('PICK(1, true) SET_CALLS = {} PICK(3, false)')
+check("switching a town tracker off doesn't forget the spell one",
+      rt.eval("NS.Profile().trackingLast['guid:Player-1-0001'].name") == "Find Minerals")
+rt.execute('DROP() TRACK[1].fail = true C_Minimap.SetTracking = function(i) table.insert(SET_CALLS, i) end '
+           'SET_CALLS = {} for _ = 1, 10 do NOW = NOW + 3.1 NS.TrackingCheck() end')
+check("a try that doesn't take slows down after a few", 3 <= rt.eval("#SET_CALLS") <= 4, rt.eval("#SET_CALLS"))
+check("no error from the module", rt.eval("NS.modules.keepTracking.broken") is None)
+rt.execute("PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, ' ')) end NS.ProbeTracking() NS.Print = old")
+check("the probe says what is remembered", "Find Minerals" in (rt.eval("PRINTED[1]") or ""), rt.eval("PRINTED[1]"))
+
+
+# This client gives no type or spell ID: the name is enough.
+rt, g = fresh()
+rt.execute(TRACKING_SETUP.replace('type = "spell", spellID = 2580,', '').replace('type = "spell", spellID = 2383,', '')
+           .replace('TRACK[i].type == "spell"', 'true').replace('if t.type == "spell" then', 'if t.type ~= "other" then'))
+rt.execute('NS.Set("keepTracking", true) PICK(1, true)')
+check("no type or spell ID: Find Minerals is still remembered by name",
+      (rt.eval("NS.Profile().trackingLast['guid:Player-1-0001']") or {}) and
+      rt.eval("NS.Profile().trackingLast['guid:Player-1-0001'].name") == "Find Minerals")
+rt.execute('SET_CALLS = {} NOW = NOW + 5 DEAD = true DROP() SETTLE() DEAD = false FireEvent("PLAYER_UNGHOSTED") RUN_TIMERS(1)')
+check("and put back after dying", rt.eval("TRACK[1].active") is True)
+check("what the client said is saved for the probe",
+      "Find Minerals" in (rt.eval("NS.Profile().trackingSeen[1]") or ""), rt.eval("NS.Profile().trackingSeen[1]"))
+rt.execute('function UnitGUID() return nil end function UnitName() return "Chair" end PICK(2, true)')
+check("a GUID it can't read falls back to the name",
+      rt.eval("NS.Profile().trackingLast['name:Chair'].name") == "Find Herbs")
+
+
+# "Track Quest POIs" is a town tracker (type "other"), always on: its "Track "
+# name must not make it pass for the spell one, or Find Minerals never comes back.
+rt, g = fresh()
+rt.execute(TRACKING_SETUP.replace('{ name = "Flight Master", type = "other", active = true },',
+           '{ name = "Flight Master", type = "other", active = true }, '
+           '{ name = "Track Quest POIs", type = "other", active = true },'))
+rt.execute('NS.Profile().trackingLast = { ["guid:Player-1-0001"] = { name = "Track Quest POIs" } } '
+           'NS.Set("keepTracking", true) RUN_TIMERS(1)')
+check("a town tracker remembered by mistake is forgotten",
+      rt.eval("NS.Profile().trackingLast['guid:Player-1-0001']") is None)
+rt.execute('PICK(1, true)')
+check("with Track Quest POIs on, Find Minerals is what's remembered",
+      rt.eval("NS.Profile().trackingLast['guid:Player-1-0001'].name") == "Find Minerals")
+rt.execute('SET_CALLS = {} NOW = NOW + 5 DROP() SETTLE()')
+check("and it goes back on when it drops", rt.eval("TRACK[1].active") is True and rt.eval("SET_CALLS[1]") == 1)
+
+
+# This client can say active=false for Find Minerals while it is on. Its aura,
+# or the minimap's tracking icon, says otherwise.
+for label, signal in (("aura", 'C_UnitAuras = { GetPlayerAuraBySpellID = function(id) if id == 2580 and ON then return { spellId = 2580 } end end }'),
+                      ("icon", 'function GetTrackingTexture() return ON and 136025 or nil end '
+                               'function GetSpellTexture(id) if id == 2580 then return 136025 end return 1 end')):
+    rt, g = fresh()
+    rt.execute(TRACKING_SETUP.replace('BOOT()', 'ON = false ' + signal + ' BOOT()'))
+    rt.execute('NS.Set("keepTracking", true) ON = true RUN_TIMERS(1) SETTLE()')
+    check(f"{label}: Find Minerals is seen as on though the list says it isn't",
+          (rt.eval("NS.Profile().trackingLast['guid:Player-1-0001']") or None) is not None
+          and rt.eval("NS.Profile().trackingLast['guid:Player-1-0001'].name") == "Find Minerals")
+    rt.execute('SET_CALLS = {} for _ = 1, 5 do NOW = NOW + 31 NS.TrackingCheck() end')
+    check(f"{label}: and it isn't cast again while on", rt.eval("#SET_CALLS") == 0, rt.eval("#SET_CALLS"))
+    rt.execute('ON = false NOW = NOW + 31 SETTLE()')
+    check(f"{label}: when it really drops it is put back", rt.eval("SET_CALLS[1]") == 1)
+
+
+print("\n/chair plus nearby")
+rt, g = fresh()
+rt.execute('Enum = { Profession = { Mining = 1, Blacksmithing = 2 } } '
+           'C_TradeSkillUI = { IsNearProfessionSpellFocus = function(p) return p == 1 end } '
+           'C_Spell = { IsSpellUsable = function() return false, false end } '
+           'function IsPlayerSpell() return true end '
+           'ChairPlusDB = { settings = {} } BOOT() SlashCmdList["CHAIRPLUS"]("nearby")')
+check("the probe runs and keeps what it found",
+      rt.eval("NS.Profile().nearbySeen[1][1]") == "Near Mining: true", rt.eval("NS.Profile().nearbySeen[1][1]"))
+check("and the Smelting line", "usable: false, false" in (rt.eval("NS.Profile().nearbySeen[1][3]") or ""),
+      rt.eval("NS.Profile().nearbySeen[1][3]"))
+rt, g = fresh()
+rt.execute('ChairPlusDB = { settings = {} } BOOT() SlashCmdList["CHAIRPLUS"]("nearby")')
+check("with nothing to ask, it says so", rt.eval("NS.Profile().nearbySeen[1][1]") == "IsNearProfessionSpellFocus: missing")
+rt, g = fresh()
+rt.execute('function GetNumTradeSkills() return 2 end function GetTradeSkillLine() return "Blacksmithing" end '
+           'function GetTradeSkillTools(i) if i == 2 then return "Anvil", false, "Blacksmith Hammer", true end end '
+           'function GetTradeSkillInfo(i) return i == 2 and "Rough Bronze Shoulders" or "Rough Sharpening Stone" end '
+           'function GetTradeSkillRecipeLink(i) return "|cffffffff|Henchant:3328|h[x]|h|r" end '
+           'ChairPlusDB = { settings = {} } BOOT() SlashCmdList["CHAIRPLUS"]("nearby at anvil")')
+seen = rt.eval("table.concat(NS.Profile().nearbySeen[1], '\\n')") or ""
+check("with the window open, a recipe's tools are read",
+      "Rough Bronze Shoulders [3328]: Anvil, false, Blacksmith Hammer, true" in seen, seen)
+check("and the note is kept", rt.eval("NS.Profile().nearbySeen[1].note") == "at anvil")
+rt, g = fresh()
+rt.execute('C_TradeSkillUI = { GetRecipeRequirements = function(id) return { { name = "Anvil", met = id == 3328 } } end, '
+           'GetAllRecipeIDs = function() return { 1, 2, 3 } end } '
+           'ChairPlusDB = { settings = {} } BOOT() SlashCmdList["CHAIRPLUS"]("nearby")')
+seen = rt.eval("table.concat(NS.Profile().nearbySeen[1], '\\n')") or ""
+check("the newer window's requirements are read", "Requirements 3328: Anvil=true" in seen and "3 recipes" in seen
+      and "C_TradeSkillUI: GetAllRecipeIDs GetRecipeRequirements" in seen, seen)
 
 
 if failures:

@@ -116,6 +116,7 @@ ns.defaults = {
     -- Camera
     maxCameraZoom       = false,
     selfHighlightCombat = false,    -- Self Highlight only in combat (SelfHighlight.lua)
+    keepTracking        = false,    -- turn Find Minerals/Herbs back on when it drops (Tracking.lua)
 
     -- Chat (Chat.lua)
     chatScrollLeft      = false,    -- scroll bar and arrows on the left

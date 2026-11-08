@@ -265,7 +265,7 @@ def check(name, cond, detail=""):
         failures.append(name)
 
 FILES = ["Core.lua", "Database.lua", "ItemData.lua", "Items.lua", "AutoBar.lua",
-         "BuffFood.lua", "Grid.lua", "Config.lua", "Bootstrap.lua"]
+         "Crafting.lua", "BuffFood.lua", "Grid.lua", "Config.lua", "Bootstrap.lua"]
 FILES = ["ChairSnack/" + _f for _f in FILES]
 
 # --- 1. syntax ------------------------------------------------------------
@@ -523,6 +523,74 @@ check("an aura whose name the client keeps secret is a refusal, not a crash",
       L.eval("CLEAN") is None and L.eval("REFUSED") is True)
 check("a readable one comes through as it was",
       L.eval("PLAIN.name") == "Well Fed" and L.eval("PLAIN.spellId") == 19705)
+
+print("-- crafting bar")
+L = boot('SnapSnackDB = nil')
+L.execute('FireEvent("ADDON_LOADED", "Chaircraft") SnapSnackDB = { version = 2 }')
+L.execute('IMMEDIATE_TIMERS = true FireEvent("PLAYER_LOGIN") IMMEDIATE_TIMERS = false')
+L.execute("""
+-- What the game confirmed: a recipe's requirements say whether the anvil is met.
+AT = {}            -- requirement name -> standing at it
+KNOWN = { [3538] = true, [2656] = true }   -- Journeyman Blacksmithing, Smelting
+ASKED = {}
+C_TradeSkillUI = {
+    GetRecipeRequirements = function(id)
+        ASKED[#ASKED + 1] = id
+        if id == 3328 then return { { name = "Anvil", met = AT.Anvil == true }, { name = "Blacksmith Hammer", met = true } } end
+        if id == 2657 then return { { name = "Forge", met = AT.Forge == true } } end
+        if id == 9999 then return { { name = "Cooking Fire", met = AT["Cooking Fire"] == true } } end
+        return {}
+    end,
+    GetAllRecipeIDs = function() return { 1, 9999 } end,
+}
+function IsPlayerSpell(id) return KNOWN[id] == true end
+LOCK = false
+function InCombatLockdown() return LOCK end
+grid = addon:GetGrid(addon.CRAFT_GRID_ID)
+function SHOWN()
+    local out = {}
+    for _, item in ipairs(grid.items) do out[#out + 1] = item.slotKey .. "=" .. tostring(item.spellName) end
+    return table.concat(out, " ")
+end
+""")
+check("the crafting bar exists and is off by default",
+      L.eval("grid ~= nil and grid.enabled == false and grid.isAuto == true") is True)
+check("it is a reserved grid", L.eval("addon.RESERVED_GRIDS[addon.CRAFT_GRID_ID]") is True)
+L.execute('AT.Anvil = true addon.CraftingTick()')
+check("off: nothing shows even at an anvil", L.eval("SHOWN()") == "")
+L.execute('grid.enabled = true AT.Anvil = false addon.CraftingTick()')
+check("on, away from everything: empty", L.eval("SHOWN()") == "")
+L.execute('AT.Anvil = true addon.CraftingTick()')
+check("at an anvil: the Blacksmithing button, known rank by name",
+      L.eval("SHOWN()") == "anvil=Spell 3538", L.eval("SHOWN()"))
+check("it casts the profession spell by name",
+      L.eval("grid.items[1].isSpell == true and grid.items[1].showInCombat == false") is True)
+L.execute('AT.Forge = true addon.CraftingTick()')
+check("anvil and forge: Blacksmithing and Smelting",
+      L.eval("SHOWN()") == "anvil=Spell 3538 forge=Spell 2656", L.eval("SHOWN()"))
+L.execute('AT["Cooking Fire"] = true addon.CraftingTick()')
+check("a fire with Cooking not known: no Cooking button", "fire" not in L.eval("SHOWN()"))
+L.execute('KNOWN[2550] = true addon.CraftingTick()')
+check("Cooking known, but no recipe that names the fire yet: still nothing",
+      "fire" not in L.eval("SHOWN()"))
+L.execute('FireEvent("TRADE_SKILL_SHOW") AT.Forge = false addon.CraftingTick()')
+check("after the professions window is opened, the fire's recipe is learned",
+      L.eval("SHOWN()") == "anvil=Spell 3538 fire=Spell 2550", L.eval("SHOWN()"))
+L.execute('LOCK = true AT.Anvil = false addon.CraftingTick()')
+check("in combat the bar is left alone", "anvil" in L.eval("SHOWN()"))
+L.execute('LOCK = false addon.CraftingTick()')
+check("and catches up after", L.eval("SHOWN()") == "fire=Spell 2550", L.eval("SHOWN()"))
+L.execute('grid.autoSlots.fire = false addon:UpdateCraftingBar()')
+check("a station switched off on the options page stays off", L.eval("SHOWN()") == "")
+L.execute('ASKED = {} addon.CraftingTick() addon.CraftingTick()')
+check("each check asks a handful of recipes, not every one", 0 < L.eval("#ASKED") <= 12, L.eval("#ASKED"))
+L.execute('C_TradeSkillUI = nil grid.autoSlots.fire = true')
+err = None
+try:
+    L.execute('addon.CraftingTick() addon:CraftingCommand()')
+except Exception as exc:
+    err = str(exc)
+check("a client with no professions API: no error, nothing shown", err is None and L.eval("SHOWN()") == "", err)
 
 print("ALL OK" if not failures else "%d FAILED" % len(failures))
 sys.exit(1 if failures else 0)

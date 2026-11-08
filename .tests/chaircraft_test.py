@@ -65,13 +65,13 @@ def order(prefix):
 
 EXPECTED_ORDER = {
     "ChairPlus": ["Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "QueuedCost.lua", "Quests.lua", "Gossip.lua",
-                  "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua",
+                  "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Tracking.lua",
                   "Arrow.lua", "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Chat.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua"],
     "ChairAuras": ["Core.lua", "Presets.lua", "Database.lua", "Load.lua",
                    "AuraEnvironment.lua", "Engine.lua", "CustomTrigger.lua", "Triggers.lua", "Text.lua", "Conditions.lua", "Actions.lua", "Display.lua", "Regions.lua", "SubRegions.lua", "Animations.lua", "Icons.lua", "Share.lua", "Templates.lua",
                    "Sounds.lua", "Config.lua", "Probe.lua", "Commands.lua"],
     "ChairSnack": ["Core.lua", "Database.lua", "ItemData.lua", "Items.lua",
-                   "AutoBar.lua", "BuffFood.lua", "Grid.lua", "Config.lua",
+                   "AutoBar.lua", "Crafting.lua", "BuffFood.lua", "Grid.lua", "Config.lua",
                    "Bootstrap.lua"],
     "ChairTracker": ["Config.lua", "WOWFTracker.lua", "Options.lua"],
     "ChairIgnore": ["Core.lua", "Filters.lua", "Tab.lua", "Window.lua"],
@@ -96,7 +96,7 @@ check("the TOC is for WoW Forever 1.60.1 (16001) only",
 # --------------------------------------------------------------------------
 print("")
 print("Namespace isolation")
-REBOUND = {"ChairPlus": 28, "ChairAuras": 22, "ChairSnack": 9, "ChairIgnore": 4}
+REBOUND = {"ChairPlus": 29, "ChairAuras": 22, "ChairSnack": 10, "ChairIgnore": 4}
 for part, expected in REBOUND.items():
     bound, raw = 0, []
     for f in sorted(os.listdir(part)):

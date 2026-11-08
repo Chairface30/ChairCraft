@@ -140,6 +140,7 @@ Built to work like WeakAuras, as far as WoW Forever allows:
 
 - Configurable grids of consumables, built from what is actually in your bags.
 - Automatic bars pick your best food and water, buff food, hearthstone-style recalls, pet food and ammo.
+- **Crafting bar** (*Beta*): a profession's button appears while you stand at its station: Blacksmithing at an anvil, Smelting at a forge, Cooking at a cooking fire. `/chair snack crafting` says what it sees.
 - A keybind mode, and a minimap button.
 
 ## ChairTracker: reputation and skills

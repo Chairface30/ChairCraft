@@ -1974,7 +1974,8 @@ function addon:UpdateAutoBars()
 
     for _, updater in ipairs({ "UpdateAutoBar", "UpdateBuffFoodBar",
                                "UpdatePotionBar", "UpdateAmmoBar",
-                               "UpdateTeleportBar", "UpdateEnchantBar" }) do
+                               "UpdateTeleportBar", "UpdateEnchantBar",
+                               "UpdateCraftingBar" }) do
         local ok, result = pcall(self[updater], self)
         if ok then
             changed = changed or result

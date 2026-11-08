@@ -191,6 +191,10 @@ local function Prepare(target)
     if prepared[name] then return end
     local frame = _G[name]
     if not frame then return end
+    -- A protected window (the talents/spellbook one) can't be made movable in
+    -- combat: pcall doesn't stop the blocked-action error. It is left
+    -- unprepared and picked up when combat ends (PLAYER_REGEN_ENABLED).
+    if Blocked(frame) then return end
     prepared[name] = true
 
     pcall(frame.SetMovable, frame, true)
@@ -283,11 +287,10 @@ for _, event in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_REGEN_ENABLED",
     pcall(driver.RegisterEvent, driver, event)
 end
 driver:SetScript("OnEvent", function(_, event)
+    PrepareAll()
     if event == "PLAYER_REGEN_ENABLED" then
         for name in pairs(pending) do Apply(name) end
-        return
     end
-    PrepareAll()
 end)
 
 -- The windows' own openers, so one created late (the spellbook and talents

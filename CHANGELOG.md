@@ -1,5 +1,14 @@
 # Changelog
 
+## ChairCraft v1.14.0: Crafting bar
+
+**New**
+- **Crafting bar.** A new automatic ChairSnack bar shows a profession's button while you stand at its station: Blacksmithing at an anvil, Smelting at a forge, Cooking at a cooking fire, and only for professions you know. It reads the same "Requires: Anvil" line the professions window turns red or white, so it works with the window closed. It can't change during combat, so it catches up when the fight ends. Turn it on with "Crafting (Auto)" in `/chair snack`. `/chair snack crafting` says what it sees.
+- **Keep tracking on.** ChairCraft remembers the tracking you last picked (Find Minerals, Find Herbs, Find Treasure, Track Beasts...) on each character and turns it back on whenever it goes off: dying, a reload, anything else that clears it. It waits until you are alive, out of combat, off a flight path and not casting, and if a try doesn't take it tries again a few seconds later, then only every half minute. Switch tracking off yourself from the minimap's tracking menu and it stays off until you pick one again. Turn it on with "Keep tracking on" on the Comfort page. `/chair plus tracking` says what it sees.
+
+**Fixed**
+- Moving the talents or spellbook window no longer causes a blocked-action error when it is first opened in combat; it becomes movable once the fight ends.
+
 ## ChairCraft v1.13.0: Queued ability cost
 
 **New**

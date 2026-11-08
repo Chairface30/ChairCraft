@@ -11,6 +11,14 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.14.0"] = {
+        title = "Crafting bar",
+        lines = {
+            "ChairSnack: a crafting bar shows Blacksmithing at an anvil, Smelting at a forge and Cooking at a cooking fire.",
+            "ChairPlus: Keep tracking on turns Find Minerals, Find Herbs and the like back on after death or a reload.",
+            "Fixed: a blocked-action error opening the talents or spellbook window in combat.",
+        },
+    },
     ["1.13.0"] = {
         title = "Queued ability cost",
         lines = {

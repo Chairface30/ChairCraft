@@ -228,6 +228,7 @@ local function Bootstrap()
     end
 
     ready = true
+    addon.isReady = true   -- for code outside this file (Crafting.lua)
     addon:Print("loaded. Type |cff00ffff/chair snack|r to configure.")
     ReportProfileLoad()
 
@@ -658,6 +659,9 @@ SlashCmdList["SNAPSNACK"] = function(msg)
                 print("  " .. slot .. ": " .. pick.name .. " |cffff5555(no enchant)|r")
             end
         end
+
+    elseif msg == "crafting" then
+        addon:CraftingCommand()
 
     elseif msg:match("^bufffood") then
         addon:BuffFoodCommand(msg:match("^bufffood%s*(.-)$") or "")
