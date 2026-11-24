@@ -832,9 +832,6 @@ local function Bootstrap(reason, waited)
     ns.ready = true
     ns.RequestUpdate()
 
-    ns.Print("v" .. ns.version .. " loaded,", #ns.GetAuras(),
-             "aura(s). |cffffd100/chair auras|r to configure.")
-
     -- Said out loud, because an aura that came from the file and one that came
     -- from Presets.lua look identical on screen, and which of the two it is
     -- decides whether an edit made last session is gone.

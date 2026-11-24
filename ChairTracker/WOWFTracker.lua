@@ -2587,10 +2587,6 @@ anchor:SetScript("OnEvent", function(self, event, arg1)
         WarmSoon(2)
         WarmSoon(8)
 
-        local meta = (_G.C_AddOns and _G.C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
-        local okV, version = pcall(meta or function() return nil end, "Chaircraft", "Version")
-        version = okV and type(version) == "string" and version or "?"
-        print("|cff88aaddChairTracker|r v" .. version .. " loaded — by |cff00ccffChairface Chippendale|r. Type /chair tracker for options.")
     end
     if self.dbReady then
         WOWFTrackerNS.UpdateReputation()
@@ -2621,7 +2617,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
     elseif cmd == "lock" then
         Settings().locked = not Settings().locked
         local state = Settings().locked and "|cff00ff00LOCKED|r" or "|cffff4444UNLOCKED|r"
-        print("|cff88aadd[WOWFT]|r Frame " .. state)
+        print("|cff9d7cffChairCraft|r: Frame " .. state)
         WOWFTrackerNS.RebuildAppearance()
 
     elseif cmd == "reset" then
@@ -2633,12 +2629,12 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
         anchor:ClearAllPoints()
         anchor:SetPoint("CENTER")
         WOWFTrackerNS.RebuildAppearance()
-        print("|cff88aadd[WOWFT]|r Settings and factions reset to defaults.")
+        print("|cff9d7cffChairCraft|r: Settings and factions reset to defaults.")
 
     elseif cmd == "api" then
         -- Which panel API this client actually has, and what the skill list
         -- looks like through it. For working out why something is missing.
-        print("|cff88aadd[WOWFT]|r === API probe ===")
+        print("|cff9d7cffChairCraft|r: === API probe ===")
 
         local function report(name, value)
             print(string.format("  %-28s %s", name,
@@ -2804,7 +2800,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
                 isHeader and "|cffffcc00" or "|cffffffff", tostring(name),
                 tostring(rank), tostring(maxRank)))
         end
-        print("|cff88aadd[WOWFT]|r === End probe ===")
+        print("|cff9d7cffChairCraft|r: === End probe ===")
 
     elseif cmd == "skills" then
         -- The api sweep prints every name with "skill" in it, and on this
@@ -2812,7 +2808,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
         -- matter buried in them -- the paste that came back had been cut off
         -- before the C section, which is exactly where an API would sort.
         -- This one prints only things that can be called or looked inside.
-        print("|cff88aadd[WOWFT]|r === skills probe ===")
+        print("|cff9d7cffChairCraft|r: === skills probe ===")
 
         local hits = {}
         for name, value in pairs(_G) do
@@ -2901,7 +2897,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
             end
         end
 
-        print("|cff88aadd[WOWFT]|r === End skills probe ===")
+        print("|cff9d7cffChairCraft|r: === End skills probe ===")
 
     elseif cmd == "skilldata" then
         -- Where does the Skills panel get its numbers? Every function this
@@ -3013,7 +3009,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
         end
         local calls = 0
         for _ in pairs(out.calls) do calls = calls + 1 end
-        print("|cff88aadd[WOWFT]|r skill data: " .. #out.functions .. " functions found, "
+        print("|cff9d7cffChairCraft|r: skill data: " .. #out.functions .. " functions found, "
             .. calls .. " read-only calls made" .. (out.rowCount and (", panel rows: " .. out.rowCount) or "")
             .. ". Saved; /reload or log out, then tell Claude.")
 
@@ -3023,7 +3019,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
         -- source and the useful question is which of them is worth trusting.
         local force = (msg:match("^%S+%s+(%S+)") or ""):lower() == "warm"
 
-        print("|cff88aadd[WOWFT]|r === weapon skills ===")
+        print("|cff9d7cffChairCraft|r: === weapon skills ===")
 
         local okLevel, level = pcall(UnitLevel, "player")
         local cap = ((okLevel and not (_G.issecretvalue and _G.issecretvalue(level)) and tonumber(level)) or 0) * 5
@@ -3102,12 +3098,12 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
             print("  |cffffcc00listed more than once, kept once:|r " .. (ok and line or "?"))
         end
 
-        print("|cff88aadd[WOWFT]|r === End weapon skills ===")
+        print("|cff9d7cffChairCraft|r: === End weapon skills ===")
 
     elseif cmd == "db" then
         -- The one question worth asking when everything is back at its
         -- default: was anything there to load?
-        print("|cff88aadd[WOWFT]|r === Saved data ===")
+        print("|cff9d7cffChairCraft|r: === Saved data ===")
         local function yesno(v)
             return v and "|cff00ff00yes|r" or "|cffff4444no|r"
         end
@@ -3133,7 +3129,7 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
 
     elseif cmd == "debug" then
         local arg = msg:match("^%S+%s+(.+)$")
-        print("|cff88aadd[WOWFT]|r === Debug Dump ===")
+        print("|cff9d7cffChairCraft|r: === Debug Dump ===")
 
         -- If they passed a number, try GetFactionInfoByID directly
         local testID = tonumber(arg)
@@ -3179,10 +3175,10 @@ SlashCmdList["WOWFTRACKER"] = function(msg)
                 end
             end
         end
-        print("|cff88aadd[WOWFT]|r === End Debug ===")
+        print("|cff9d7cffChairCraft|r: === End Debug ===")
 
     else
-        print("|cff88aadd[WOWFT]|r Commands:")
+        print("|cff9d7cffChairCraft|r: Commands:")
         print("  /chair tracker          — Toggle tracker on/off")
         print("  /chair tracker options  — Open options panel")
         print("  /chair tracker lock     — Toggle frame lock")

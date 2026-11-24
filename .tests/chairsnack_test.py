@@ -309,7 +309,7 @@ except Exception as exc:
 check("the addon gets through a login without erroring", error is None, error)
 
 printed = chr(10).join(L.eval("PRINTED").values()) if error is None else ""
-check("and says it loaded", "loaded" in printed, printed[:300])
+check("and leaves the load message to ChairCraft", "loaded" not in printed, printed[:300])
 
 # --- 3. a panel that will not build ---------------------------------------
 # What actually happened in the game: one options panel threw, and because the
@@ -334,7 +334,7 @@ except Exception as exc:
 check("a panel that cannot be built does not stop the login", error is None, error)
 
 printed = chr(10).join(L.eval("PRINTED").values()) if error is None else ""
-check("the addon still loads", "loaded" in printed, printed[:400])
+check("what it says is said as ChairCraft", "ChairCraft|r:" in printed and "ChairSnack|r:" not in printed, printed[:400])
 check("and says which part failed",
       "could not be built" in printed, printed[:400])
 

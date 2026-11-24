@@ -12,7 +12,7 @@
 local suiteName, Chaircraft = ...
 
 local function Print(...)
-    local parts = { "|cff9d7cffChairCraft|r:" }
+    local parts = { Chaircraft.CHAT_PREFIX }
     for i = 1, select("#", ...) do
         -- Pulled into a local first. A nested function cannot see the enclosing
         -- one's "...", and reaching for it there is a compile error, not a
@@ -22,7 +22,7 @@ local function Print(...)
         parts[#parts + 1] = ok and text or "<unreadable>"
     end
     local ok, line = pcall(table.concat, parts, " ")
-    print(ok and line or "|cff9d7cffChairCraft|r: <unprintable message>")
+    print(ok and line or Chaircraft.CHAT_PREFIX .. " <unprintable message>")
 end
 
 Chaircraft.Print = Print
@@ -457,6 +457,8 @@ end
 local warn = CreateFrame("Frame")
 warn:RegisterEvent("PLAYER_LOGIN")
 warn:SetScript("OnEvent", function()
+    -- The one load line for the whole addon; the parts say nothing of their own.
+    Print("v" .. tostring(Chaircraft.version or "?") .. " loaded. Type |cffffd100/chair|r for the menu.")
     local isLoaded = (_G.C_AddOns and _G.C_AddOns.IsAddOnLoaded) or _G.IsAddOnLoaded
     if type(isLoaded) ~= "function" then return end
     local clashes = {}

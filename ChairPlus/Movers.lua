@@ -1,8 +1,8 @@
 -- ChairPlus Movers.lua
 -- Blizzard's windows -- the character panel, bank, auction house, professions,
 -- map and quest log, spellbook, talents, mail, merchant, trainer, friends, the
--- group finder and the rest in TARGETS below -- and the combined backpack, all
--- draggable by their headers.
+-- group finder and the rest in TARGETS below -- and the bags, combined or
+-- opened one at a time, all draggable by their headers.
 --
 -- Always on: there is nothing to switch, only somewhere to put them. A thin
 -- handle is laid over each window's title strip, so dragging works from the
@@ -263,7 +263,92 @@ local function Adopt(frame)
     return prepared[name] and name or nil
 end
 
+-- Bags opened one at a time (combined bags off) are ContainerFrame1 to 13.
+-- Blizzard hands those frames out to whichever bag opens, so a spot belongs
+-- to the bag (the frame's ID: 0 the backpack, 1-4 the bags, 5 the reagent
+-- bag), saved as "ContainerBag<id>", not to the frame. A bag with no saved
+-- spot stays in Blizzard's stack; a moved one leaves its gap in the stack.
+local BAG_FRAMES = 13
+local bagPrepared = {}
+local bagLayoutHooked
+
+local function BagKey(frame)
+    local ok, id = pcall(frame.GetID, frame)
+    id = ok and ns.Num(id)
+    return id and ("ContainerBag" .. id) or nil
+end
+
+local function ApplyBag(frame)
+    local key = BagKey(frame)
+    local store = Store()
+    local spot = key and store and store[key]
+    if type(spot) ~= "table" then return end
+    local x, y = ns.Num(spot.x), ns.Num(spot.y)
+    if not x or not y or Blocked(frame) then return end
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+end
+
+local function SaveBag(frame)
+    local key = BagKey(frame)
+    local store = Store()
+    if not key or not store then return end
+    local okF, fx, fy = pcall(frame.GetCenter, frame)
+    local okU, ux, uy = pcall(UIParent.GetCenter, UIParent)
+    fx, fy, ux, uy = ns.Num(fx), ns.Num(fy), ns.Num(ux), ns.Num(uy)
+    if not (okF and okU and fx and fy and ux and uy) then return end
+    local okS, fs = pcall(frame.GetEffectiveScale, frame)
+    local okT, us = pcall(UIParent.GetEffectiveScale, UIParent)
+    fs, us = okS and ns.Num(fs) or 1, okT and ns.Num(us) or 1
+    local ratio = (fs and fs > 0) and (us / fs) or 1
+    store[key] = { x = fx - ux * ratio, y = fy - uy * ratio }
+    ApplyBag(frame)
+end
+
+local function ApplyShownBags()
+    for frame in pairs(bagPrepared) do
+        local ok, shown = pcall(frame.IsShown, frame)
+        if ok and ns.Bool(shown) then pcall(ApplyBag, frame) end
+    end
+end
+
+local function PrepareBags()
+    for i = 1, BAG_FRAMES do
+        local frame = _G["ContainerFrame" .. i]
+        if type(frame) == "table" and not bagPrepared[frame] and not Blocked(frame) then
+            bagPrepared[frame] = true
+            pcall(frame.SetMovable, frame, true)
+            pcall(frame.SetClampedToScreen, frame, true)
+            local handle = CreateFrame("Frame", nil, frame)
+            handle:SetPoint("TOPLEFT", frame, "TOPLEFT", 58, 0)
+            handle:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -28, 0)
+            handle:SetHeight(HEADER_H)
+            pcall(handle.SetFrameLevel, handle, (ns.Num(frame:GetFrameLevel()) or 1) + 20)
+            handle:EnableMouse(true)
+            handle:RegisterForDrag("LeftButton")
+            handle:SetScript("OnDragStart", function()
+                if Blocked(frame) then return end
+                frame:StartMoving()
+            end)
+            handle:SetScript("OnDragStop", function()
+                frame:StopMovingOrSizing()
+                SaveBag(frame)
+            end)
+            frame.chairMoverHandle = handle
+            if frame.HookScript then
+                pcall(frame.HookScript, frame, "OnShow", function() pcall(ApplyBag, frame) end)
+            end
+        end
+    end
+    -- Blizzard re-stacks the open bags after each one opens or shuts.
+    if not bagLayoutHooked and type(_G.UpdateContainerFrameAnchors) == "function" then
+        bagLayoutHooked = true
+        hooksecurefunc("UpdateContainerFrameAnchors", ApplyShownBags)
+    end
+end
+
 local function PrepareAll()
+    pcall(PrepareBags)
     -- Windows adopted on an earlier visit have a saved spot under their name.
     local store = Store()
     if store then
@@ -295,7 +380,7 @@ end)
 
 -- The windows' own openers, so one created late (the spellbook and talents
 -- among them) gets its handle the first time it opens.
-for _, opener in ipairs({ "ToggleCharacter", "ToggleAllBags", "OpenAllBags", "ToggleBackpack",
+for _, opener in ipairs({ "ToggleCharacter", "ToggleAllBags", "OpenAllBags", "ToggleBackpack", "ToggleBag", "OpenBag",
                           "ToggleGuildFrame", "ToggleCommunitiesFrame", "ToggleSpellBook",
                           "ToggleTalentFrame", "TogglePlayerSpellsFrame", "ToggleWorldMap",
                           "ToggleQuestLog" }) do

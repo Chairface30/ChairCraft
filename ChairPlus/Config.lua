@@ -118,6 +118,13 @@ ns.defaults = {
     selfHighlightCombat = false,    -- Self Highlight only in combat (SelfHighlight.lua)
     keepTracking        = false,    -- turn Find Minerals/Herbs back on when it drops (Tracking.lua)
 
+    -- Enchanting (Enchanting.lua)
+    enchantReplace      = false,    -- yes to "Replace this enchant?" from the professions window
+    enchantQueue        = false,    -- a count and a secure button that presses Enchant or Yes per click
+
+    -- World map (InstanceMap.lua)
+    instanceMap         = false,    -- dungeon and raid entrances on the world map
+
     -- Chat (Chat.lua)
     chatScrollLeft      = false,    -- scroll bar and arrows on the left
 

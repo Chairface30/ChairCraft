@@ -316,7 +316,7 @@ addon.state = {
 -------------------------------
 
 function addon:Print(msg)
-    print("|cff00ff00" .. (addon.displayName or addonName) .. "|r: " .. msg)
+    print((Chaircraft.CHAT_PREFIX or "|cff9d7cffChairCraft|r:") .. " " .. msg)
 end
 
 -- Class checks live here rather than beside the bars that read them most.

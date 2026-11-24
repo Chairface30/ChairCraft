@@ -388,7 +388,7 @@ SUITE_TABLE.UnitFullName = function(unit) local ok, a, b = pcall(UnitName, unit)
 SUITE_TABLE.IsSecret = function(v) return not pcall(function() return "" .. tostring(v) end) end
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "QueuedCost.lua", "Quests.lua", "Gossip.lua",
-    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Tracking.lua", "Arrow.lua",
+    "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Tracking.lua", "Enchanting.lua", "Arrow.lua", "InstanceData.lua", "InstanceMap.lua",
     "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
 for _, file in ipairs(files) do
@@ -2883,6 +2883,49 @@ check("no bag frame yet is not an error", rt.eval("ContainerFrameCombinedBags") 
 rt.execute("MakeWindow('ContainerFrameCombinedBags') FireEvent('ADDON_LOADED', 'Blizzard_Whatever')")
 check("the bags get their handle once the frame exists",
       rt.eval("ContainerFrameCombinedBags.chairMoverHandle") is not None)
+
+# Bags opened one at a time: each gets a handle, and the spot belongs to the
+# bag (its ID), not to whichever ContainerFrame Blizzard hands it.
+rt, g = fresh()
+rt.execute(MOVERS_SETUP)
+rt.execute("""
+function UpdateContainerFrameAnchors()
+    for i = 1, 2 do
+        local f = _G["ContainerFrame" .. i]
+        f:ClearAllPoints()
+        f:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -10, i * 200)
+    end
+end
+for i = 1, 2 do
+    local f = MakeWindow("ContainerFrame" .. i)
+    rawset(f, "_shown", true)
+    rawset(f, "GetID", function(self) return rawget(self, "_id") end)
+end
+rawset(ContainerFrame1, "_id", 0) rawset(ContainerFrame2, "_id", 3)
+BOOT()
+""")
+check("a single bag gets a header drag handle",
+      rt.eval("ContainerFrame1.chairMoverHandle") is not None
+      and rt.eval("rawget(ContainerFrame1, '_movable')") is True)
+bag = rt.eval("rawget(ContainerFrame2.chairMoverHandle, '_scripts')")
+bag.OnDragStart(rt.eval("ContainerFrame2.chairMoverHandle"))
+check("dragging its header moves it", rt.eval("rawget(ContainerFrame2, '_moving')") is True)
+rt.execute("rawset(ContainerFrame2, '_cx', 660) rawset(ContainerFrame2, '_cy', 640)")
+bag.OnDragStop(rt.eval("ContainerFrame2.chairMoverHandle"))
+spot = rt.eval("NS.Profile().movers.ContainerBag3")
+check("dropping it saves a spot for that bag",
+      spot is not None and spot.x == -300 and spot.y == 100, str(spot and (spot.x, spot.y)))
+rt.execute("UpdateContainerFrameAnchors()")
+point = rt.eval("rawget(ContainerFrame2, '_point')")
+check("and it stays there when Blizzard re-stacks the bags",
+      point.point == "CENTER" and point.x == -300 and point.y == 100,
+      f"{point.point} {point.x} {point.y}")
+check("the unmoved backpack stays in Blizzard's stack",
+      rt.eval("rawget(ContainerFrame1, '_point').point") == "BOTTOMRIGHT")
+rt.execute("rawset(ContainerFrame1, '_id', 3) rawset(ContainerFrame2, '_id', 0) UpdateContainerFrameAnchors()")
+check("the spot follows the bag to another frame",
+      rt.eval("rawget(ContainerFrame1, '_point').point") == "CENTER"
+      and rt.eval("rawget(ContainerFrame2, '_point').point") == "BOTTOMRIGHT")
 
 # The combined backpack's sort button goes on the left, the search box after
 # it; the separate backpack keeps Blizzard's top-right button.
@@ -5620,7 +5663,7 @@ rt.execute('LOCKDOWN = false CASTING = "Fireball" FireEvent("PLAYER_REGEN_ENABLE
 check("while casting it waits", rt.eval("TRACK[2].active") is False)
 rt.execute('CASTING = nil FireEvent("UNIT_SPELLCAST_STOP", "player") RUN_TIMERS(1)')
 check("after the cast: Find Herbs goes back on", rt.eval("TRACK[2].active") is True)
-rt.execute('SET_CALLS = {} NOW = NOW + 5 PICK(2, false) NOW = NOW + 5 SETTLE()')
+rt.execute('SET_CALLS = {} NOW = NOW + 15 PICK(2, false) NOW = NOW + 5 SETTLE()')
 check("switched off from the minimap menu: it stays off",
       rt.eval("TRACK[2].active") is False and rt.eval("#SET_CALLS") == 1
       and rt.eval("NS.Profile().trackingLast['guid:Player-1-0001']") is None)
@@ -5718,6 +5761,204 @@ seen = rt.eval("table.concat(NS.Profile().nearbySeen[1], '\\n')") or ""
 check("the newer window's requirements are read", "Requirements 3328: Anvil=true" in seen and "3 recipes" in seen
       and "C_TradeSkillUI: GetAllRecipeIDs GetRecipeRequirements" in seen, seen)
 
+
+print("\nInstance entrances on the world map")
+check("off by default", fresh(stock=True)[0].eval("NS.IsEnabled('instanceMap')") is False)
+check("every entrance is on its own zone's map",
+      fresh()[0].eval("(function() for _, e in ipairs(NS.instanceEntrances) do "
+                      "if not e.maps[e.home] then return e.name end end return true end)()") is True)
+FOREVER_DUNGEONS = ["City of Dalaran", "The Drowned City", "Blackmaw Hold", "Alcaz Prison",
+                    "Excavation Site: Wetlands", "Ruins of Lordaeron", "The Shaper's Terrace",
+                    "Krol'dok Stronghold", "The Hall of Thanes"]
+rt, g = fresh()
+names = rt.eval("(function() local t = {} for _, e in ipairs(NS.instanceEntrances) do t[e.name] = true end "
+                "return t end)()")
+missing = [n for n in FOREVER_DUNGEONS if not names[n]]
+check("Forever's own dungeons are there too", not missing, str(missing))
+WORLD_MAP = r'''
+SHOWN_MAP = 1436
+WorldMapFrame = CreateFrame("Frame")
+WorldMapFrame.ScrollContainer = CreateFrame("Frame")
+local child = CreateFrame("Frame")
+WorldMapFrame.ScrollContainer.Child = child
+rawset(child, "GetWidth", function() return 1000 end)
+rawset(child, "GetHeight", function() return 600 end)
+rawset(child, "GetFrameLevel", function() return 5 end)
+rawset(WorldMapFrame, "GetMapID", function() return SHOWN_MAP end)
+function hooksecurefunc(tbl, name, fn)
+    local orig = tbl[name]
+    tbl[name] = function(...) local r = orig(...) fn(...) return r end
+end
+rawset(WorldMapFrame, "OnMapChanged", function() end)
+C_Map = {
+    GetMapInfo = function(id) return { mapType = (id == 1414 or id == 1415) and 2 or 3 } end,
+    -- Westfall's map on the Eastern Kingdoms map, made up for the test
+    GetMapRectOnMap = function(zone, cont) if zone == 1436 and cont == 1415 then return 0.4, 0.5, 0.7, 0.8 end end,
+    SetUserWaypoint = function(point) PIN = point end,
+}
+UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }
+function ICONS()
+    local out = {}
+    for _, f in ipairs(FRAMES) do
+        local s = rawget(f, "_scripts")
+        if rawget(f, "entry") and rawget(f, "_shown") and s and s.OnClick then out[rawget(f, "entry").name] = f end
+    end
+    return out
+end
+'''
+rt, g = fresh()
+rt.execute(WORLD_MAP + 'NS.baked.instanceMap = true ChairPlusDB = { settings = {} } BOOT()')
+icons = rt.eval("ICONS()")
+check("Westfall's map shows the Deadmines", icons["Deadmines"] is not None and len(list(icons.keys())) == 1,
+      str(list(icons.keys())))
+pt = rt.eval('rawget(ICONS().Deadmines, "_point")')
+check("at its door in Moonbrook", pt is not None and abs(pt.x - 426) < 1 and abs(pt.y + 430.2) < 1,
+      pt and f"{pt.x}, {pt.y}")
+rt.execute('SHOWN_MAP = 1415 DRIVER_TICK() DRIVER_TICK() DRIVER_TICK()')
+pt = rt.eval('ICONS().Deadmines and rawget(ICONS().Deadmines, "_point")')
+check("on the continent, placed from Westfall's spot on it",
+      pt is not None and abs(pt.x - 442.6) < 1 and abs(pt.y + 463.0) < 1, pt and f"{pt.x}, {pt.y}")
+check("only entrances whose zone the game can place there", len(list(rt.eval("ICONS()").keys())) == 1)
+rt.execute('SHOWN_MAP = 1453 DRIVER_TICK() DRIVER_TICK() DRIVER_TICK()')
+rt.execute('ICONS()["Stormwind Stockade"]._scripts.OnClick(ICONS()["Stormwind Stockade"])')
+check("clicking one puts a map pin on it", g.PIN is not None and g.PIN.map == 1453 and abs(g.PIN.x - 0.5035) < 0.001)
+rt.execute('NS.Set("instanceMap", false)')
+check("switched off, the icons go", len(list(rt.eval("ICONS()").keys())) == 0)
+rt, g = fresh()
+rt.execute('NS.baked.instanceMap = true ChairPlusDB = { settings = {} } BOOT()')
+check("with no world map yet, nothing breaks", rt.eval("NS.modules.instanceMap.broken") is None)
+rt.execute(WORLD_MAP + 'FireEvent("ADDON_LOADED", "Blizzard_WorldMap")')
+check("and it is drawn once the map arrives", rt.eval("ICONS().Deadmines") is not None)
+
+
+
+print("\nEnchanting (Enchanting.lua)")
+ENCHANT_SETUP = r"""
+function hooksecurefunc(a, b, c)
+    if type(a) == "table" then
+        local orig = a[b]
+        a[b] = function(...) local r = { orig(...) } c(...) return unpack(r) end
+    else
+        local orig = _G[a]
+        _G[a] = function(...) local r = { orig(...) } b(...) return unpack(r) end
+    end
+end
+-- The protected and casting calls: ChairCraft must never make them itself.
+FORBIDDEN = {}
+function ReplaceTradeskillEnchant() table.insert(FORBIDDEN, "ReplaceTradeskillEnchant") end
+function ReplaceEnchant() table.insert(FORBIDDEN, "ReplaceEnchant") end
+C_TradeSkillUI = { CraftEnchant = function() table.insert(FORBIDDEN, "CraftEnchant") end }
+COMBAT = false
+function InCombatLockdown() return COMBAT end
+Enum.TradeskillRecipeType = { Enchant = 3 }
+ITEM = { IsStackable = function() return false end, GetItemName = function() return "Bracers" end }
+IS_ENCHANT, TARGET, RECIPE = true, ITEM, 7418
+TRANS = { IsRecipeType = function(_, t) return t == 3 and IS_ENCHANT end,
+          GetEnchantAllocation = function() return TARGET end, GetRecipeID = function() return RECIPE end }
+PAGE = { _shown = true, IsShown = function(s) return s._shown end,
+         HookScript = function(s, n, f) s["_on" .. n] = f end, ValidateControls = function() end,
+         SchematicForm = { GetTransaction = function() return TRANS end },
+         CreateButton = MakeMock(),
+         CreateMultipleInputBox = { _shown = false, IsShown = function(s) return s._shown end } }
+function GetCursorPosition() return 500, 300 end
+ACCEPTED = 0
+YES = { GetCenter = function() return 350, 370 end,
+        Click = function()
+            DIALOG._shown = false
+            if BLOCK then FireEvent("ADDON_ACTION_BLOCKED", "Chaircraft", "ReplaceTradeskillEnchant()")
+            else ACCEPTED = ACCEPTED + 1 end
+        end }
+DIALOG = { button1 = YES, GetCenter = function() return 400, 400 end, GetEffectiveScale = function() return 1 end,
+           ClearAllPoints = function(s) s.point = nil end,
+           SetPoint = function(s, p, rel, relP, x, y) s.point = { p = p, relP = relP, x = x, y = y } end }
+function StaticPopup_Show(which) DIALOG.which, DIALOG._shown, DIALOG.point = which, true, nil end
+function StaticPopup_FindVisible(which)
+    if DIALOG._shown and DIALOG.which == which then return DIALOG end
+end
+function StaticPopup_Hide() DIALOG._shown = false end
+function ENCHANT_BUTTON() return ChairCraftEnchantButton end
+function ENCHANT_BOX()
+    for _, f in ipairs(FRAMES) do
+        local s = rawget(f, "_scripts")
+        if s and s.OnTextChanged and rawget(f, "_parent") == PAGE then return f end
+    end
+end
+function PRECLICK() ENCHANT_BUTTON()._scripts.PreClick(ENCHANT_BUTTON(), "LeftButton") end
+function ATTR(k) return rawget(ENCHANT_BUTTON(), "attr_" .. k) end
+function LAND(id) FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", id or RECIPE) end
+function BTN_TEXT() return rawget(ENCHANT_BUTTON(), "_text") end
+function BTN_SHOWN() return rawget(ENCHANT_BUTTON(), "_shown") end
+function SAID(text)
+    for _, line in ipairs(PRINTED) do if tostring(line):find(text, 1, true) then return true end end
+    return false
+end
+ChairPlusDB = { settings = {} }
+BOOT()
+"""
+rt, g = fresh()
+rt.execute(ENCHANT_SETUP)
+check("both off by default", rt.eval("NS.IsEnabled('enchantReplace')") is False
+      and rt.eval("NS.IsEnabled('enchantQueue')") is False)
+rt.execute('StaticPopup_Show("REPLACE_TRADESKILL_ENCHANT")')
+check("off: the replace question stays put", rt.eval("DIALOG.point") is None)
+rt.execute('StaticPopup_Hide() NS.Set("enchantReplace", true) StaticPopup_Show("REPLACE_TRADESKILL_ENCHANT")')
+check("on: Yes goes under the mouse", rt.eval("DIALOG._shown") is True
+      and rt.eval("DIALOG.point and DIALOG.point.x") == 550 and rt.eval("DIALOG.point.y") == 330)
+check("Yes is never clicked by ChairCraft (it taints the popups: logout breaks)",
+      rt.eval("ACCEPTED") == 0 and rt.eval("#FORBIDDEN") == 0)
+rt.execute('StaticPopup_Hide() StaticPopup_Show("REPLACE_ENCHANT")')
+check("the armor kit / oil question is not touched", rt.eval("DIALOG._shown") is True
+      and rt.eval("DIALOG.point") is None)
+rt.execute('StaticPopup_Hide() StaticPopup_Show("CAMP")')
+check("the logout countdown is not touched", rt.eval("DIALOG._shown") is True and rt.eval("DIALOG.point") is None)
+rt.execute('StaticPopup_Hide() SHIFT = true StaticPopup_Show("REPLACE_TRADESKILL_ENCHANT") SHIFT = false')
+check("holding shift leaves it where it is", rt.eval("DIALOG._shown") is True
+      and rt.eval("DIALOG.point") is None)
+check("no error from the replace module", rt.eval("NS.modules.enchantReplace.broken") is None)
+
+rt.execute('StaticPopup_Hide() NS.Set("enchantQueue", true)')
+check("no professions window yet is not an error", rt.eval("NS.modules.enchantQueue.broken") is None)
+rt.execute('COMBAT = true ProfessionsFrame = { CraftingPage = PAGE } FireEvent("ADDON_LOADED", "Blizzard_Professions")')
+check("the window loading in combat: the secure button waits", rt.eval("ENCHANT_BUTTON() == nil") is True)
+rt.execute('COMBAT = false FireEvent("PLAYER_REGEN_ENABLED")')
+check("and is made when combat ends", rt.eval("ENCHANT_BUTTON() ~= nil") is True and rt.eval("BTN_SHOWN()") is True)
+rt.execute('ENCHANT_BUTTON().SetAttribute = function(s, k, v) rawset(s, "attr_" .. k, v) end')
+rt.execute('ENCHANT_BOX():SetText("3") ENCHANT_BOX()._scripts.OnTextChanged(ENCHANT_BOX())')
+check("it reads the count", rt.eval("BTN_TEXT()") == "Enchant x3", rt.eval("BTN_TEXT()"))
+rt.execute('PAGE.CreateMultipleInputBox._shown = true PAGE.ValidateControls()')
+check("vellum (Blizzard's own count showing): it steps aside", rt.eval("BTN_SHOWN()") is False)
+rt.execute('PAGE.CreateMultipleInputBox._shown = false IS_ENCHANT = false PAGE.ValidateControls()')
+check("not an enchant: it stays hidden", rt.eval("BTN_SHOWN()") is False)
+rt.execute('IS_ENCHANT = true PAGE.ValidateControls() PRECLICK()')
+check("a click presses Blizzard's Enchant button", rt.eval("ATTR('clickbutton') == PAGE.CreateButton") is True)
+check("and starts counting", rt.eval("NS.EnchantRun() and NS.EnchantRun().total") == 3)
+rt.execute('StaticPopup_Show("REPLACE_TRADESKILL_ENCHANT") PAGE.ValidateControls()')
+check("with the question up the button says Yes", rt.eval("BTN_TEXT()") == "Yes, replace (3 left)", rt.eval("BTN_TEXT()"))
+rt.execute('PRECLICK()')
+check("and the click presses the question's Yes", rt.eval("ATTR('clickbutton') == YES") is True)
+rt.execute('StaticPopup_Hide() LAND() PAGE.ValidateControls()')
+check("a cast landing counts down", rt.eval("BTN_TEXT()") == "Enchant (2 left)", rt.eval("BTN_TEXT()"))
+rt.execute('LAND(12345)')
+check("some other spell doesn't count", rt.eval("NS.EnchantRun().done") == 1)
+rt.execute('PRINTED = {} PRECLICK() LAND() PRECLICK() LAND()')
+check("three done: it says so and stops counting", rt.eval("NS.EnchantRun()") is None
+      and rt.eval('SAID("Enchanted 3 times")') is True)
+check("it never cast or answered anything itself", rt.eval("#FORBIDDEN") == 0, str(rt.eval("FORBIDDEN")))
+rt.execute('PRECLICK() RECIPE = 7420 PAGE.ValidateControls()')
+check("another enchant picked: the count starts over", rt.eval("NS.EnchantRun()") is None)
+rt.execute('RECIPE = 7418 TARGET = nil PRECLICK()')
+check("no item picked: nothing to count", rt.eval("NS.EnchantRun()") is None)
+rt.execute('TARGET = ITEM PRECLICK() PAGE._onOnHide()')
+check("closing the window stops counting", rt.eval("NS.EnchantRun()") is None)
+rt.execute('COMBAT = true IS_ENCHANT = false PAGE.ValidateControls()')
+check("in combat the secure button isn't shown or hidden", rt.eval("BTN_SHOWN()") is True)
+rt.execute('COMBAT = false FireEvent("PLAYER_REGEN_ENABLED")')
+check("it catches up after combat", rt.eval("BTN_SHOWN()") is False)
+rt.execute('IS_ENCHANT = true NS.Set("enchantQueue", false) PAGE.ValidateControls()')
+check("switched off, the button goes", rt.eval("BTN_SHOWN()") is False)
+check("no error from the queue module", rt.eval("NS.modules.enchantQueue.broken") is None)
+rt.execute("PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, ' ')) end NS.ProbeEnchanting() NS.Print = old")
+check("the probe runs and names the target", rt.eval('SAID("Bracers")') is True)
 
 if failures:
     print(f"{len(failures)} check(s) failed:")

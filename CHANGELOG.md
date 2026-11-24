@@ -1,5 +1,19 @@
 # Changelog
 
+## ChairCraft v1.15.0: Dungeon entrances and enchanting
+
+**New**
+- **Dungeon and raid entrances on the world map.** An icon marks where each dungeon and raid is entered, Forever's own dungeons included (The Drowned City, Krol'dok Stronghold, Alcaz Prison and the rest), on its zone's map, the zones next door and the continent map. Hover one to see what is entered there (Blackrock Mountain lists all four), and click it to put a map pin on it for the waypoint arrow. Off by default: Travel page, World map.
+- **Enchanting: Yes under the mouse.** Enchanting an item that already has an enchant asks every time whether to replace it. Turn on "Replace enchant: Yes under the mouse" on the Comfort page and the question opens with its Yes right under your mouse: click Enchant, then click again in the same spot. Only in the professions window, not for armor kits or oils used from your bags. Hold shift to leave it where it is. ChairCraft does not click Yes for you: the game blocks that, and trying it broke the other dialogs for the rest of the session, logging out among them. This replaces the Enchant Butter addon. Not yet confirmed in game.
+- **Enchanting: the same item several times.** The professions window only gives a count for enchants on vellum. Turn on "Enchant the same item several times" on the Comfort page and any other enchant gets a count box and an "Enchant x3" button beside the Enchant button. Each click on it presses Enchant, or Yes when the game asks to replace the enchant, so you keep clicking one spot until it says the count is done. The game wants a click for every cast and every Yes, so it can't run by itself. A macro with `/click ChairCraftEnchantButton` does the same from a key. `/chair plus enchant` says what it sees. Not yet confirmed in game.
+- **Bags opened one at a time can be moved.** With combined bags off, drag a bag by its header and it stays where you drop it, each bag in its own spot. A bag you haven't moved stays in Blizzard's stack. Not yet confirmed in game.
+
+**Changed**
+- **ChairCraft speaks as ChairCraft in chat.** Every chat message starts with ChairCraft, not ChairPlus, ChairAuras, ChairSnack, ChairTracker or ChairIgnore, and logging in says once that ChairCraft loaded instead of a line for each part.
+
+**Fixed**
+- **Keep tracking on could lose your tracker after a death.** Around a death the game can report tracking as on while it's gone, and its menu could then be taken for you switching it off, so it was forgotten. It now reads the tracking from your buffs and ignores "switched off" while you're dead or in the first seconds after you revive. `/chair plus tracking test` checks whether tracking can be switched at all. Not yet confirmed in game.
+
 ## ChairCraft v1.14.0: Crafting bar
 
 **New**

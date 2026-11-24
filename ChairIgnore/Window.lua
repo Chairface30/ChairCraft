@@ -729,7 +729,7 @@ local function BuildHidden(page)
     page.show = Button(page, 110, "Show in chat", function()
         local e = hidden.selected
         if not e then return end
-        print("|cff808080[hidden by ChairIgnore, " .. (e.why == "listed" and "listed player" or e.why) .. "]|r "
+        print("|cff808080[hidden by ChairCraft, " .. (e.why == "listed" and "listed player" or e.why) .. "]|r "
             .. "[" .. e.kind .. "] " .. tostring(e.sender or "?") .. ": " .. (e.text or "<unreadable>"))
     end)
     page.show:SetPoint("TOPLEFT", list, "BOTTOMLEFT", 0, -8)

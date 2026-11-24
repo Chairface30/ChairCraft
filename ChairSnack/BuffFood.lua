@@ -517,7 +517,7 @@ function addon:BuffFoodCommand(rest)
     end
 
     -- Status.
-    print("|cffFFFF00=== ChairSnack buff food ===|r")
+    print("|cffFFFF00=== ChairCraft buff food ===|r")
     print("Buff is up right now: "
           .. (self:HasFoodBuff() and "|cff33ff33yes|r -- bar hidden"
                                  or "|cffff5555no|r -- bar shown"))

@@ -39,6 +39,11 @@ local function TocField(field)
 end
 Chaircraft.version = TocField("Version") or "?"
 
+-- What every chat line starts with, whichever part says it. The parts were
+-- separate addons once, each with its own name in chat; to the player it is
+-- all ChairCraft now.
+Chaircraft.CHAT_PREFIX = "|cff9d7cffChairCraft|r:"
+
 -- Whether the client keeps a value secret. Asked before anything else is done
 -- with a value read from the client: a secret throws when it is compared,
 -- tested, added up, joined or used as a table key, and `value == nil` is a

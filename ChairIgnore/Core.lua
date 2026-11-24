@@ -80,7 +80,7 @@ function ns.Lower(text)
     return text
 end
 
-local PREFIX = "|cff9d7cffChairIgnore|r:"
+local PREFIX = (Chaircraft.CHAT_PREFIX or "|cff9d7cffChairCraft|r:")
 function ns.Print(...)
     local parts = { PREFIX }
     for i = 1, select("#", ...) do

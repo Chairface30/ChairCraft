@@ -433,7 +433,7 @@ PRINTED = {}
 page.show._scripts.OnClick()
 """)
 said = "\n".join(str(v) for v in rt.eval("PRINTED").values())
-check("Show in chat brings a message back, marked", "hidden by ChairIgnore" in said and "hello there" in said, said)
+check("Show in chat brings a message back, marked", "hidden by ChairCraft" in said and "hello there" in said, said)
 rt.execute("ChairIgnoreWindow.pages.hidden.unignore._scripts.OnClick()")
 check("Unignore takes a listed sender off the list", ev("NS.IsListed('Pest Person')") is False)
 rt.execute("for i = 1, 250 do CHAT('CHAT_MSG_CHANNEL', 'cheapest gold ' .. i, 'Gold Seller-Otherrealm') end")

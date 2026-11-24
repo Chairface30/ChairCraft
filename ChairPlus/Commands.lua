@@ -151,6 +151,17 @@ local ROWS = {
       tip = "While Heroic Strike, Cleave, Maul or Raptor Strike is queued for your next swing, the power it will take "
          .. "lights up at the end of the power bar on the Personal Resource Display. It goes away when the swing lands "
          .. "or you cancel the queue. /chair plus queued says what it found." },
+    { header = "Enchanting", tab = "comfort" },
+    { key = "enchantReplace",   label = "Replace enchant: Yes under the mouse", tab = "comfort",
+      tip = "Enchanting an item that already has an enchant asks every time whether to replace it. With this on the question opens "
+         .. "with its Yes right under your mouse, so you click Enchant and then click again in the same spot. Only in the professions "
+         .. "window, not for armor kits or oils used from your bags. Hold shift to leave it where it is. ChairCraft never clicks Yes "
+         .. "itself: that broke the game's other dialogs, logging out among them." },
+    { key = "enchantQueue",     label = "Enchant the same item several times", tab = "comfort",
+      tip = "The professions window only gives a count for enchants on vellum. With this on, any other enchant gets a count box and an "
+         .. "\"Enchant x3\" button beside the Enchant button. Each click on it presses Enchant, or Yes when the game asks to replace "
+         .. "the enchant, so you keep clicking one spot until the count is done. The game wants a click for every cast, so it can't run on its own. "
+         .. "A macro with /click ChairCraftEnchantButton does the same from a key. /chair plus enchant says what it sees." },
     { header = "Tooltips", tab = "comfort" },
     { key = "tooltipExtras",    label = "Tooltip extras", tab = "comfort" },
     { key = "tooltipSellPrice", label = "Sell price", tab = "comfort",          sub = "tooltipExtras",
@@ -162,6 +173,10 @@ local ROWS = {
     { key = "flightCountdown",  label = "Countdown while flying", tab = "travel",  sub = "flight" },
     { key = "flightTooltip",    label = "Time on the flight map", tab = "travel",  sub = "flight" },
     { key = "flightSummary",    label = "Say the time in chat on landing", tab = "travel", sub = "flight" },
+    { header = "World map", tab = "travel" },
+    { key = "instanceMap",      label = "Dungeon and raid entrances", tab = "travel",
+      tip = "An icon on the world map where each dungeon and raid is entered, on its zone's map and the continent's. "
+         .. "Hover one to see what is entered there; click it to put a map pin on it for the waypoint arrow." },
     -- The waypoint arrow. A row with `choice` steps through a list of values
     -- with < and > buttons.
     { header = "Waypoint arrow", tab = "travel", newColumn = true },
@@ -1041,7 +1056,7 @@ local function BuildPanel()
             choose:SetScript("OnClick", function()
                 local sounds = Chaircraft.ChairAuras and Chaircraft.ChairAuras.Sounds
                 if not (sounds and sounds.Open) then
-                    ns.Print("The sound list lives in ChairAuras, which did not load.")
+                    ns.Print("The sound list comes with ChairCraft's auras, which did not load.")
                     return
                 end
                 sounds:Open(ns.Get(key), "Master", function(value)
@@ -2134,6 +2149,8 @@ local function PrintHelp()
     print("  |cffffd100/chair plus formbar|r - druids: whether the alternate resource bar was found, and your form")
     print("  |cffffd100/chair plus queued|r - the power bar found, and the next-swing ability queued and its cost")
     print("  |cffffd100/chair plus tracking|r - the tracking that is on, the one kept on, and what happened last")
+    print("  |cffffd100/chair plus tracking test|r - switch tracking off and on to see if the addon can")
+    print("  |cffffd100/chair plus enchant|r - the professions window, the enchant picked, and what the enchanting helpers did last")
     print("  |cffffd100/chair plus nearby|r - whether the game says you are near a forge, anvil or cooking fire")
     print("  |cffffd100/chair plus movers reset|r - forget where every dragged Blizzard window was put")
     print("  |cffffd100/chair plus movers add|r - make the window under the mouse draggable by its title bar")
@@ -2276,8 +2293,13 @@ local function Handler(input)
     elseif cmd == "queued" then
         if ns.ProbeQueuedCost then ns.ProbeQueuedCost() end
 
+    elseif cmd == "enchant" then
+        if ns.ProbeEnchanting then ns.ProbeEnchanting() end
+
     elseif cmd == "tracking" then
-        if ns.ProbeTracking then ns.ProbeTracking() end
+        if (rest or ""):lower() == "test" then
+            if ns.TestTracking then ns.TestTracking() end
+        elseif ns.ProbeTracking then ns.ProbeTracking() end
 
     elseif cmd == "nearby" then
         -- Whether this client says you are near a forge, anvil, cooking fire...

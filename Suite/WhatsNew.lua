@@ -11,6 +11,14 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.15.0"] = {
+        title = "Dungeon entrances and enchanting",
+        lines = {
+            "Dungeon and raid entrances on the world map: hover for what is entered there, click for a map pin. Travel page, World map.",
+            "Enchanting: Yes under the mouse when replacing an enchant, and an Enchant x3 button for the same enchant several times.",
+            "Chat messages all say ChairCraft now, with one load line for the whole addon. Keep tracking on no longer forgets your tracker after a death.",
+        },
+    },
     ["1.14.0"] = {
         title = "Crafting bar",
         lines = {

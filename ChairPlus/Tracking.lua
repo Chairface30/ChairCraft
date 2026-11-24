@@ -34,6 +34,9 @@ local lastTry = -1000
 local misses = 0
 local hooked = false
 local applying = false   -- our own SetTracking, not the player's
+local testing = false    -- /chair plus tracking test is running; leave it be
+local onNow              -- name of the spell tracker the last check saw on
+local deathAt = -1000    -- GetTime() of the last death or revive
 
 local function Minimap() return _G.C_Minimap end
 
@@ -153,8 +156,15 @@ local function Info(i)
     seen[i] = string.format("%s | active=%s | aura=%s | icon=%s | type=%s | spellID=%s | %s",
         name or "?", tostring(rawActive), tostring(aura), tostring(icon), ns.Text(kind) or "nil",
         tostring(spellID), type(a) == "table" and "table" or "values")
-    if isSpell and (aura or icon) then rawActive = true end
-    return name, rawActive, isSpell, spellID
+    -- The aura decides when it can be read: after a death the client can
+    -- keep saying active=true while the tracking is gone, and say false while
+    -- it is plainly on. The raw flag (and the icon) only count without it.
+    local active = rawActive
+    if isSpell then
+        if aura ~= nil then active = aura
+        elseif icon ~= nil then active = icon end
+    end
+    return name, active, isSpell, spellID
 end
 
 -- The spell tracking that is on now: name, spellID. Second return of false
@@ -256,12 +266,14 @@ local lastResult
 
 -- One pass: remember what's on, or put the remembered one back.
 local function Check()
-    if not enabled then return end
+    if not enabled or testing then return end
     local current, readable = Current()
     local snap = { key = CharKey() or "unreadable", count = NumTypes() }
     for i, line in pairs(seen) do snap[i] = line end
     ns.Profile().trackingSeen = snap
+    snap.result = lastResult
     if not readable then lastResult = "tracking can't be read right now"; return end
+    onNow = current and current.name or nil
     if current then
         Remember(current)
         misses = 0
@@ -301,6 +313,9 @@ local function Check()
     applying = true
     local ok = pcall(set, index, true)
     applying = false
+    -- Count it as on until the next check reads otherwise, so the player
+    -- switching it off straight after isn't taken for "it wasn't on".
+    if ok then onNow = want.name end
     lastResult = (ok and "turned back on: " or "couldn't turn on: ") .. want.name
 end
 ns.TrackingCheck = Check
@@ -311,27 +326,51 @@ local function Hook()
     if type(hook) ~= "function" then return end
     hooked = true
     -- The player switching it off from the minimap menu: forget it, so it
-    -- isn't fought.
-    local function Off()
-        if not enabled or applying then return end
+    -- isn't fought. But only a real switch-off: after a death the client can
+    -- still call the tracker active while it's gone, so the menu's toggle
+    -- sends "off" for something already off. That, or anything while dead or
+    -- just revived, is not the player turning it off.
+    local function Off(how)
+        if not enabled or applying or testing then return end
+        local why
+        if not onNow then why = "it wasn't on"
+        else
+            local dead = _G.UnitIsDeadOrGhost
+            local ok, v = pcall(dead or function() return false end, "player")
+            if not ok or ns.Bool(v) ~= false then why = "dead"
+            elseif (ns.Num(GetTime()) or 0) - deathAt < 15 then why = "just revived" end
+        end
+        -- Every off call and what was made of it, with its caller.
+        local log = ns.Profile().trackingOffLog
+        if type(log) ~= "table" then log = {}; ns.Profile().trackingOffLog = log end
+        local stack = type(_G.debugstack) == "function" and _G.debugstack(3, 4, 0) or ""
+        table.insert(log, string.format("%.0f %s on=%s -> %s | %s", ns.Num(GetTime()) or 0, how,
+            tostring(onNow), why and ("ignored, " .. why) or "forgot", (stack:gsub("\n", " / "))))
+        while #log > 10 do table.remove(log, 1) end
+        if why then return end
         Remember(nil)
+        onNow = nil
         lastResult = "switched off by you; nothing to put back"
+    end
+    local function OnSet(i, on)
+        if not on and select(3, Info(i)) then Off("SetTracking(" .. tostring(i) .. ", false)") end
     end
     local C = Minimap()
     if C and type(C.SetTracking) == "function" then
-        pcall(hook, C, "SetTracking", function(i, on) if not on and select(3, Info(i)) then Off() end end)
+        pcall(hook, C, "SetTracking", OnSet)
     elseif type(_G.SetTracking) == "function" then
-        pcall(hook, "SetTracking", function(i, on) if not on and select(3, Info(i)) then Off() end end)
+        pcall(hook, "SetTracking", OnSet)
     end
+    local function OnClear() Off("ClearAllTracking") end
     if C and type(C.ClearAllTracking) == "function" then
-        pcall(hook, C, "ClearAllTracking", Off)
+        pcall(hook, C, "ClearAllTracking", OnClear)
     elseif type(_G.ClearAllTracking) == "function" then
-        pcall(hook, "ClearAllTracking", Off)
+        pcall(hook, "ClearAllTracking", OnClear)
     end
 end
 
 local EVENTS = {
-    "MINIMAP_UPDATE_TRACKING", "PLAYER_ENTERING_WORLD", "PLAYER_ALIVE", "PLAYER_UNGHOSTED",
+    "MINIMAP_UPDATE_TRACKING", "PLAYER_ENTERING_WORLD", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOSTED",
     "PLAYER_REGEN_ENABLED", "PLAYER_CONTROL_GAINED", "UNIT_SPELLCAST_STOP",
     "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_FAILED", "ZONE_CHANGED_NEW_AREA",
 }
@@ -354,6 +393,21 @@ ns.RegisterModule("keepTracking", {
             driver:SetScript("OnEvent", function(_, event, unit)
                 if event:find("^UNIT_") and unit ~= "player" then return end
                 if event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOSTED" then misses = 0 end
+                if event == "PLAYER_DEAD" or event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOSTED" then
+                    deathAt = ns.Num(GetTime()) or 0
+                    onNow = nil   -- whatever was on, death took it
+                end
+                if event == "PLAYER_DEAD" or event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOSTED" then
+                    -- What it saw around a death, for working out a miss.
+                    ns.After(1, function()
+                        local log = ns.Profile().trackingDeathLog
+                        if type(log) ~= "table" then log = {}; ns.Profile().trackingDeathLog = log end
+                        local line = event .. " -> " .. tostring(lastResult)
+                        for i in pairs(seen) do line = line .. " || " .. seen[i] end
+                        table.insert(log, line)
+                        while #log > 10 do table.remove(log, 1) end
+                    end)
+                end
                 -- A beat later: the client sends these before the tracking
                 -- list or the player's state has settled.
                 ns.After(0.5, Check)
@@ -381,4 +435,83 @@ function ns.ProbeTracking()
         "- SetTracking:", type(SetTrackingFn()) == "function" and "found" or "MISSING")
     ns.Print("Last:", lastResult or "nothing yet", ns.IsEnabled("keepTracking") and "" or "(option is off)")
     for i = 1, NumTypes() do if seen[i] then ns.Print("  " .. i .. ":", seen[i]) end end
+    local offs = ns.Profile().trackingOffLog
+    if type(offs) == "table" and #offs > 0 then ns.Print("Last off call:", offs[#offs]) end
+end
+
+-- /chair plus tracking test
+-- Whether this addon can switch tracking at all. Detection works; this checks
+-- the other half. It turns the current (or remembered) spell tracker off, then
+-- on again, then off and on once more, reading the state 2s after each. Steps
+-- 1 and 2 run straight from the slash command (a key press is behind them);
+-- steps 3 and 4 run from a timer, like the keep-on code does after a death.
+-- ADDON_ACTION_BLOCKED / FORBIDDEN fired during a step are reported too, since
+-- a blocked call still returns without an error.
+local watcher
+local blockedNow
+function ns.TestTracking()
+    if testing then ns.Print("Tracking test is already running.") return end
+    local current = Current()
+    local want = current or Remembered()
+    if not want then
+        ns.Print("Tracking test: turn on Find Minerals (or any tracking spell) first.")
+        return
+    end
+    local index = FindIndex(want)
+    local set = SetTrackingFn()
+    if not index or type(set) ~= "function" then
+        ns.Print("Tracking test:", want.name, index and "" or "isn't in the list;",
+            type(set) == "function" and "" or "SetTracking is missing")
+        return
+    end
+    if not watcher then
+        watcher = CreateFrame("Frame")
+        watcher:SetScript("OnEvent", function(_, event, addon, func)
+            if testing then
+                blockedNow = (blockedNow and blockedNow .. "; " or "") ..
+                    event .. " " .. tostring(addon) .. " " .. tostring(func)
+            end
+        end)
+        pcall(watcher.RegisterEvent, watcher, "ADDON_ACTION_BLOCKED")
+        pcall(watcher.RegisterEvent, watcher, "ADDON_ACTION_FORBIDDEN")
+    end
+    testing = true
+    local results = {}
+    local function IsOn()
+        local _, active = Info(index)
+        return active
+    end
+    local function Step(n, on, from)
+        blockedNow = nil
+        local before = IsOn()
+        applying = true
+        local ok, err = pcall(set, index, on)
+        applying = false
+        ns.After(2, function()
+            local after = IsOn()
+            local worked = (after == on)
+            local line = string.format("%d. %s (%s): call %s, before=%s after=%s -> %s%s",
+                n, on and "ON " or "OFF", from, ok and "ok" or ("error: " .. tostring(err)),
+                tostring(before), tostring(after),
+                worked and "|cff40ff40WORKED|r" or "|cffff4040NO CHANGE|r",
+                blockedNow and (" [" .. blockedNow .. "]") or "")
+            results[n] = worked
+            ns.Print(line)
+            if n == 1 then Step(2, true, "timer")
+            elseif n == 2 then Step(3, false, "timer")
+            elseif n == 3 then Step(4, true, "timer")
+            else
+                testing = false
+                ns.Print(string.format("Tracking test done - off: %s/2, on: %s/2.",
+                    (results[1] and 1 or 0) + (results[3] and 1 or 0),
+                    (results[2] and 1 or 0) + (results[4] and 1 or 0)))
+                ns.Profile().trackingTest = {
+                    off1 = results[1], on2 = results[2], off3 = results[3], on4 = results[4],
+                }
+                Check()
+            end
+        end)
+    end
+    ns.Print("Tracking test on", want.name, "(entry " .. index .. ") - 4 steps, 2s apart. Stay still, out of combat.")
+    Step(1, false, "key press")
 end

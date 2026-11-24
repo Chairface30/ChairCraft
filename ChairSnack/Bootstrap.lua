@@ -229,7 +229,6 @@ local function Bootstrap()
 
     ready = true
     addon.isReady = true   -- for code outside this file (Crafting.lua)
-    addon:Print("loaded. Type |cff00ffff/chair snack|r to configure.")
     ReportProfileLoad()
 
     -- And draw them.
@@ -1036,7 +1035,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
     elseif msg == "api" then
         -- Which client API each compatibility shim landed on. Anything marked
         -- MISSING is a call that will error the moment it is reached.
-        print("|cffFFFF00=== ChairSnack API ===|r")
+        print("|cffFFFF00=== ChairCraft snack API ===|r")
         local names = {}
         for name in pairs(addon.apiSource) do names[#names + 1] = name end
         table.sort(names)
@@ -1053,7 +1052,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         -- consumable is missing from the bar, this says whether its zone list
         -- is wrong or the zone text here simply reads differently than the
         -- list expects -- which is the only way to write that list correctly.
-        print("|cffFFFF00=== ChairSnack zone ===|r")
+        print("|cffFFFF00=== ChairCraft snack zone ===|r")
         for _, name in ipairs(addon.CurrentZoneNames()) do
             print("  |cff808080here:|r " .. name)
         end
@@ -1080,7 +1079,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         -- Where each bar is saved, against where it actually is. If the two
         -- disagree the bar was moved after layout ran, and the frame it is
         -- anchored to says by what.
-        print("|cffFFFF00=== ChairSnack Positions ===|r")
+        print("|cffFFFF00=== ChairCraft snack Positions ===|r")
         local cx, cy = UIParent:GetCenter()
         print(string.format("UIParent %.0f x %.0f, center %.1f, %.1f, scale %.3f",
             UIParent:GetWidth(), UIParent:GetHeight(), cx or 0, cy or 0,
@@ -1120,7 +1119,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         -- Enough to tell "it was never saved" from "it was saved and then
         -- not found again", which is the only question worth asking when a
         -- layout comes back as the default one.
-        print("|cffFFFF00=== ChairSnack Profiles ===|r")
+        print("|cffFFFF00=== ChairCraft snack Profiles ===|r")
         print("Character: " .. addon:CharLabel())
         print("Profile key: |cff808080" .. addon:CharKey() .. "|r")
         if SnapSnackDB and SnapSnackDB.sentinel then
@@ -1151,7 +1150,7 @@ SlashCmdList["SNAPSNACK"] = function(msg)
         end
 
     elseif msg == "debug" then
-        print("|cffFFFF00=== ChairSnack Debug ===|r")
+        print("|cffFFFF00=== ChairCraft snack Debug ===|r")
         print("Profile: " .. addon:CharLabel() ..
               " |cff808080(" .. addon:CharKey() .. ")|r")
         print("InCombatLockdown: " .. tostring(InCombatLockdown()))

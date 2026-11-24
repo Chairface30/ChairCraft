@@ -146,12 +146,12 @@ function ns.EnsureFont(fontString, size, flags)
 end
 
 function ns.Print(...)
-    local parts = { "|cff40c4ffChairAuras|r:" }
+    local parts = { (Chaircraft.CHAT_PREFIX or "|cff9d7cffChairCraft|r:") }
     for i = 1, select("#", ...) do
         parts[#parts + 1] = ns.SafeText((select(i, ...))) or "<unreadable>"
     end
     local ok, line = pcall(table.concat, parts, " ")
-    print(ok and line or "|cff40c4ffChairAuras|r: <unprintable message>")
+    print(ok and line or parts[1] .. " <unprintable message>")
 end
 
 -------------------------------------------------------------------------------

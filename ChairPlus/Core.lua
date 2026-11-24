@@ -113,7 +113,7 @@ function ns.DisplayText(value)
     return nil
 end
 
-local PREFIX = "|cff9d7cffChairPlus|r:"
+local PREFIX = (Chaircraft.CHAT_PREFIX or "|cff9d7cffChairCraft|r:")
 
 function ns.Print(...)
     local parts = { PREFIX }
