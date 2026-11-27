@@ -389,7 +389,7 @@ SUITE_TABLE.IsSecret = function(v) return not pcall(function() return "" .. tost
 local files = {
     "Core.lua", "Config.lua", "OSD.lua", "StatusBars.lua", "FormBar.lua", "QueuedCost.lua", "Quests.lua", "Gossip.lua",
     "Vendor.lua", "Restock.lua", "Cooldowns.lua", "Loot.lua", "FlightData.lua", "Flight.lua", "Camera.lua", "SelfHighlight.lua", "Tracking.lua", "Enchanting.lua", "Arrow.lua", "InstanceData.lua", "InstanceMap.lua",
-    "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
+    "Threat.lua", "Nameplates.lua", "Tooltips.lua", "Mail.lua", "Social.lua", "Invite.lua", "Role.lua", "LFG.lua", "Movers.lua", "Backup.lua", "Commands.lua",
 }
 for _, file in ipairs(files) do
     local chunk, err = loadfile("ChairPlus/" .. file)
@@ -5041,6 +5041,84 @@ check("an item can still drag an unlocked display",
       rt.eval('NS.OSDHotspot("bags")._scripts.OnDragStart ~= nil') is True)
 
 
+print("\nOSD items open Blizzard's windows through secure buttons, never by calling them")
+rt, g = fresh()
+rt.execute("""
+COMBAT = false
+function InCombatLockdown() return COMBAT end
+CALLS = {}
+function ToggleAllBags() CALLS[#CALLS + 1] = "bags" end
+function ToggleCharacter(tab) CALLS[#CALLS + 1] = tab end
+function GetInventoryItemDurability(slot) if slot == 1 then return 10, 100 end end
+CharacterMicroButton = { Click = function() end }
+MainMenuBarBackpackButton = { Click = function() end }
+REPUTATION = "Reputation"
+CharacterFrameTab3 = { Click = function() end, GetText = function() return "Reputation" end }
+local realCreate = CreateFrame
+SECURE = {}
+function CreateFrame(kind, name, parent, template)
+    if template ~= "SecureActionButtonTemplate" then return realCreate(kind, name, parent, template) end
+    local b = realCreate(kind, name, parent)
+    local attrs = {}
+    rawset(b, "_attrs", attrs)
+    b.SetAttribute = function(self, k, v)
+        if COMBAT then error("blocked in combat") end
+        attrs[k] = v
+    end
+    b.GetAttribute = function(self, k) return attrs[k] end
+    b.SetPoint = function(self, _, _, _, x, y)
+        if COMBAT then error("blocked in combat") end
+        rawset(self, "_x", x) rawset(self, "_y", y)
+    end
+    table.insert(SECURE, b)
+    return b
+end
+BOOT()
+NS.SetMany({ osd = true, osdBags = true, osdDurability = true })
+NS.RefreshOSD() DRIVER_TICK()
+for _, key in ipairs({ "bags", "durability" }) do
+    local spot = NS.OSDHotspot(key)
+    spot.GetRect = function() return key == "bags" and 100 or 200, 50, 40, 20 end
+    spot.GetEffectiveScale = function() return 1 end
+    spot.IsShown = function() return true end
+end
+UIParent.GetEffectiveScale = function() return 1 end
+NS.OSDSyncOverlays()
+""")
+check("the bags item gets a secure button that clicks the backpack",
+      rt.eval('NS.OSDOverlay("bags") and NS.OSDOverlay("bags")._attrs.macrotext1') == "/click MainMenuBarBackpackButton",
+      str(rt.eval('NS.OSDOverlay("bags") and NS.OSDOverlay("bags")._attrs.macrotext1')))
+check("its left click is the macro",
+      rt.eval('NS.OSDOverlay("bags")._attrs.type1') == "macro")
+check("durability's clicks the character button",
+      rt.eval('NS.OSDOverlay("durability")._attrs.macrotext1') == "/click CharacterMicroButton")
+check("each sits over its item", rt.eval('NS.OSDOverlay("durability")._x') == 200)
+rt.execute("""
+local b = NS.OSDHotspot("bags") b._scripts.OnClick(b, "LeftButton")
+local d = NS.OSDHotspot("durability") d._scripts.OnClick(d, "LeftButton")
+""")
+check("the item's own click no longer calls ToggleAllBags or ToggleCharacter",
+      len(list((rt.eval("CALLS") or {}).values())) == 0, str(list((rt.eval("CALLS") or {}).values())))
+rt.execute("""
+COMBAT = true
+NS.OSDHotspot("bags").GetRect = function() return 300, 50, 40, 20 end
+NS.RefreshOSD() DRIVER_TICK()
+NS.OSDSyncOverlays()
+""")
+check("in combat a secure button isn't moved", rt.eval('NS.OSDOverlay("bags")._x') == 100)
+rt.execute('COMBAT = false FireEvent("PLAYER_REGEN_ENABLED")')
+check("and it catches up when combat ends", rt.eval('NS.OSDOverlay("bags")._x') == 300)
+rt.execute('CALLS = {} local o = NS.OSDOverlay("bags") o.IsMouseOver = function() return false end '
+           'local b = NS.OSDHotspot("bags") b._scripts.OnClick(b, "LeftButton")')
+check("a click the secure button missed still opens the bags the old way",
+      len(list((rt.eval("CALLS") or {}).values())) == 1, str(list((rt.eval("CALLS") or {}).values())))
+rt.execute('GetCVarBool = function(name) return name == "ActionButtonUseKeyDown" end NS.OSDSyncOverlays()')
+check("with cast on key down on, the secure button acts on the press",
+      rt.eval('NS.OSDOverlay("bags").chairClicks') == "AnyDown")
+rt.execute('GetCVarBool = function() return false end NS.OSDSyncOverlays()')
+check("and with it off, on the release", rt.eval('NS.OSDOverlay("bags").chairClicks') == "AnyUp")
+
+
 print("\nArranging items on the display itself")
 rt, g = fresh()
 rt.execute("""
@@ -5959,6 +6037,83 @@ check("switched off, the button goes", rt.eval("BTN_SHOWN()") is False)
 check("no error from the queue module", rt.eval("NS.modules.enchantQueue.broken") is None)
 rt.execute("PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, ' ')) end NS.ProbeEnchanting() NS.Print = old")
 check("the probe runs and names the target", rt.eval('SAID("Bracers")') is True)
+
+print("\nSet my role on joining a group")
+ROLE_SETUP = """
+function InCombatLockdown() return LOCKDOWN end
+LOCKDOWN, GROUP, MY_ROLE, LFG_PARTY, SET_ROLES = false, 0, "NONE", false, {}
+function GetNumGroupMembers() return GROUP end
+function IsInGroup() return GROUP > 0 end
+function IsPartyLFG() return LFG_PARTY end
+function UnitGroupRolesAssigned(u) return MY_ROLE end
+function UnitSetRole(u, role) table.insert(SET_ROLES, role) MY_ROLE = role end
+function UnitGUID(u) return "Player-1-0001" end
+ChairPlusDB = { settings = {} }
+BOOT()
+FireEvent("PLAYER_ENTERING_WORLD")
+"""
+def JOIN(): rt.execute('GROUP = 2 FireEvent("GROUP_ROSTER_UPDATE") RUN_TIMERS(3)')
+def LEAVE(): rt.execute('GROUP = 0 MY_ROLE = "NONE" FireEvent("GROUP_ROSTER_UPDATE") RUN_TIMERS(3)')
+rt, g = fresh()
+rt.execute(ROLE_SETUP)
+check("off by default", rt.eval("NS.IsEnabled('autoRole')") is False)
+rt.execute('NS.AutoRoleSet("HEALER")')
+JOIN()
+check("off: no role is set", rt.eval("#SET_ROLES") == 0)
+LEAVE()
+rt.execute('NS.Set("autoRole", true)')
+check("the role is kept per character",
+      rt.eval("NS.Profile().autoRoleByChar['guid:Player-1-0001']") == "HEALER"
+      and rt.eval("NS.AutoRoleGet()") == "HEALER")
+JOIN()
+check("joining a group sets it", rt.eval("MY_ROLE") == "HEALER" and rt.eval("#SET_ROLES") == 1)
+rt.execute('NOW = NOW + 2 MY_ROLE = "DAMAGER" FireEvent("ROLE_CHANGED_INFORM", "Me", "Me", "HEALER", "DAMAGER") RUN_TIMERS(3)')
+check("the game's own role landing just after is put back", rt.eval("MY_ROLE") == "HEALER" and rt.eval("#SET_ROLES") == 2)
+rt.execute('NOW = NOW + 20 MY_ROLE = "DAMAGER" FireEvent("ROLE_CHANGED_INFORM", "Me", "Me", "HEALER", "DAMAGER") RUN_TIMERS(3) '
+           'GROUP = 3 FireEvent("GROUP_ROSTER_UPDATE") RUN_TIMERS(3) '
+           'NS.Set("osdFontSize", 15) RUN_TIMERS(3) FireEvent("PLAYER_ENTERING_WORLD") RUN_TIMERS(3)')
+check("changed by hand: it stays changed through roster changes, settings and zoning",
+      rt.eval("MY_ROLE") == "DAMAGER" and rt.eval("#SET_ROLES") == 2)
+LEAVE()
+rt.execute('LOCKDOWN = true')
+JOIN()
+check("in combat it waits", rt.eval("#SET_ROLES") == 2)
+rt.execute('LOCKDOWN = false FireEvent("PLAYER_REGEN_ENABLED")')
+check("and sets it when the fight ends", rt.eval("MY_ROLE") == "HEALER" and rt.eval("#SET_ROLES") == 3)
+LEAVE()
+rt.execute('LFG_PARTY = true MY_ROLE = "TANK"')
+JOIN()
+check("a dungeon finder group keeps the queued role", rt.eval("MY_ROLE") == "TANK" and rt.eval("#SET_ROLES") == 3)
+rt.execute('LFG_PARTY = false')
+LEAVE()
+rt.execute('NS.AutoRoleSet("NONE")')
+JOIN()
+check("no role picked: nothing is set", rt.eval("#SET_ROLES") == 3
+      and rt.eval("NS.Profile().autoRoleByChar['guid:Player-1-0001']") is None)
+check("no error from the module", rt.eval("NS.modules.autoRole.broken") is None)
+rt.execute("PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, ' ')) end NS.ProbeAutoRole() NS.Print = old")
+check("the probe runs", "none" in (rt.eval("PRINTED[1]") or ""), rt.eval("PRINTED[1]"))
+check("the probe lists what the game did", any("by Me" in (rt.eval(f"PRINTED[{i}]") or "") for i in range(1, 15)))
+# A game that won't take it: a few tries, then it says so.
+rt, g = fresh()
+rt.execute(ROLE_SETUP + 'NS.Set("autoRole", true) NS.AutoRoleSet("TANK") UnitSetRole = function(u, r) table.insert(SET_ROLES, r) end '
+           'PRINTED = {} local old = NS.Print NS.Print = function(...) table.insert(PRINTED, table.concat({...}, " ")) end')
+JOIN()
+rt.execute('RUN_TIMERS(5)')
+check("a role that never takes: it gives up and says so", rt.eval("#SET_ROLES") == 4
+      and any("Could not set" in (rt.eval(f"PRINTED[{i}]") or "") for i in range(1, 10)))
+
+# Logging in to a group you were already in: only a missing role is set.
+for start, want, label in (("DAMAGER", "DAMAGER", "a role already set is kept"),
+                           ("NONE", "TANK", "no role yet: it is set")):
+    rt, g = fresh()
+    rt.execute('NS.baked["autoRole"] = true ChairPlusDB = { settings = {}, profiles = { account = { settings = {}, '
+               'autoRoleByChar = { ["guid:Player-1-0001"] = "TANK" } } } }')
+    rt.execute(ROLE_SETUP.replace('GROUP, MY_ROLE', 'GROUP, MY_ROLE').replace('false, 0, "NONE"', f'false, 2, "{start}"')
+               .replace('ChairPlusDB = { settings = {} }', ''))
+    rt.execute('RUN_TIMERS(3)')
+    check("logged in while grouped: " + label, rt.eval("MY_ROLE") == want, rt.eval("MY_ROLE"))
+
 
 if failures:
     print(f"{len(failures)} check(s) failed:")

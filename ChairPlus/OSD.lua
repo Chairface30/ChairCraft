@@ -711,6 +711,49 @@ local function OpenCharacter(tab)
     Try("ToggleCharacter", tab or "PaperDollFrame")
 end
 
+-- Those calls are the fallback. ToggleCharacter, ToggleAllBags,
+-- ToggleWorldMap and the friends and guild toggles all go through Blizzard's
+-- UI panel manager, and run from addon code they run tainted: what they write
+-- (the manager's record of the open windows, the bags' state) stays tainted
+-- for the session. The next time the game itself opens the character window,
+-- reading that taints it, and its health text dies comparing a secret number
+-- -- right after combat, while health is still secret (2026-11-24,
+-- TextStatusBar.lua:110, "execution tainted by 'Chaircraft'").
+--
+-- So where the client has Blizzard's own button for the window (a micro
+-- button, the backpack, a tab of the character window), the item's left click
+-- is a secure button laid over the item that presses it with /click from a
+-- secure macro. The game runs that, not us. Each of these returns the macro,
+-- or nil when this client has no such button (the old call stands then).
+local function ButtonMacro(...)
+    for i = 1, select("#", ...) do
+        local name = select(i, ...)
+        local b = _G[name]
+        if type(b) == "table" and type(b.Click) == "function" then return "/click " .. name end
+    end
+    return nil
+end
+
+-- The character window's tab whose label is `label` (PET, REPUTATION): which
+-- number each has differs between clients, the label does not.
+local function CharacterTabMacro(label)
+    label = ns.Text(label)
+    if not label then return nil end
+    for i = 1, 10 do
+        local name = "CharacterFrameTab" .. i
+        local tab = _G[name]
+        if type(tab) == "table" and type(tab.GetText) == "function" then
+            local ok, text = pcall(tab.GetText, tab)
+            if ok and ns.Text(text) == label then return ButtonMacro(name) end
+        end
+    end
+    return nil
+end
+
+local function SecureBags() return ButtonMacro("MainMenuBarBackpackButton") end
+local function SecureCharacter() return ButtonMacro("CharacterMicroButton") end
+local function SecureMap() return ButtonMacro("WorldMapMicroButton", "MiniMapWorldMapButton") end
+
 -- The faction you watch: name, standing (1 hated .. 8 exalted), and where it
 -- is through that standing. Either API this client might have.
 local STANDING_NAMES = { "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }
@@ -863,7 +906,7 @@ end
 local ITEMS = {
     {
         key = "money", setting = "osdMoney", label = "Money",
-        click = OpenBags,
+        click = OpenBags, secure = SecureBags,
         tooltip = function(tip)
             tip:AddLine("Money", 1, 0.82, 0)
             local delta = ns.SessionGold and ns.SessionGold()
@@ -903,7 +946,7 @@ local ITEMS = {
     },
     {
         key = "bags", setting = "osdBags", label = "Free bag slots",
-        click = OpenBags,
+        click = OpenBags, secure = SecureBags,
         tooltip = function(tip)
             tip:AddLine("Bags", 1, 0.82, 0)
             BagLines(tip)
@@ -919,7 +962,7 @@ local ITEMS = {
         -- zero for something you do not carry is noise, and this line is read
         -- at a glance or not at all.
         key = "profession", setting = "osdBagsProfession", label = "Profession bags, separately",
-        click = OpenBags,
+        click = OpenBags, secure = SecureBags,
         tooltip = function(tip)
             tip:AddLine("Bags", 1, 0.82, 0)
             BagLines(tip)
@@ -933,7 +976,7 @@ local ITEMS = {
     },
     {
         key = "durability", setting = "osdDurability", label = "Durability",
-        click = function() OpenCharacter() end,
+        click = function() OpenCharacter() end, secure = SecureCharacter,
         tooltip = function(tip)
             tip:AddLine("Durability", 1, 0.82, 0)
             DurabilityLines(tip)
@@ -961,7 +1004,7 @@ local ITEMS = {
     },
     {
         key = "ammo", setting = "osdAmmo", label = "Ammo",
-        click = function() OpenCharacter() end,
+        click = function() OpenCharacter() end, secure = SecureCharacter,
         tooltip = function(tip)
             local okL, link = pcall(_G.GetInventoryItemLink, "player", AMMO_SLOT)
             local okN, name = pcall(_G.GetItemInfo, okL and link or 0)
@@ -986,7 +1029,7 @@ local ITEMS = {
         -- Shown for a warlock, or for anyone carrying shards; a zero on a
         -- warrior is noise.
         key = "shards", setting = "osdShards", label = "Soul shards",
-        click = OpenBags,
+        click = OpenBags, secure = SecureBags,
         tip = "Soul shards -- click to open your bags.",
         build = function(size)
             local count
@@ -1003,7 +1046,7 @@ local ITEMS = {
     },
     {
         key = "coords", setting = "osdCoords", label = "Coordinates", ticks = true,
-        click = OpenMap,
+        click = OpenMap, secure = SecureMap,
         tip = "Your position on the zone map -- click to open the map.",
         sample = function(size)
             return IconOnly("Interface\\ICONS\\INV_Misc_Map_01", size, true) .. " 88.8, 88.8"
@@ -1115,7 +1158,7 @@ local ITEMS = {
         -- The zone, and the subzone when you are in one: "Elwynn Forest:
         -- Goldshire".
         key = "zone", setting = "osdZone", label = "Zone name",
-        click = OpenMap,
+        click = OpenMap, secure = SecureMap,
         tooltip = function(tip)
             local okZ, zone = pcall(_G.GetZoneText)
             tip:AddLine(okZ and ns.Text(zone) or "Zone", 1, 0.82, 0)
@@ -1336,6 +1379,7 @@ local ITEMS = {
         -- without a pet out, or on any other class.
         key = "pet", setting = "osdPet", label = "Hunter pet", ticks = true,
         click = function() OpenCharacter("PetPaperDollFrame") end,
+        secure = function() return CharacterTabMacro(_G.PET) or SecureCharacter() end,
         tooltip = function(tip)
             local okN, name = pcall(_G.UnitName, "pet")
             tip:AddLine(okN and ns.Text(name) or "Pet", 1, 0.82, 0)
@@ -1395,6 +1439,7 @@ local ITEMS = {
         -- the friends list. Keeps the "social" key and setting it had when
         -- it counted the guild too, so it stays where it was put.
         key = "social", setting = "osdSocial", label = "Friends online",
+        secure = function() return ButtonMacro("SocialsMicroButton", "FriendsMicroButton", "QuickJoinToastButton") end,
         click = function()
             if type(_G.ToggleFriendsFrame) == "function" then pcall(_G.ToggleFriendsFrame, 1) end
         end,
@@ -1415,6 +1460,7 @@ local ITEMS = {
         -- Guildmates online. Nothing outside a guild. Hover for who; click for
         -- the guild window.
         key = "guild", setting = "osdGuild", label = "Guild online",
+        secure = function() return ButtonMacro("GuildMicroButton", "SocialsMicroButton") end,
         click = function()
             -- The guild's own window where the client has one, else the
             -- guild tab of the friends window, which is where classic keeps it.
@@ -1443,6 +1489,7 @@ local ITEMS = {
         -- reputation window.
         key = "rep", setting = "osdRep", label = "Watched reputation",
         click = function() OpenCharacter("ReputationFrame") end,
+        secure = function() return CharacterTabMacro(_G.REPUTATION) or SecureCharacter() end,
         tooltip = function(tip)
             local name, standing, low, high, value = WatchedFaction()
             if not name then
@@ -1947,6 +1994,15 @@ end
 -- takes the mouse even while the display is locked and the rest of it lets
 -- clicks through -- it is only as big as the one item.
 local hotspots = {}
+local hotspotItems = {}    -- key -> the item its hotspot was made for
+local overlays = {}        -- key -> the secure button over it (SyncOverlays)
+-- The /click macro of an item that opens a Blizzard window, where this
+-- client has the button for it (see ButtonMacro).
+local function SecureMacro(item)
+    if type(item.secure) ~= "function" then return nil end
+    local ok, macro = pcall(item.secure)
+    return ok and type(macro) == "string" and macro or nil
+end
 -- For the tests, which click and hover items as a player would.
 function ns.OSDHotspot(key) return hotspots[key] end
 
@@ -2076,6 +2132,17 @@ local function Hotspot(item)
                 pcall(item.rightClick, self)
                 return
             end
+            -- An item with a secure button over it opens its window from
+            -- there; the call below would taint the window (see ButtonMacro).
+            -- But a click that reached this button missed the secure one
+            -- (not placed yet, or left behind by a fight), and a click that
+            -- opens nothing is worse than the old call: that one stands.
+            local over = overlays[key]
+            if over and SecureMacro(item) then
+                local okM, onIt = pcall(over.IsMouseOver, over)
+                local okV, shown = pcall(over.IsVisible, over)
+                if okM and ns.Bool(onIt) and okV and ns.Bool(shown) then return end
+            end
             if item.click then pcall(item.click, self, mouse) end
         end)
         button:SetScript("OnEnter", function(self)
@@ -2114,9 +2181,102 @@ local function Hotspot(item)
             if tip then pcall(tip.Hide, tip) end
         end)
         hotspots[item.key] = button
+        hotspotItems[item.key] = item
     end
     return button
 end
+
+-- The secure buttons over the items that open a Blizzard window (see
+-- ButtonMacro). Each is a child of UIParent, placed by numbers to sit exactly
+-- over its item, never anchored to the display: a protected button anchored
+-- to our frame would make that frame protected too, and the display re-lays
+-- itself out in combat. A secure button can't be moved, shown or hidden in
+-- combat either, so they are only put right out of combat; one left over a
+-- changed line in a fight is put right when it ends (PLAYER_REGEN_ENABLED
+-- redraws the line).
+--
+-- Only the left click is the macro's. The tooltip, the right click and a
+-- drag are handed on to the item's own button underneath, as if it had them.
+-- Which half of a click the secure button acts on. The game's secure template
+-- acts on the press when "cast on key down" (ActionButtonUseKeyDown) is on --
+-- the default -- and on the release when it is off, and ignores the other
+-- half. Registered for the release alone, it did nothing with the setting on.
+-- Registering only the half it acts on also keeps an older template, which
+-- acts on whatever it is given, from opening the window and closing it again.
+function ns.OSDOverlayClicks(b)
+    local okC, down = pcall(_G.GetCVarBool, "ActionButtonUseKeyDown")
+    local want = (okC and ns.Bool(down)) and "AnyDown" or "AnyUp"
+    if b.chairClicks ~= want then
+        b.chairClicks = want
+        pcall(b.RegisterForClicks, b, want)
+    end
+end
+
+local function Overlay(item)
+    local key = item.key
+    local over = overlays[key]
+    if over then return over end
+    local ok, b = pcall(CreateFrame, "Button", nil, UIParent, "SecureActionButtonTemplate")
+    if not ok or type(b) ~= "table" then return nil end
+    ns.OSDOverlayClicks(b)
+    pcall(b.RegisterForDrag, b, "LeftButton")
+    b:SetAttribute("type1", "macro")
+    local glow = b:CreateTexture(nil, "HIGHLIGHT")
+    glow:SetAllPoints()
+    glow:SetColorTexture(1, 1, 1, 0.12)
+    local function Pass(script, ...)
+        local spot = hotspots[key]
+        local fn = spot and spot:GetScript(script)
+        if type(fn) == "function" then pcall(fn, spot, ...) end
+    end
+    b:SetScript("OnEnter", function() Pass("OnEnter") end)
+    b:SetScript("OnLeave", function() Pass("OnLeave") end)
+    b:SetScript("OnDragStart", function() Pass("OnDragStart") end)
+    b:SetScript("OnDragStop", function() Pass("OnDragStop") end)
+    b:SetScript("PostClick", function(_, mouse)
+        if mouse == "RightButton" then Pass("OnClick", mouse) end
+    end)
+    overlays[key] = b
+    return b
+end
+
+local function SyncOverlays()
+    local okL, locked = pcall(InCombatLockdown)
+    if okL and locked then return end
+    local okU, uiScale = pcall(UIParent.GetEffectiveScale, UIParent)
+    uiScale = okU and ns.Num(uiScale) or 1
+    if uiScale <= 0 then uiScale = 1 end
+    local okF, frameShown = pcall(frame.IsVisible, frame)
+    frameShown = okF and ns.Bool(frameShown)
+    for key, spot in pairs(hotspots) do
+        local item = hotspotItems[key]
+        local macro = (frameShown and not arranging and item) and SecureMacro(item) or nil
+        local okS, shown = pcall(spot.IsShown, spot)
+        local okR, left, bottom, width, height = pcall(spot.GetRect, spot)
+        left, bottom, width, height = ns.Num(left), ns.Num(bottom), ns.Num(width), ns.Num(height)
+        local over = overlays[key]
+        if macro and okS and ns.Bool(shown) and okR and left and bottom and width and height then
+            over = over or Overlay(item)
+            if over then
+                local okE, scale = pcall(spot.GetEffectiveScale, spot)
+                local ratio = (okE and ns.Num(scale) or uiScale) / uiScale
+                if over:GetAttribute("macrotext1") ~= macro then over:SetAttribute("macrotext1", macro) end
+                ns.OSDOverlayClicks(over)   -- the setting can change while playing
+                pcall(over.SetFrameStrata, over, frame:GetFrameStrata())
+                pcall(over.SetFrameLevel, over, (ns.Num(spot:GetFrameLevel()) or 1) + 5)
+                over:ClearAllPoints()
+                over:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left * ratio, bottom * ratio)
+                over:SetSize(width * ratio, height * ratio)
+                over:Show()
+            end
+        elseif over then
+            over:Hide()
+        end
+    end
+end
+ns.OSDSyncOverlays = SyncOverlays
+-- For the tests.
+function ns.OSDOverlay(key) return overlays[key] end
 
 -- ChairTracker hangs from the OSD's tracker item while it is showing, and is
 -- a window of its own again the moment it is not. Only undocks what this
@@ -2367,6 +2527,7 @@ local function Refresh()
 
     pcall(backdrop.SetColorTexture, backdrop, 0, 0, 0, ns.Num(ns.Get("osdBgAlpha")) or 0.45)
     backdrop:SetShown(ns.Get("osdBackground") and true or false)
+    SyncOverlays()
 end
 
 -- Updates are coalesced. BAG_UPDATE fires once per bag and PLAYER_MONEY can
@@ -2396,6 +2557,7 @@ local function CreateFrame_OSD()
     frame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         SavePosition()
+        dirty = true   -- the secure buttons follow it on the next redraw
     end)
 
     -- Coordinates, the clock and the frame rate change without an event, so
@@ -2435,10 +2597,17 @@ local function CreateFrame_OSD()
             -- (whose item data may not be in yet) each change on these.
             "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
             "PLAYER_TARGET_CHANGED", "UNIT_THREAT_LIST_UPDATE",
-            "GET_ITEM_INFO_RECEIVED", "UPDATE_FACTION" }) do
+            "GET_ITEM_INFO_RECEIVED", "UPDATE_FACTION",
+            -- The secure buttons over the items can only be moved out of combat.
+            "PLAYER_REGEN_ENABLED" }) do
         pcall(frame.RegisterEvent, frame, event)
     end
-    frame:SetScript("OnEvent", MarkDirty)
+    frame:SetScript("OnEvent", function(_, event)
+        -- Straight away: a display switched off in a fight is hidden, and a
+        -- hidden frame gets no OnUpdate to redraw from.
+        if event == "PLAYER_REGEN_ENABLED" then SyncOverlays() end
+        MarkDirty()
+    end)
 end
 
 -------------------------------------------------------------------------------
@@ -2474,7 +2643,10 @@ ns.RegisterModule("osd", {
         ns.ApplyMinimapHiding()
         ns.TrackerAutoHideOnDisplay()
         if not enabled then
-            if frame then frame:Hide() end
+            if frame then
+                frame:Hide()
+                SyncOverlays()
+            end
             ns.DockTracker(nil)
             return
         end

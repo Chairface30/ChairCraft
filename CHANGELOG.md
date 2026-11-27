@@ -1,5 +1,13 @@
 # Changelog
 
+## ChairCraft v1.16.0: Group role
+
+**New**
+- **Set my role on joining a group.** Pick a role for each character (Tank, Healer or Damage) on the Groups & people page and turn on "Set my role on joining a group": joining a group sets that role, and for the first few seconds puts it back if the game swaps in a role of its own from your spec. After that, change it yourself and ChairCraft leaves it alone until you join another group. Logging in or reloading while in a group only sets a role when you have none. Dungeon finder groups keep the role you queued as. If the game won't take the role it says so in chat. `/chair plus role` says what it sees.
+
+**Fixed**
+- **No more errors opening the character window after combat.** Clicking the bags, durability, ammo, pet, reputation, map, zone, friends or guild items on the on-screen display opened those windows from addon code, which tainted Blizzard's window manager for the rest of the session. After that, opening the character window right after a fight (health still secret) threw "attempt to compare a secret number value (execution tainted by 'Chaircraft')". These items now press Blizzard's own button for the window (the backpack, the character button, the character window's tabs, the map, social and guild buttons) through a secure button over the item, so the game opens the window, not ChairCraft. The bags item opens the backpack the way the backpack button does. These buttons act on the press or the release of the mouse to match the game's "Cast action keybinds on key down" setting, and a click that misses one still opens the window.
+
 ## ChairCraft v1.15.0: Dungeon entrances and enchanting
 
 **New**

@@ -99,6 +99,16 @@ local ROWS = {
     { key = "keywordInvite",       label = "Invite on keyword", tab = "groups",
       button = { "Keywords...", function() ns.ToggleKeywordPanel() end } },
     { key = "declineGuildInvites", label = "Decline guild invites", tab = "groups" },
+    { header = "Group role", tab = "groups" },
+    { key = "autoRole",            label = "Set my role on joining a group", tab = "groups",
+      tip = "Sets the role picked below when this character joins a group, once. Change it yourself afterwards and "
+         .. "ChairCraft leaves it alone until you join another group. Dungeon finder groups keep the role you queued as. "
+         .. "/chair plus role says what it sees." },
+    { choice = "autoRoleChoice",   label = "This character", tab = "groups", sub = "autoRole",
+      values = ns.AUTO_ROLES or { { value = "NONE", text = "none" } },
+      get = function() return ns.AutoRoleGet and ns.AutoRoleGet() or "NONE" end,
+      set = function(value) if ns.AutoRoleSet then ns.AutoRoleSet(value) end end,
+      tip = "Each character keeps its own role. Left at none, this character's role is never set." },
     { header = "Answer for me", tab = "groups" },
     { key = "declineDuels",        label = "Decline duels", tab = "groups" },
     { key = "autoResurrect",       label = "Accept resurrection", tab = "groups",
@@ -552,7 +562,7 @@ local function RefreshPanel()
         entry.prev:SetShown(onThisTab)
         entry.next:SetShown(onThisTab)
         if onThisTab then
-            local value, text = ns.Get(key), nil
+            local value, text = (entry.row.get and entry.row.get()) or ns.Get(key), nil
             for _, option in ipairs(entry.row.values) do
                 if option.value == value then text = option.text end
             end
@@ -1099,12 +1109,15 @@ local function BuildPanel()
             label:SetJustifyH("LEFT")
             local function Step(delta)
                 local values = row.values
+                local now = (row.get and row.get()) or ns.Get(key)
                 local at = 1
                 for i, option in ipairs(values) do
-                    if option.value == ns.Get(key) then at = i end
+                    if option.value == now then at = i end
                 end
                 at = (at - 1 + delta) % #values + 1
-                ns.Set(key, values[at].value)
+                -- A row with its own get and set keeps its value somewhere
+                -- other than the account's settings (per character, say).
+                if row.set then row.set(values[at].value) else ns.Set(key, values[at].value) end
                 RefreshPanel()
             end
             prev:SetScript("OnClick", function() Step(-1) end)
@@ -2156,6 +2169,7 @@ local function PrintHelp()
     print("  |cffffd100/chair plus movers add|r - make the window under the mouse draggable by its title bar")
     print("  |cffffd100/chair plus bake|r - print current settings as code that survives a restart")
     print("  |cffffd100/chair plus keywords|r - the invite-on-keyword window")
+    print("  |cffffd100/chair plus role|r - the role picked for this character, the role you have now, and what happened last")
     print("  |cffffd100/chair plus flights|r - the learned flight times, as code")
     print("  |cffffd100/chair plus flight probe|r - with a flight map open, why a "
         .. "destination does or does not get a hardcoded time")
@@ -2295,6 +2309,9 @@ local function Handler(input)
 
     elseif cmd == "enchant" then
         if ns.ProbeEnchanting then ns.ProbeEnchanting() end
+
+    elseif cmd == "role" then
+        if ns.ProbeAutoRole then ns.ProbeAutoRole() end
 
     elseif cmd == "tracking" then
         if (rest or ""):lower() == "test" then

@@ -154,6 +154,7 @@ ns.defaults = {
     autoInviteGuild     = true,     -- ... guildmates
     keywordInvite       = false,    -- invite players who send a keyword
     keywordInviteWords  = "inv,invite", -- the keywords, comma separated
+    autoRole            = false,    -- set this character's role on joining a group (Role.lua)
     restock             = false,    -- buy back your consumables at merchants
     restockList         = "",       -- "itemID:count,..." per character
     restockSummary      = true,     -- say in chat what was bought

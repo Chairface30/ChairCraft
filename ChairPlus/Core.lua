@@ -118,7 +118,13 @@ local PREFIX = (Chaircraft.CHAT_PREFIX or "|cff9d7cffChairCraft|r:")
 function ns.Print(...)
     local parts = { PREFIX }
     for i = 1, select("#", ...) do
-        parts[#parts + 1] = ns.Text((select(i, ...))) or "<unreadable>"
+        local value = (select(i, ...))
+        -- An empty string is an optional note left out ("Sold junk for X",
+        -- capped and "(...)" or ""), not a value the client kept secret.
+        local empty = not ns.IsSecret(value) and value == ""
+        if not empty then
+            parts[#parts + 1] = ns.Text(value) or "<unreadable>"
+        end
     end
     local ok, line = pcall(table.concat, parts, " ")
     print(ok and line or PREFIX .. " <unprintable message>")

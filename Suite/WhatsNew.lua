@@ -11,6 +11,13 @@
 local suiteName, Chaircraft = ...
 
 Chaircraft.WHATS_NEW = {
+    ["1.16.0"] = {
+        title = "Group role",
+        lines = {
+            "Set my role on joining a group: pick Tank, Healer or Damage for each character on the Groups & people page.",
+            "Fixed: an error opening the character window after combat, caused by clicking info bar items.",
+        },
+    },
     ["1.15.0"] = {
         title = "Dungeon entrances and enchanting",
         lines = {
